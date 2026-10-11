@@ -68,3 +68,5 @@ h1{font-size:22px;margin:4px 0 0;letter-spacing:.06em}
 .profile-select{grid-column:1/-1}
 button:focus-visible{outline:2px solid #8ebcff;outline-offset:2px}
 .empty-state[hidden]{display:none!important}
+.sample-download{display:block;margin-top:8px;padding:8px;text-align:center;color:#b6c0cb;font-size:11px;text-underline-offset:3px}
+.sample-download:focus-visible{outline:2px solid #8ebcff;outline-offset:2px;border-radius:8px}
