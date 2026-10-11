@@ -17,6 +17,8 @@ const canvas = $('#threeCanvas');
 const viewport = $('#viewport');
 let THREE,renderer,scene,camera,controls,toolpathGroup;
 const renderedInstances=new Map();
+const previewGeometryCache=new Map();
+let previewDirty=true;
 async function initializePreview(){
   const modules=await Promise.all([
     import('./vendor/three/three.module.js'),
@@ -29,7 +31,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setClearColor(0x0
 scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x0b0d10,600,1000);
 camera = new THREE.PerspectiveCamera(36,1,.1,1200); camera.position.set(180,-320,340);
 camera.up.set(0,0,1); // Z is vertical; OrbitControls must use the XY build plane.
-controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.target.set(0,0,16); controls.maxPolarAngle=Math.PI/2.03; controls.minDistance=90; controls.maxDistance=520;
+controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.addEventListener('change',()=>{previewDirty=true}); controls.target.set(0,0,16); controls.maxPolarAngle=Math.PI/2.03; controls.minDistance=90; controls.maxDistance=520;
 scene.add(new THREE.HemisphereLight(0xffffff,0x1a1d21,1.5)); const keyLight=new THREE.DirectionalLight(0xffffff,1.5); keyLight.position.set(80,-120,180); scene.add(keyLight);
 const plate=new THREE.Mesh(new THREE.BoxGeometry(250,210,3),new THREE.MeshStandardMaterial({color:0x303943,metalness:.18,roughness:.82})); plate.position.z=-1.8; scene.add(plate);
 const grid=new THREE.GridHelper(250,25,0xa0aab5,0x596574); grid.rotation.x=Math.PI/2; grid.scale.z=210/250; grid.position.z=.1; scene.add(grid);
@@ -79,31 +81,42 @@ function appendExtrusionSegment(positions,start,end,width,height){
 function createInstanceGroup(instanceId,data){
   const source=sourceState.get(data.source),group=new THREE.Group(),batches=new Map();group.userData.instanceId=instanceId;
   const width=Number($('#printWidth').value)>0?Number($('#printWidth').value):0.6,height=Number($('#printHeight').value)>0?Number($('#printHeight').value):0.3;
+  const mode=$('#previewGeometry').value;
+  let cached=previewGeometryCache.get(data.source);
+  if(!cached||cached.width!==width||cached.height!==height||cached.mode!==mode){
   source.paths.forEach((path,pathIndex)=>{
     const key=JSON.stringify([path.tool,path.layer]);
     if(!batches.has(key))batches.set(key,{toolId:path.tool,layer:path.layer,positions:[],ranges:[]});
     const batch=batches.get(key);
-    for(let i=1;i<path.points.length;i++)appendExtrusionSegment(batch.positions,path.points[i-1],path.points[i],width,height);
+    for(let i=1;i<path.points.length;i++){if(mode==='solid')appendExtrusionSegment(batch.positions,path.points[i-1],path.points[i],width,height);else batch.positions.push(...path.points[i-1],...path.points[i])}
     batch.ranges.push({pathIndex,end:batch.positions.length/3});
   });
   for(const batch of batches.values()){
     const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(batch.positions,3));
-    geo.computeVertexNormals();
-    const tool=source.tools.get(batch.toolId),mat=new THREE.MeshStandardMaterial({color:tool?.color||'#fff',roughness:.65,metalness:0});
-    const line=new THREE.Mesh(geo,mat);line.userData={sourceId:source.id,toolId:batch.toolId,layer:batch.layer,ranges:batch.ranges};group.add(line);
+    if(mode==='solid')geo.computeVertexNormals();batch.geometry=geo;delete batch.positions;
+  }
+  cached={width,height,mode,batches};previewGeometryCache.set(data.source,cached);
+  }
+  for(const batch of cached.batches.values()){
+    // Independent draw ranges with shared vertex buffers for duplicated instances.
+    const geo=new THREE.BufferGeometry();geo.setAttribute('position',batch.geometry.getAttribute('position'));if(mode==='solid')geo.setAttribute('normal',batch.geometry.getAttribute('normal'));
+    const tool=source.tools.get(batch.toolId),mat=mode==='solid'?new THREE.MeshStandardMaterial({color:tool?.color||'#fff',roughness:.65,metalness:0}):new THREE.LineBasicMaterial({color:tool?.color||'#fff'});
+    const line=mode==='solid'?new THREE.Mesh(geo,mat):new THREE.LineSegments(geo,mat);line.userData={sourceId:source.id,toolId:batch.toolId,layer:batch.layer,ranges:batch.ranges};group.add(line);
   }
   group.position.set(data.x,data.y,0);group.rotation.z=THREE.MathUtils.degToRad(data.rotation);return group;
 }
 function buildInstances(){
   updateLayerRange();$('#emptyState').hidden=sourceState.size>0;
   if(!toolpathGroup)return;
-  toolpathGroup.traverse(child=>{if(child.isMesh){child.geometry.dispose();child.material.dispose()}});
+  toolpathGroup.traverse(child=>{if(child.isMesh||child.isLine){child.geometry.dispose();child.material.dispose()}});
   toolpathGroup.clear();renderedInstances.clear();
+  for(const id of previewGeometryCache.keys())if(!sourceState.has(id))previewGeometryCache.delete(id);
   for(const[id,data]of instanceState){if(!sourceState.has(data.source))continue;const group=createInstanceGroup(id,data);toolpathGroup.add(group);renderedInstances.set(id,group)}
   refreshVisibility();
 }
 function updateLayerRange(){const max=Math.max(1,...[...sourceState.values()].map(s=>s.maxLayer));const slider=$('#layerSlider');slider.max=max;if(Number(slider.value)>max||Number(slider.value)===1)slider.value=max;$('#layerValue').textContent=slider.value}
 function refreshVisibility(){
+  previewDirty=true;
   const maxLayer=Number($('#layerSlider').value),progress=Number($('#pathSlider').value)/100,mode=$('#viewMode').value;
   const groups=[...renderedInstances.entries()].sort((a,b)=>instanceState.get(a[0]).order-instanceState.get(b[0]).order);
   const total=groups.reduce((n,[id])=>n+sourceState.get(instanceState.get(id).source).paths.filter(p=>p.layer<=maxLayer).length,0);
@@ -160,8 +173,8 @@ async function importFiles(files){for(const file of files){try{const parsed=sani
 function transformedPoints(path,instance){const a=(instance.rotation||0)*Math.PI/180,cos=Math.cos(a),sin=Math.sin(a);return path.points.map(([x,y,z])=>[x*cos-y*sin+instance.x,x*sin+y*cos+instance.y,z])}
 function generateGcode(){if(!instanceState.size)throw new Error('Add a .toolpath file first');const width=Number($('#printWidth').value),height=Number($('#printHeight').value),filamentD=Number($('#filamentDiameter').value),travel=Number($('#travelSpeed').value);if(![width,height,filamentD,travel].every(v=>Number.isFinite(v)&&v>0))throw new Error('Check Basic Settings');const filamentArea=Math.PI*Math.pow(filamentD/2,2),ePerMmBase=width*height/filamentArea,lines=['; Generated by Pathloom',`; width=${width} height=${height} filament=${filamentD}`,'G90 ; absolute XYZ','M83 ; relative extrusion'];let currentTool=null;[...instanceState.entries()].sort((a,b)=>a[1].order-b[1].order).forEach(([instanceId,inst])=>{const source=sourceState.get(inst.source);lines.push(`\n; INSTANCE ${instanceDisplayName(instanceId,inst)}`);source.paths.forEach(path=>{const tool=source.tools.get(path.tool),numericTool=Number(path.tool);if(currentTool!==path.tool){if(Number.isInteger(numericTool)&&numericTool>=0)lines.push(`T${numericTool}`);else lines.push(`; TOOL ${path.tool}`);currentTool=path.tool}const pts=transformedPoints(path,inst),[sx,sy,sz]=pts[0];lines.push(`G0 X${sx.toFixed(3)} Y${sy.toFixed(3)} Z${sz.toFixed(3)} F${Math.round(travel*60)}`);const speed=toolEffectiveSpeed(source,tool),multiplier=(source.erate||1)*(tool?.erate||1);for(let i=1;i<pts.length;i++){const[x,y,z]=pts[i],[px,py,pz]=pts[i-1],len=Math.hypot(x-px,y-py,z-pz),e=len*ePerMmBase*multiplier;lines.push(`G1 X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)} E${e.toFixed(5)} F${Math.round(speed*60)}`)}})});lines.push('\n; End of Pathloom output');return lines.join('\n')}
 function downloadText(name,text){const blob=new Blob([text],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500)}
-function resize(){if(!renderer)return;const w=viewport.clientWidth,h=viewport.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
-new ResizeObserver(resize).observe(viewport);function animate(){controls.update();renderer.render(scene,camera);requestAnimationFrame(animate)}
+function resize(){if(!renderer)return;const w=viewport.clientWidth,h=viewport.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();previewDirty=true}
+new ResizeObserver(resize).observe(viewport);function animate(){controls.update();if(previewDirty){renderer.render(scene,camera);previewDirty=false}requestAnimationFrame(animate)}
 
 [...document.querySelectorAll('.tab')].forEach(tab=>tab.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t===tab));document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));$(`#tab-${tab.dataset.tab}`).classList.add('active')}));
 $('#addToolpath').addEventListener('click',()=>$('#toolpathInput').click());$('#toolpathInput').addEventListener('change',e=>{importFiles([...e.target.files]);e.target.value=''});$('#layerSlider').addEventListener('input',e=>{$('#layerValue').textContent=e.target.value;refreshVisibility()});$('#pathSlider').addEventListener('input',refreshVisibility);$('#viewMode').addEventListener('change',refreshVisibility);$('#printSpeed').addEventListener('input',refreshVisibility);$('#autoArrange').addEventListener('click',()=>autoArrange(true));$('#closePalette').addEventListener('click',()=>$('#colorPopover').hidden=true);viewport.addEventListener('pointerdown',e=>{const p=$('#colorPopover');if(!p.hidden&&!p.contains(e.target))p.hidden=true});$('#colorPopover').addEventListener('pointerdown',e=>e.stopPropagation());
@@ -171,6 +184,7 @@ $('#generateBtn').addEventListener('click',()=>{try{downloadText('pathloom-outpu
 $('#openLibrary').addEventListener('click',openLibrary);$('#openLibraryTop').addEventListener('click',openLibrary);$('#closeLibrary').addEventListener('click',closeLibrary);$('#libraryModal').addEventListener('pointerdown',e=>{if(e.target===$('#libraryModal'))closeLibrary()});$('#filamentForm').addEventListener('submit',upsertFilament);$('#cancelFilamentEdit').addEventListener('click',resetFilamentForm);$('#filamentColor').addEventListener('input',e=>$('#filamentHex').value=e.target.value.toUpperCase());$('#filamentHex').addEventListener('input',e=>{const hex=normalizeHex(e.target.value);if(hex)$('#filamentColor').value=hex});
 
 document.querySelectorAll('[data-arrange-mode]').forEach(button=>button.addEventListener('click',()=>{const manual=button.dataset.arrangeMode==='manual';document.querySelectorAll('[data-arrange-mode]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button))});$('#spacing').disabled=manual;$('#autoArrange').disabled=manual;if(!manual)autoArrange(true);else showToast('Select an instance to edit X, Y and rotation')}));
+$('#previewGeometry').addEventListener('change',buildInstances);
 ['printWidth','printHeight'].forEach(id=>$(`#${id}`).addEventListener('change',buildInstances));
 $('#openSettings').addEventListener('click',()=>openSettings());
 $('#loadSample').addEventListener('click',async()=>{const button=$('#loadSample');button.disabled=true;try{const response=await fetch('./samples/ukigara-clock.toolpath');if(!response.ok)throw new Error(`HTTP ${response.status}`);addSource(sanitizeToolpath(await response.json(),'Ukigara Clock.toolpath'));showToast('Ukigara Clock sample loaded')}catch(err){showToast(`Unable to load sample: ${err.message}`,'error')}finally{button.disabled=false}});
