@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pathloom</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand-row">
+        <div>
+          <div class="eyebrow">TOOLPATH WORKSPACE</div>
+          <h1>PATHLOOM</h1>
+        </div>
+        <button class="icon-btn" aria-label="Settings">⚙</button>
+      </div>
+
+      <section class="panel basic-panel">
+        <div class="section-title">BASIC SETTINGS</div>
+        <label class="field-row">
+          <span>Printer</span>
+          <select id="printerSelect">
+            <option>Prusa MK4S</option>
+            <option>Bambu A1</option>
+            <option>Prusa CoreOne</option>
+            <option>Snapmaker U1</option>
+          </select>
+        </label>
+        <label class="field-row"><span>Print width</span><div class="number-wrap"><input id="printWidth" type="number" step="0.01" value="0.60"><span>mm</span></div></label>
+        <label class="field-row"><span>Print height</span><div class="number-wrap"><input id="printHeight" type="number" step="0.01" value="0.30"><span>mm</span></div></label>
+        <label class="field-row"><span>Print speed</span><div class="number-wrap"><input id="printSpeed" type="number" step="1" value="35"><span>mm/s</span></div></label>
+        <label class="field-row"><span>Travel speed</span><div class="number-wrap"><input id="travelSpeed" type="number" step="1" value="180"><span>mm/s</span></div></label>
+      </section>
+
+      <div class="tab-row" role="tablist">
+        <button class="tab active" data-tab="objects">Objects</button>
+        <button class="tab" data-tab="order">Print Order</button>
+        <button class="tab" data-tab="arrange">Arrange</button>
+      </div>
+
+      <section class="panel tab-panel active" id="tab-objects">
+        <div class="object-card" data-object="A">
+          <button class="object-header">
+            <span><strong>A</strong><small>2 instances</small></span>
+            <span class="mini-swatches"><i style="--c:#223B59"></i><i style="--c:#F2D64B"></i></span>
+            <span class="chevron">⌄</span>
+          </button>
+          <div class="object-body">
+            <div class="tool-row" data-tool="A-T0">
+              <button class="color-chip" style="--tool-color:#223B59" aria-label="Change T0 color"></button>
+              <button class="tool-toggle"><span>T0</span><span class="tool-name">Navy</span><span>⌄</span></button>
+              <div class="tool-detail">
+                <label><span>Print speed</span><input class="tool-speed" type="number" value="35"><em>mm/s</em></label>
+                <label><span>E-rate</span><input class="tool-erate" type="number" step="0.01" value="1.00"><em>×</em></label>
+              </div>
+            </div>
+            <div class="tool-row" data-tool="A-T1">
+              <button class="color-chip" style="--tool-color:#F2D64B" aria-label="Change T1 color"></button>
+              <button class="tool-toggle"><span>T1</span><span class="tool-name">Yellow</span><span>⌄</span></button>
+              <div class="tool-detail">
+                <label><span>Print speed</span><input class="tool-speed" type="number" value="32"><em>mm/s</em></label>
+                <label><span>E-rate</span><input class="tool-erate" type="number" step="0.01" value="0.98"><em>×</em></label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="object-card" data-object="B">
+          <button class="object-header">
+            <span><strong>B</strong><small>1 instance</small></span>
+            <span class="mini-swatches"><i style="--c:#2F89C5"></i></span>
+            <span class="chevron">⌄</span>
+          </button>
+          <div class="object-body">
+            <div class="tool-row" data-tool="B-T0">
+              <button class="color-chip" style="--tool-color:#2F89C5" aria-label="Change T0 color"></button>
+              <button class="tool-toggle"><span>T0</span><span class="tool-name">Blue</span><span>⌄</span></button>
+              <div class="tool-detail">
+                <label><span>Print speed</span><input class="tool-speed" type="number" value="35"><em>mm/s</em></label>
+                <label><span>E-rate</span><input class="tool-erate" type="number" step="0.01" value="1.00"><em>×</em></label>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="add-object">＋ Add object</button>
+      </section>
+
+      <section class="panel tab-panel" id="tab-order">
+        <div class="section-title">SEQUENTIAL PRINT ORDER</div>
+        <p class="hint">Drag to change the order.</p>
+        <div id="orderList" class="order-list">
+          <div class="order-item" draggable="true" data-id="A-1"><span class="handle">⠿</span><strong>A-1</strong><span>01</span></div>
+          <div class="order-item" draggable="true" data-id="A-2"><span class="handle">⠿</span><strong>A-2</strong><span>02</span></div>
+          <div class="order-item" draggable="true" data-id="B-1"><span class="handle">⠿</span><strong>B-1</strong><span>03</span></div>
+        </div>
+      </section>
+
+      <section class="panel tab-panel" id="tab-arrange">
+        <div class="section-title">ARRANGE</div>
+        <div class="segmented"><button class="active">Auto</button><button>Manual</button></div>
+        <label class="field-row"><span>Spacing</span><div class="number-wrap"><input id="spacing" type="number" value="18"><span>mm</span></div></label>
+        <button id="autoArrange" class="primary-soft">Auto arrange instances</button>
+        <div class="instance-grid">
+          <button class="instance-card active" data-instance="A-1">A-1<small>X 60 · Y 70</small></button>
+          <button class="instance-card" data-instance="A-2">A-2<small>X 140 · Y 70</small></button>
+          <button class="instance-card" data-instance="B-1">B-1<small>X 100 · Y 150</small></button>
+        </div>
+      </section>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div class="status"><span class="dot"></span>Grasshopper disconnected</div>
+        <div class="top-actions">
+          <label class="view-select"><span>VIEW</span><select id="viewMode"><option value="tool">Tool color</option><option value="order">Print order</option><option value="speed">Speed</option></select></label>
+          <button id="generateBtn" class="primary">Generate G-code</button>
+        </div>
+      </header>
+
+      <div id="viewport" class="viewport">
+        <canvas id="threeCanvas"></canvas>
+        <div class="viewport-label">BUILD PLATE · 250 × 210 mm</div>
+        <div class="layer-control">
+          <span>TOP</span>
+          <input id="layerSlider" type="range" min="1" max="48" value="48" orient="vertical">
+          <span id="layerValue">48</span>
+        </div>
+        <div class="path-control">
+          <span>PATH</span>
+          <input id="pathSlider" type="range" min="0" max="100" value="100">
+        </div>
+        <div id="colorPopover" class="color-popover" hidden>
+          <div class="popover-head"><strong>FILAMENT COLORS</strong><button id="closePalette">×</button></div>
+          <p>Click colors to preview. Palette stays open.</p>
+          <div id="paletteGrid" class="palette-grid"></div>
+          <button class="library-link">Filament Library →</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
