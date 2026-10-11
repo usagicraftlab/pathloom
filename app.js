@@ -27,9 +27,9 @@ async function initializePreview(){
 renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setClearColor(0x000000,0);
 scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x0b0d10,280,520);
-camera = new THREE.PerspectiveCamera(36,1,.1,1200); camera.position.set(220,-245,220);
+camera = new THREE.PerspectiveCamera(36,1,.1,1200); camera.position.set(0,-310,230);
 camera.up.set(0,0,1); // Z is vertical; OrbitControls must use the XY build plane.
-controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.target.set(0,10,16); controls.maxPolarAngle=Math.PI/2.03; controls.minDistance=90; controls.maxDistance=520;
+controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.target.set(0,0,16); controls.maxPolarAngle=Math.PI/2.03; controls.minDistance=90; controls.maxDistance=520;
 scene.add(new THREE.HemisphereLight(0xffffff,0x1a1d21,1.5)); const keyLight=new THREE.DirectionalLight(0xffffff,1.5); keyLight.position.set(80,-120,180); scene.add(keyLight);
 const plate=new THREE.Mesh(new THREE.BoxGeometry(250,210,3),new THREE.MeshStandardMaterial({color:0x171c22,metalness:.18,roughness:.82})); plate.position.z=-1.8; scene.add(plate);
 const grid=new THREE.GridHelper(250,25,0x47515d,0x252c34); grid.rotation.x=Math.PI/2; grid.scale.z=210/250; grid.position.z=.1; scene.add(grid);
