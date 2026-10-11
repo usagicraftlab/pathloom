@@ -10,24 +10,13 @@
   <div class="app-shell">
     <aside class="sidebar">
       <div class="brand-row">
-        <div>
-          <div class="eyebrow">TOOLPATH WORKSPACE</div>
-          <h1>PATHLOOM</h1>
-        </div>
-        <button class="icon-btn" aria-label="Settings">⚙</button>
+        <div><div class="eyebrow">TOOLPATH WORKSPACE</div><h1>PATHLOOM</h1></div>
+        <button id="openLibraryTop" class="icon-btn" aria-label="Filament Library" title="Filament Library">●</button>
       </div>
 
       <section class="panel basic-panel">
         <div class="section-title">BASIC SETTINGS</div>
-        <label class="field-row">
-          <span>Printer</span>
-          <select id="printerSelect">
-            <option>Prusa MK4S</option>
-            <option>Bambu A1</option>
-            <option>Prusa CoreOne</option>
-            <option>Snapmaker U1</option>
-          </select>
-        </label>
+        <label class="field-row"><span>Printer</span><select id="printerSelect"><option>Prusa MK4S</option><option>Bambu A1</option><option>Prusa CoreOne</option><option>Snapmaker U1</option></select></label>
         <label class="field-row"><span>Print width</span><div class="number-wrap"><input id="printWidth" type="number" step="0.01" value="0.60"><span>mm</span></div></label>
         <label class="field-row"><span>Print height</span><div class="number-wrap"><input id="printHeight" type="number" step="0.01" value="0.30"><span>mm</span></div></label>
         <label class="field-row"><span>Filament Ø</span><div class="number-wrap"><input id="filamentDiameter" type="number" step="0.01" value="1.75"><span>mm</span></div></label>
@@ -67,10 +56,7 @@
             <label><span>Y</span><input id="instanceY" type="number" step="1"></label>
             <label><span>Rotation</span><input id="instanceRotation" type="number" step="1"></label>
           </div>
-          <div class="instance-actions">
-            <button id="duplicateInstance">Duplicate</button>
-            <button id="deleteInstance">Delete</button>
-          </div>
+          <div class="instance-actions"><button id="duplicateInstance">Duplicate</button><button id="deleteInstance">Delete</button></div>
         </div>
       </section>
     </aside>
@@ -86,29 +72,41 @@
 
       <div id="viewport" class="viewport">
         <canvas id="threeCanvas"></canvas>
-        <div id="emptyState" class="empty-state" hidden>
-          <strong>Add a .toolpath file</strong>
-          <span>Pathloom reads path order, tool ID and XYZ points.</span>
-        </div>
+        <div id="emptyState" class="empty-state" hidden><strong>Add a .toolpath file</strong><span>Pathloom reads path order, tool ID and XYZ points.</span></div>
         <div class="viewport-label">BUILD PLATE · 250 × 210 mm</div>
-        <div class="layer-control">
-          <span>TOP</span>
-          <input id="layerSlider" type="range" min="1" max="1" value="1" orient="vertical">
-          <span id="layerValue">1</span>
-        </div>
-        <div class="path-control">
-          <span>PATH</span>
-          <input id="pathSlider" type="range" min="0" max="100" value="100">
-        </div>
+        <div class="layer-control"><span>TOP</span><input id="layerSlider" type="range" min="1" max="1" value="1" orient="vertical"><span id="layerValue">1</span></div>
+        <div class="path-control"><span>PATH</span><input id="pathSlider" type="range" min="0" max="100" value="100"></div>
         <div id="colorPopover" class="color-popover" hidden>
           <div class="popover-head"><strong>FILAMENT COLORS</strong><button id="closePalette">×</button></div>
           <p>Click colors to preview. Palette stays open.</p>
           <div id="paletteGrid" class="palette-grid"></div>
-          <button class="library-link">Filament Library →</button>
+          <button id="openLibrary" class="library-link">Filament Library →</button>
         </div>
         <div id="toast" class="toast" hidden></div>
       </div>
     </main>
+  </div>
+
+  <div id="libraryModal" class="modal-backdrop" hidden>
+    <section class="library-modal" role="dialog" aria-modal="true" aria-labelledby="libraryTitle">
+      <div class="library-head">
+        <div><div class="eyebrow">LOCAL LIBRARY</div><h2 id="libraryTitle">Filament Library</h2><p>Saved in this browser on this device.</p></div>
+        <button id="closeLibrary" class="modal-close">×</button>
+      </div>
+      <div id="filamentList" class="filament-list"></div>
+      <form id="filamentForm" class="filament-form">
+        <input id="filamentEditId" type="hidden">
+        <div class="form-title"><strong id="filamentFormTitle">Add filament</strong><button id="cancelFilamentEdit" type="button" hidden>Cancel</button></div>
+        <div class="form-grid">
+          <label><span>Name</span><input id="filamentName" required placeholder="Navy PLA"></label>
+          <label><span>Brand</span><input id="filamentBrand" placeholder="Prusament"></label>
+          <label><span>Material</span><select id="filamentMaterial"><option>PLA</option><option>PETG</option><option>ABS</option><option>ASA</option><option>TPU</option><option>Other</option></select></label>
+          <label><span>Diameter</span><input id="filamentDia" type="number" min="0.1" step="0.01" value="1.75"></label>
+          <label class="color-field"><span>Color</span><div><input id="filamentColor" type="color" value="#223B59"><input id="filamentHex" value="#223B59" maxlength="7"></div></label>
+        </div>
+        <button class="primary save-filament" type="submit">Save filament</button>
+      </form>
+    </section>
   </div>
 
   <script type="module" src="./app.js"></script>
