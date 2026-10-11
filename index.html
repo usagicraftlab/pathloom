@@ -30,6 +30,7 @@
         </label>
         <label class="field-row"><span>Print width</span><div class="number-wrap"><input id="printWidth" type="number" step="0.01" value="0.60"><span>mm</span></div></label>
         <label class="field-row"><span>Print height</span><div class="number-wrap"><input id="printHeight" type="number" step="0.01" value="0.30"><span>mm</span></div></label>
+        <label class="field-row"><span>Filament Ø</span><div class="number-wrap"><input id="filamentDiameter" type="number" step="0.01" value="1.75"><span>mm</span></div></label>
         <label class="field-row"><span>Print speed</span><div class="number-wrap"><input id="printSpeed" type="number" step="1" value="35"><span>mm/s</span></div></label>
         <label class="field-row"><span>Travel speed</span><div class="number-wrap"><input id="travelSpeed" type="number" step="1" value="180"><span>mm/s</span></div></label>
       </section>
@@ -41,78 +42,42 @@
       </div>
 
       <section class="panel tab-panel active" id="tab-objects">
-        <div class="object-card" data-object="A">
-          <button class="object-header">
-            <span><strong>A</strong><small>2 instances</small></span>
-            <span class="mini-swatches"><i style="--c:#223B59"></i><i style="--c:#F2D64B"></i></span>
-            <span class="chevron">⌄</span>
-          </button>
-          <div class="object-body">
-            <div class="tool-row" data-tool="A-T0">
-              <button class="color-chip" style="--tool-color:#223B59" aria-label="Change T0 color"></button>
-              <button class="tool-toggle"><span>T0</span><span class="tool-name">Navy</span><span>⌄</span></button>
-              <div class="tool-detail">
-                <label><span>Print speed</span><input class="tool-speed" type="number" value="35"><em>mm/s</em></label>
-                <label><span>E-rate</span><input class="tool-erate" type="number" step="0.01" value="1.00"><em>×</em></label>
-              </div>
-            </div>
-            <div class="tool-row" data-tool="A-T1">
-              <button class="color-chip" style="--tool-color:#F2D64B" aria-label="Change T1 color"></button>
-              <button class="tool-toggle"><span>T1</span><span class="tool-name">Yellow</span><span>⌄</span></button>
-              <div class="tool-detail">
-                <label><span>Print speed</span><input class="tool-speed" type="number" value="32"><em>mm/s</em></label>
-                <label><span>E-rate</span><input class="tool-erate" type="number" step="0.01" value="0.98"><em>×</em></label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="object-card" data-object="B">
-          <button class="object-header">
-            <span><strong>B</strong><small>1 instance</small></span>
-            <span class="mini-swatches"><i style="--c:#2F89C5"></i></span>
-            <span class="chevron">⌄</span>
-          </button>
-          <div class="object-body">
-            <div class="tool-row" data-tool="B-T0">
-              <button class="color-chip" style="--tool-color:#2F89C5" aria-label="Change T0 color"></button>
-              <button class="tool-toggle"><span>T0</span><span class="tool-name">Blue</span><span>⌄</span></button>
-              <div class="tool-detail">
-                <label><span>Print speed</span><input class="tool-speed" type="number" value="35"><em>mm/s</em></label>
-                <label><span>E-rate</span><input class="tool-erate" type="number" step="0.01" value="1.00"><em>×</em></label>
-              </div>
-            </div>
-          </div>
-        </div>
-        <button class="add-object">＋ Add object</button>
+        <div id="objectList"></div>
+        <button id="addToolpath" class="add-object" title="Import a toolpath file as a new object">＋ Add .toolpath</button>
+        <input id="toolpathInput" type="file" accept=".toolpath,.json,application/json" multiple hidden>
+        <p class="button-help">Import a toolpath file as a new object</p>
       </section>
 
       <section class="panel tab-panel" id="tab-order">
         <div class="section-title">SEQUENTIAL PRINT ORDER</div>
-        <p class="hint">Drag to change the order.</p>
-        <div id="orderList" class="order-list">
-          <div class="order-item" draggable="true" data-id="A-1"><span class="handle">⠿</span><strong>A-1</strong><span>01</span></div>
-          <div class="order-item" draggable="true" data-id="A-2"><span class="handle">⠿</span><strong>A-2</strong><span>02</span></div>
-          <div class="order-item" draggable="true" data-id="B-1"><span class="handle">⠿</span><strong>B-1</strong><span>03</span></div>
-        </div>
+        <p class="hint">Drag instances to change the print order.</p>
+        <div id="orderList" class="order-list"></div>
       </section>
 
       <section class="panel tab-panel" id="tab-arrange">
         <div class="section-title">ARRANGE</div>
-        <div class="segmented"><button class="active">Auto</button><button>Manual</button></div>
+        <div class="segmented"><button class="active" data-arrange-mode="auto">Auto</button><button data-arrange-mode="manual">Manual</button></div>
         <label class="field-row"><span>Spacing</span><div class="number-wrap"><input id="spacing" type="number" value="18"><span>mm</span></div></label>
         <button id="autoArrange" class="primary-soft">Auto arrange instances</button>
-        <div class="instance-grid">
-          <button class="instance-card active" data-instance="A-1">A-1<small>X 60 · Y 70</small></button>
-          <button class="instance-card" data-instance="A-2">A-2<small>X 140 · Y 70</small></button>
-          <button class="instance-card" data-instance="B-1">B-1<small>X 100 · Y 150</small></button>
+        <div id="instanceGrid" class="instance-grid"></div>
+        <div id="instanceEditor" class="instance-editor" hidden>
+          <div class="section-title">SELECTED INSTANCE</div>
+          <div class="instance-editor-grid">
+            <label><span>X</span><input id="instanceX" type="number" step="1"></label>
+            <label><span>Y</span><input id="instanceY" type="number" step="1"></label>
+            <label><span>Rotation</span><input id="instanceRotation" type="number" step="1"></label>
+          </div>
+          <div class="instance-actions">
+            <button id="duplicateInstance">Duplicate</button>
+            <button id="deleteInstance">Delete</button>
+          </div>
         </div>
       </section>
     </aside>
 
     <main class="workspace">
       <header class="topbar">
-        <div class="status"><span class="dot"></span>Grasshopper disconnected</div>
+        <div class="status"><span class="dot"></span><span id="connectionStatus">Grasshopper disconnected</span></div>
         <div class="top-actions">
           <label class="view-select"><span>VIEW</span><select id="viewMode"><option value="tool">Tool color</option><option value="order">Print order</option><option value="speed">Speed</option></select></label>
           <button id="generateBtn" class="primary">Generate G-code</button>
@@ -121,11 +86,15 @@
 
       <div id="viewport" class="viewport">
         <canvas id="threeCanvas"></canvas>
+        <div id="emptyState" class="empty-state" hidden>
+          <strong>Add a .toolpath file</strong>
+          <span>Pathloom reads path order, tool ID and XYZ points.</span>
+        </div>
         <div class="viewport-label">BUILD PLATE · 250 × 210 mm</div>
         <div class="layer-control">
           <span>TOP</span>
-          <input id="layerSlider" type="range" min="1" max="48" value="48" orient="vertical">
-          <span id="layerValue">48</span>
+          <input id="layerSlider" type="range" min="1" max="1" value="1" orient="vertical">
+          <span id="layerValue">1</span>
         </div>
         <div class="path-control">
           <span>PATH</span>
@@ -137,6 +106,7 @@
           <div id="paletteGrid" class="palette-grid"></div>
           <button class="library-link">Filament Library →</button>
         </div>
+        <div id="toast" class="toast" hidden></div>
       </div>
     </main>
   </div>
