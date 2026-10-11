@@ -65,26 +65,39 @@ function addInstance(sourceId,id=`${sourceId}-${nextInstanceNumber(sourceId)}`,t
 function removeSource(sourceId){sourceState.delete(sourceId);for(const[id,inst]of[...instanceState])if(inst.source===sourceId)instanceState.delete(id);selectedInstance=[...instanceState.keys()][0]||null;normalizeOrder();renderAllUI();buildInstances()}
 function normalizeOrder(){[...instanceState.entries()].sort((a,b)=>a[1].order-b[1].order).forEach(([,data],i)=>data.order=i+1)}
 function toolEffectiveSpeed(source,tool){return tool.speedOverride??source.speed??(Number($('#printSpeed').value)||35)}
+function appendExtrusionSegment(positions,start,end,width,height){
+  const a=new THREE.Vector3(...start),b=new THREE.Vector3(...end),direction=b.clone().sub(a);
+  if(direction.lengthSq()<1e-12)return;
+  direction.normalize();
+  const reference=Math.abs(direction.z)>.99?new THREE.Vector3(0,1,0):new THREE.Vector3(0,0,1);
+  const side=new THREE.Vector3().crossVectors(direction,reference).normalize().multiplyScalar(width/2);
+  const vertical=new THREE.Vector3().crossVectors(side,direction).normalize().multiplyScalar(height/2);
+  const corners=[];
+  for(const center of [a,b])for(const[s,v]of [[-1,-1],[1,-1],[1,1],[-1,1]])corners.push(center.clone().addScaledVector(side,s).addScaledVector(vertical,v));
+  for(const triangle of [[0,2,1],[0,3,2],[4,5,6],[4,6,7],[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7]])for(const index of triangle)positions.push(...corners[index].toArray());
+}
 function createInstanceGroup(instanceId,data){
   const source=sourceState.get(data.source),group=new THREE.Group(),batches=new Map();group.userData.instanceId=instanceId;
+  const width=Number($('#printWidth').value)>0?Number($('#printWidth').value):0.6,height=Number($('#printHeight').value)>0?Number($('#printHeight').value):0.3;
   source.paths.forEach((path,pathIndex)=>{
     const key=JSON.stringify([path.tool,path.layer]);
     if(!batches.has(key))batches.set(key,{toolId:path.tool,layer:path.layer,positions:[],ranges:[]});
     const batch=batches.get(key);
-    for(let i=1;i<path.points.length;i++)batch.positions.push(...path.points[i-1],...path.points[i]);
+    for(let i=1;i<path.points.length;i++)appendExtrusionSegment(batch.positions,path.points[i-1],path.points[i],width,height);
     batch.ranges.push({pathIndex,end:batch.positions.length/3});
   });
   for(const batch of batches.values()){
     const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(batch.positions,3));
-    const tool=source.tools.get(batch.toolId),mat=new THREE.LineBasicMaterial({color:tool?.color||'#fff',transparent:true,opacity:.95});
-    const line=new THREE.LineSegments(geo,mat);line.userData={sourceId:source.id,toolId:batch.toolId,layer:batch.layer,ranges:batch.ranges};group.add(line);
+    geo.computeVertexNormals();
+    const tool=source.tools.get(batch.toolId),mat=new THREE.MeshStandardMaterial({color:tool?.color||'#fff',roughness:.65,metalness:0});
+    const line=new THREE.Mesh(geo,mat);line.userData={sourceId:source.id,toolId:batch.toolId,layer:batch.layer,ranges:batch.ranges};group.add(line);
   }
   group.position.set(data.x,data.y,0);group.rotation.z=THREE.MathUtils.degToRad(data.rotation);return group;
 }
 function buildInstances(){
   updateLayerRange();$('#emptyState').hidden=sourceState.size>0;
   if(!toolpathGroup)return;
-  toolpathGroup.traverse(child=>{if(child.isLine){child.geometry.dispose();child.material.dispose()}});
+  toolpathGroup.traverse(child=>{if(child.isMesh){child.geometry.dispose();child.material.dispose()}});
   toolpathGroup.clear();renderedInstances.clear();
   for(const[id,data]of instanceState){if(!sourceState.has(data.source))continue;const group=createInstanceGroup(id,data);toolpathGroup.add(group);renderedInstances.set(id,group)}
   refreshVisibility();
@@ -133,7 +146,7 @@ const profileDefaults=[0.6,0.3,1.75,35,180];
 function readPrinterProfiles(){try{const value=JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}');return value&&typeof value==='object'&&!Array.isArray(value)?value:{}}catch{return{}}}
 function selectSettingsTab(tab){const printer=tab==='printer';$('#printerSettings').hidden=!printer;$('#filamentSettings').hidden=printer;$('#printerSettingsTab').setAttribute('aria-selected',String(printer));$('#filamentSettingsTab').setAttribute('aria-selected',String(!printer))}
 function loadPrinterProfile(){const name=$('#profilePrinter').value,saved=readPrinterProfiles()[name];profileFields.forEach(([field,basic],i)=>{$(`#${field}`).value=Number(saved?.[basic])>0?Number(saved[basic]):profileDefaults[i]})}
-function applyPrinterProfile(name){const saved=readPrinterProfiles()[name];profileFields.forEach(([,basic],i)=>{$(`#${basic}`).value=Number(saved?.[basic])>0?Number(saved[basic]):profileDefaults[i]});refreshVisibility()}
+function applyPrinterProfile(name){const saved=readPrinterProfiles()[name];profileFields.forEach(([,basic],i)=>{$(`#${basic}`).value=Number(saved?.[basic])>0?Number(saved[basic]):profileDefaults[i]});buildInstances()}
 function openSettings(tab='printer'){settingsReturnFocus=document.activeElement;$('#profilePrinter').innerHTML=$('#printerSelect').innerHTML;$('#profilePrinter').value=$('#printerSelect').value;loadPrinterProfile();renderFilamentLibrary();selectSettingsTab(tab);$('#libraryModal').hidden=false;$(tab==='printer'?'#printerSettingsTab':'#filamentSettingsTab').focus()}
 function openLibrary(){openSettings('filament')}
 function closeLibrary(){$('#libraryModal').hidden=true;resetFilamentForm();settingsReturnFocus?.focus()}
@@ -158,6 +171,7 @@ $('#generateBtn').addEventListener('click',()=>{try{downloadText('pathloom-outpu
 $('#openLibrary').addEventListener('click',openLibrary);$('#openLibraryTop').addEventListener('click',openLibrary);$('#closeLibrary').addEventListener('click',closeLibrary);$('#libraryModal').addEventListener('pointerdown',e=>{if(e.target===$('#libraryModal'))closeLibrary()});$('#filamentForm').addEventListener('submit',upsertFilament);$('#cancelFilamentEdit').addEventListener('click',resetFilamentForm);$('#filamentColor').addEventListener('input',e=>$('#filamentHex').value=e.target.value.toUpperCase());$('#filamentHex').addEventListener('input',e=>{const hex=normalizeHex(e.target.value);if(hex)$('#filamentColor').value=hex});
 
 document.querySelectorAll('[data-arrange-mode]').forEach(button=>button.addEventListener('click',()=>{const manual=button.dataset.arrangeMode==='manual';document.querySelectorAll('[data-arrange-mode]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button))});$('#spacing').disabled=manual;$('#autoArrange').disabled=manual;if(!manual)autoArrange(true);else showToast('Select an instance to edit X, Y and rotation')}));
+['printWidth','printHeight'].forEach(id=>$(`#${id}`).addEventListener('change',buildInstances));
 $('#openSettings').addEventListener('click',()=>openSettings());
 $('#loadSample').addEventListener('click',async()=>{const button=$('#loadSample');button.disabled=true;try{const response=await fetch('./samples/ukigara-clock.toolpath');if(!response.ok)throw new Error(`HTTP ${response.status}`);addSource(sanitizeToolpath(await response.json(),'Ukigara Clock.toolpath'));showToast('Ukigara Clock sample loaded')}catch(err){showToast(`Unable to load sample: ${err.message}`,'error')}finally{button.disabled=false}});
 $('#printerSettingsTab').addEventListener('click',()=>selectSettingsTab('printer'));
