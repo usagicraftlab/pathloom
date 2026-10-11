@@ -19,20 +19,22 @@ let THREE,renderer,scene,camera,controls,toolpathGroup;
 const renderedInstances=new Map();
 async function initializePreview(){
   const modules=await Promise.all([
-    import('https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js'),
-    import('https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/controls/OrbitControls.js')
+    import('./vendor/three/three.module.js'),
+    import('./vendor/three/OrbitControls.js')
   ]);
   THREE=modules[0];
   const {OrbitControls}=modules[1];
 renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setClearColor(0x000000,0);
-scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x0b0d10,280,520);
-camera = new THREE.PerspectiveCamera(36,1,.1,1200); camera.position.set(0,-310,230);
+scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x0b0d10,600,1000);
+camera = new THREE.PerspectiveCamera(36,1,.1,1200); camera.position.set(180,-320,340);
 camera.up.set(0,0,1); // Z is vertical; OrbitControls must use the XY build plane.
 controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.target.set(0,0,16); controls.maxPolarAngle=Math.PI/2.03; controls.minDistance=90; controls.maxDistance=520;
 scene.add(new THREE.HemisphereLight(0xffffff,0x1a1d21,1.5)); const keyLight=new THREE.DirectionalLight(0xffffff,1.5); keyLight.position.set(80,-120,180); scene.add(keyLight);
-const plate=new THREE.Mesh(new THREE.BoxGeometry(250,210,3),new THREE.MeshStandardMaterial({color:0x171c22,metalness:.18,roughness:.82})); plate.position.z=-1.8; scene.add(plate);
-const grid=new THREE.GridHelper(250,25,0x47515d,0x252c34); grid.rotation.x=Math.PI/2; grid.scale.z=210/250; grid.position.z=.1; scene.add(grid);
+const plate=new THREE.Mesh(new THREE.BoxGeometry(250,210,3),new THREE.MeshStandardMaterial({color:0x303943,metalness:.18,roughness:.82})); plate.position.z=-1.8; scene.add(plate);
+const grid=new THREE.GridHelper(250,25,0xa0aab5,0x596574); grid.rotation.x=Math.PI/2; grid.scale.z=210/250; grid.position.z=.1; scene.add(grid);
+const axisOrigin=new THREE.Vector3(-125,-105,0.5);
+for(const[direction,color]of [[new THREE.Vector3(1,0,0),0xff4545],[new THREE.Vector3(0,1,0),0x4bd665],[new THREE.Vector3(0,0,1),0x5588ff]])scene.add(new THREE.ArrowHelper(direction,axisOrigin,28,color,5,2));
 toolpathGroup=new THREE.Group(); scene.add(toolpathGroup);
 
   buildInstances();resize();animate();
@@ -63,10 +65,51 @@ function addInstance(sourceId,id=`${sourceId}-${nextInstanceNumber(sourceId)}`,t
 function removeSource(sourceId){sourceState.delete(sourceId);for(const[id,inst]of[...instanceState])if(inst.source===sourceId)instanceState.delete(id);selectedInstance=[...instanceState.keys()][0]||null;normalizeOrder();renderAllUI();buildInstances()}
 function normalizeOrder(){[...instanceState.entries()].sort((a,b)=>a[1].order-b[1].order).forEach(([,data],i)=>data.order=i+1)}
 function toolEffectiveSpeed(source,tool){return tool.speedOverride??source.speed??(Number($('#printSpeed').value)||35)}
-function createInstanceGroup(instanceId,data){const source=sourceState.get(data.source);const group=new THREE.Group();group.userData.instanceId=instanceId;source.paths.forEach((path,pathIndex)=>{const points=path.points.map(([x,y,z])=>new THREE.Vector3(x,y,z));const geo=new THREE.BufferGeometry().setFromPoints(points);const tool=source.tools.get(path.tool);const mat=new THREE.LineBasicMaterial({color:tool?.color||'#fff',transparent:true,opacity:.95});const line=new THREE.Line(geo,mat);line.userData={sourceId:source.id,toolId:path.tool,layer:path.layer,pathIndex,order:path.order};group.add(line)});group.position.set(data.x,data.y,0);group.rotation.z=THREE.MathUtils.degToRad(data.rotation);return group}
-function buildInstances(){if(!toolpathGroup)return;toolpathGroup.clear();renderedInstances.clear();for(const[id,data]of instanceState){if(!sourceState.has(data.source))continue;const group=createInstanceGroup(id,data);toolpathGroup.add(group);renderedInstances.set(id,group)}updateLayerRange();refreshVisibility();$('#emptyState').hidden=sourceState.size>0}
+function createInstanceGroup(instanceId,data){
+  const source=sourceState.get(data.source),group=new THREE.Group(),batches=new Map();group.userData.instanceId=instanceId;
+  source.paths.forEach((path,pathIndex)=>{
+    const key=JSON.stringify([path.tool,path.layer]);
+    if(!batches.has(key))batches.set(key,{toolId:path.tool,layer:path.layer,positions:[],ranges:[]});
+    const batch=batches.get(key);
+    for(let i=1;i<path.points.length;i++)batch.positions.push(...path.points[i-1],...path.points[i]);
+    batch.ranges.push({pathIndex,end:batch.positions.length/3});
+  });
+  for(const batch of batches.values()){
+    const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(batch.positions,3));
+    const tool=source.tools.get(batch.toolId),mat=new THREE.LineBasicMaterial({color:tool?.color||'#fff',transparent:true,opacity:.95});
+    const line=new THREE.LineSegments(geo,mat);line.userData={sourceId:source.id,toolId:batch.toolId,layer:batch.layer,ranges:batch.ranges};group.add(line);
+  }
+  group.position.set(data.x,data.y,0);group.rotation.z=THREE.MathUtils.degToRad(data.rotation);return group;
+}
+function buildInstances(){
+  updateLayerRange();$('#emptyState').hidden=sourceState.size>0;
+  if(!toolpathGroup)return;
+  toolpathGroup.traverse(child=>{if(child.isLine){child.geometry.dispose();child.material.dispose()}});
+  toolpathGroup.clear();renderedInstances.clear();
+  for(const[id,data]of instanceState){if(!sourceState.has(data.source))continue;const group=createInstanceGroup(id,data);toolpathGroup.add(group);renderedInstances.set(id,group)}
+  refreshVisibility();
+}
 function updateLayerRange(){const max=Math.max(1,...[...sourceState.values()].map(s=>s.maxLayer));const slider=$('#layerSlider');slider.max=max;if(Number(slider.value)>max||Number(slider.value)===1)slider.value=max;$('#layerValue').textContent=slider.value}
-function refreshVisibility(){const maxLayer=Number($('#layerSlider').value),progress=Number($('#pathSlider').value)/100,mode=$('#viewMode').value;const groups=[...renderedInstances.entries()].sort((a,b)=>instanceState.get(a[0]).order-instanceState.get(b[0]).order);const visible=[];groups.forEach(([id,group])=>group.children.forEach(line=>{line.visible=line.userData.layer<=maxLayer;if(line.visible)visible.push({id,line})}));const visibleCount=Math.ceil(visible.length*progress);visible.forEach((entry,i)=>entry.line.visible=i<visibleCount);const orderColors=['#68A0FF','#B98CFF','#FF9E67','#62D8B5','#F2D64B','#E47A91'];groups.forEach(([id,group],groupIndex)=>group.traverse(child=>{if(!child.isLine)return;const source=sourceState.get(child.userData.sourceId),tool=source.tools.get(child.userData.toolId);if(mode==='tool')child.material.color.set(tool?.color||'#fff');if(mode==='order')child.material.color.set(orderColors[groupIndex%orderColors.length]);if(mode==='speed'){const speed=toolEffectiveSpeed(source,tool),t=Math.max(0,Math.min(1,(speed-15)/55));child.material.color.setHSL((1-t)*.6,.75,.56)}}))}
+function refreshVisibility(){
+  const maxLayer=Number($('#layerSlider').value),progress=Number($('#pathSlider').value)/100,mode=$('#viewMode').value;
+  const groups=[...renderedInstances.entries()].sort((a,b)=>instanceState.get(a[0]).order-instanceState.get(b[0]).order);
+  const total=groups.reduce((n,[id])=>n+sourceState.get(instanceState.get(id).source).paths.filter(p=>p.layer<=maxLayer).length,0);
+  let remaining=Math.ceil(total*progress);
+  const orderColors=['#68A0FF','#B98CFF','#FF9E67','#62D8B5','#F2D64B','#E47A91'];
+  groups.forEach(([id,group],groupIndex)=>{
+    const source=sourceState.get(instanceState.get(id).source),eligible=source.paths.map((path,index)=>({path,index})).filter(x=>x.path.layer<=maxLayer);
+    const count=Math.min(remaining,eligible.length),cutoff=count?eligible[count-1].index:-1;remaining-=count;
+    group.children.forEach(line=>{
+      const ranges=line.userData.ranges;let end=0;
+      if(line.userData.layer<=maxLayer)for(const range of ranges){if(range.pathIndex>cutoff)break;end=range.end}
+      line.visible=end>0;line.geometry.setDrawRange(0,end);
+      const tool=source.tools.get(line.userData.toolId);
+      if(mode==='tool')line.material.color.set(tool?.color||'#fff');
+      if(mode==='order')line.material.color.set(orderColors[groupIndex%orderColors.length]);
+      if(mode==='speed'){const speed=toolEffectiveSpeed(source,tool),t=Math.max(0,Math.min(1,(speed-15)/55));line.material.color.setHSL((1-t)*.6,.75,.56)}
+    });
+  });
+}
 
 function renderObjectUI(){const host=$('#objectList');host.innerHTML='';for(const source of sourceState.values()){const count=[...instanceState.values()].filter(i=>i.source===source.id).length;const card=document.createElement('div');card.className='object-card';card.dataset.source=source.id;const swatches=[...source.tools.values()].map(t=>`<i style="--c:${t.color}"></i>`).join('');card.innerHTML=`<button class="object-header"><span><strong>${escapeHtml(source.label)}</strong><small>${count} instance${count===1?'':'s'}</small></span><span class="mini-swatches">${swatches}</span><span class="chevron">⌄</span></button><div class="object-body"><div class="object-defaults"><div class="object-default-title"><span>Object settings</span><button class="remove-source" title="Remove object">×</button></div><label><span>Print speed</span><input class="object-speed" type="number" min="1" value="${source.speed}"><em>mm/s</em></label><label><span>E-rate</span><input class="object-erate" type="number" step="0.01" min="0" value="${source.erate.toFixed(2)}"><em>×</em></label></div><div class="tools-label">TOOLS</div><div class="tools-host"></div><button class="duplicate-source-instance">＋ Duplicate instance</button></div>`;host.appendChild(card);const toolsHost=card.querySelector('.tools-host');for(const[toolId,tool]of source.tools){const row=document.createElement('div');row.className='tool-row';row.dataset.source=source.id;row.dataset.tool=toolId;row.innerHTML=`<button class="color-chip" style="--tool-color:${tool.color}" aria-label="Change tool color"></button><button class="tool-toggle"><span>T${escapeHtml(toolId)}</span><span class="tool-name">${escapeHtml(tool.name)}</span><span>⌄</span></button><div class="tool-detail"><label><span>Print speed</span><input class="tool-speed" type="number" min="1" value="${tool.speedOverride??''}" placeholder="${source.speed}"><em>mm/s</em></label><label><span>E-rate</span><input class="tool-erate" type="number" step="0.01" min="0" value="${tool.erate.toFixed(2)}"><em>×</em></label><div class="inherit-note">Leave speed blank to use object speed.</div></div>`;toolsHost.appendChild(row)}}bindObjectUI()}
 function bindObjectUI(){document.querySelectorAll('.object-header').forEach(btn=>btn.addEventListener('click',()=>btn.closest('.object-card').classList.toggle('collapsed')));document.querySelectorAll('.tool-toggle').forEach(btn=>btn.addEventListener('click',()=>btn.closest('.tool-row').classList.toggle('expanded')));document.querySelectorAll('.object-card').forEach(card=>{const source=sourceState.get(card.dataset.source);card.querySelector('.object-speed').addEventListener('input',e=>{source.speed=Number(e.target.value)||1;refreshVisibility()});card.querySelector('.object-erate').addEventListener('input',e=>source.erate=Number(e.target.value)||0);card.querySelector('.remove-source').addEventListener('click',e=>{e.stopPropagation();removeSource(source.id)});card.querySelector('.duplicate-source-instance').addEventListener('click',()=>{const n=nextInstanceNumber(source.id);addInstance(source.id,`${source.id}-${n}`,{x:n*10,y:n*10,rotation:0});autoArrange(false);renderAllUI();buildInstances()})});document.querySelectorAll('.tool-row').forEach(row=>{const source=sourceState.get(row.dataset.source),tool=source.tools.get(row.dataset.tool);row.querySelector('.tool-speed').addEventListener('input',e=>{tool.speedOverride=e.target.value===''?null:Number(e.target.value);refreshVisibility()});row.querySelector('.tool-erate').addEventListener('input',e=>tool.erate=Number(e.target.value)||0);row.querySelector('.color-chip').addEventListener('click',e=>{e.stopPropagation();activeTool={sourceId:source.id,toolId:row.dataset.tool};openPalette(e.currentTarget)})})}
@@ -101,7 +144,7 @@ function deleteFilament(id){filamentLibrary=filamentLibrary.filter(f=>f.id!==id)
 function upsertFilament(e){e.preventDefault();const color=normalizeHex($('#filamentHex').value)||normalizeHex($('#filamentColor').value);if(!color){showToast('Enter a valid hex color','error');return}const id=$('#filamentEditId').value||uid();const record={id,name:$('#filamentName').value.trim(),brand:$('#filamentBrand').value.trim(),material:$('#filamentMaterial').value,diameter:Number($('#filamentDia').value)||1.75,color};if(!record.name){showToast('Filament name is required','error');return}const idx=filamentLibrary.findIndex(f=>f.id===id);if(idx>=0)filamentLibrary[idx]=record;else filamentLibrary.unshift(record);saveFilamentLibrary();renderFilamentLibrary();renderPalette();resetFilamentForm();showToast(idx>=0?'Filament updated':'Filament saved')}
 
 async function importFiles(files){for(const file of files){try{const parsed=sanitizeToolpath(JSON.parse(await file.text()),file.name);addSource(parsed);showToast(`${file.name} added`)}catch(err){console.error(err);showToast(`${file.name}: ${err.message}`,'error')}}}
-function transformedPoints(path,instance){const a=THREE.MathUtils.degToRad(instance.rotation||0),cos=Math.cos(a),sin=Math.sin(a);return path.points.map(([x,y,z])=>[x*cos-y*sin+instance.x,x*sin+y*cos+instance.y,z])}
+function transformedPoints(path,instance){const a=(instance.rotation||0)*Math.PI/180,cos=Math.cos(a),sin=Math.sin(a);return path.points.map(([x,y,z])=>[x*cos-y*sin+instance.x,x*sin+y*cos+instance.y,z])}
 function generateGcode(){if(!instanceState.size)throw new Error('Add a .toolpath file first');const width=Number($('#printWidth').value),height=Number($('#printHeight').value),filamentD=Number($('#filamentDiameter').value),travel=Number($('#travelSpeed').value);if(![width,height,filamentD,travel].every(v=>Number.isFinite(v)&&v>0))throw new Error('Check Basic Settings');const filamentArea=Math.PI*Math.pow(filamentD/2,2),ePerMmBase=width*height/filamentArea,lines=['; Generated by Pathloom',`; width=${width} height=${height} filament=${filamentD}`,'G90 ; absolute XYZ','M83 ; relative extrusion'];let currentTool=null;[...instanceState.entries()].sort((a,b)=>a[1].order-b[1].order).forEach(([instanceId,inst])=>{const source=sourceState.get(inst.source);lines.push(`\n; INSTANCE ${instanceDisplayName(instanceId,inst)}`);source.paths.forEach(path=>{const tool=source.tools.get(path.tool),numericTool=Number(path.tool);if(currentTool!==path.tool){if(Number.isInteger(numericTool)&&numericTool>=0)lines.push(`T${numericTool}`);else lines.push(`; TOOL ${path.tool}`);currentTool=path.tool}const pts=transformedPoints(path,inst),[sx,sy,sz]=pts[0];lines.push(`G0 X${sx.toFixed(3)} Y${sy.toFixed(3)} Z${sz.toFixed(3)} F${Math.round(travel*60)}`);const speed=toolEffectiveSpeed(source,tool),multiplier=(source.erate||1)*(tool?.erate||1);for(let i=1;i<pts.length;i++){const[x,y,z]=pts[i],[px,py,pz]=pts[i-1],len=Math.hypot(x-px,y-py,z-pz),e=len*ePerMmBase*multiplier;lines.push(`G1 X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)} E${e.toFixed(5)} F${Math.round(speed*60)}`)}})});lines.push('\n; End of Pathloom output');return lines.join('\n')}
 function downloadText(name,text){const blob=new Blob([text],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500)}
 function resize(){if(!renderer)return;const w=viewport.clientWidth,h=viewport.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
@@ -109,11 +152,12 @@ new ResizeObserver(resize).observe(viewport);function animate(){controls.update(
 
 [...document.querySelectorAll('.tab')].forEach(tab=>tab.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t===tab));document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));$(`#tab-${tab.dataset.tab}`).classList.add('active')}));
 $('#addToolpath').addEventListener('click',()=>$('#toolpathInput').click());$('#toolpathInput').addEventListener('change',e=>{importFiles([...e.target.files]);e.target.value=''});$('#layerSlider').addEventListener('input',e=>{$('#layerValue').textContent=e.target.value;refreshVisibility()});$('#pathSlider').addEventListener('input',refreshVisibility);$('#viewMode').addEventListener('change',refreshVisibility);$('#printSpeed').addEventListener('input',refreshVisibility);$('#autoArrange').addEventListener('click',()=>autoArrange(true));$('#closePalette').addEventListener('click',()=>$('#colorPopover').hidden=true);viewport.addEventListener('pointerdown',e=>{const p=$('#colorPopover');if(!p.hidden&&!p.contains(e.target))p.hidden=true});$('#colorPopover').addEventListener('pointerdown',e=>e.stopPropagation());
-['instanceX','instanceY','instanceRotation'].forEach(id=>$(`#${id}`).addEventListener('input',()=>{const data=instanceState.get(selectedInstance);if(!data)return;data.x=Number($('#instanceX').value)||0;data.y=Number($('#instanceY').value)||0;data.rotation=Number($('#instanceRotation').value)||0;renderArrangeUI();buildInstances()}));
+['instanceX','instanceY','instanceRotation'].forEach(id=>$(`#${id}`).addEventListener('input',()=>{const data=instanceState.get(selectedInstance);if(!data)return;data.x=Number($('#instanceX').value)||0;data.y=Number($('#instanceY').value)||0;data.rotation=Number($('#instanceRotation').value)||0;syncInstanceEditor();buildInstances()}));
 $('#duplicateInstance').addEventListener('click',()=>{const data=instanceState.get(selectedInstance);if(!data)return;const id=`${data.source}-${nextInstanceNumber(data.source)}`;addInstance(data.source,id,{x:data.x+12,y:data.y+12,rotation:data.rotation});normalizeOrder();renderAllUI();buildInstances()});$('#deleteInstance').addEventListener('click',()=>{if(!selectedInstance)return;instanceState.delete(selectedInstance);selectedInstance=[...instanceState.keys()][0]||null;normalizeOrder();renderAllUI();buildInstances()});
 $('#generateBtn').addEventListener('click',()=>{try{downloadText('pathloom-output.gcode',generateGcode());showToast('G-code generated')}catch(err){showToast(err.message,'error')}});
 $('#openLibrary').addEventListener('click',openLibrary);$('#openLibraryTop').addEventListener('click',openLibrary);$('#closeLibrary').addEventListener('click',closeLibrary);$('#libraryModal').addEventListener('pointerdown',e=>{if(e.target===$('#libraryModal'))closeLibrary()});$('#filamentForm').addEventListener('submit',upsertFilament);$('#cancelFilamentEdit').addEventListener('click',resetFilamentForm);$('#filamentColor').addEventListener('input',e=>$('#filamentHex').value=e.target.value.toUpperCase());$('#filamentHex').addEventListener('input',e=>{const hex=normalizeHex(e.target.value);if(hex)$('#filamentColor').value=hex});
 
+document.querySelectorAll('[data-arrange-mode]').forEach(button=>button.addEventListener('click',()=>{const manual=button.dataset.arrangeMode==='manual';document.querySelectorAll('[data-arrange-mode]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button))});$('#spacing').disabled=manual;$('#autoArrange').disabled=manual;if(!manual)autoArrange(true);else showToast('Select an instance to edit X, Y and rotation')}));
 $('#openSettings').addEventListener('click',()=>openSettings());
 $('#loadSample').addEventListener('click',async()=>{const button=$('#loadSample');button.disabled=true;try{const response=await fetch('./samples/ukigara-clock.toolpath');if(!response.ok)throw new Error(`HTTP ${response.status}`);addSource(sanitizeToolpath(await response.json(),'Ukigara Clock.toolpath'));showToast('Ukigara Clock sample loaded')}catch(err){showToast(`Unable to load sample: ${err.message}`,'error')}finally{button.disabled=false}});
 $('#printerSettingsTab').addEventListener('click',()=>selectSettingsTab('printer'));

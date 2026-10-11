@@ -77,3 +77,8 @@ from the supplied `6hontai_clock.gcode`, centered in XY and retaining Z and tool
 Start/end commands, nozzle wiping and purge moves are excluded. Original extrusion
 amounts, speeds and temperatures are not retained. Generating G-code from this
 sample uses the current Pathloom settings; it does not reproduce the original print file.
+
+Three.js 0.170.0 and OrbitControls are bundled under `vendor/three/` from the
+integrity-verified npm package, with its MIT license. The app requires no CDN
+requests at runtime. The initial camera looks from the front-left above the XY
+plate: X runs down-right, Y up-right into depth, and Z upward.
