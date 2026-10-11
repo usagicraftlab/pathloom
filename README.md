@@ -68,3 +68,12 @@ python3 -m http.server 8000
 ```
 
 Then open `http://localhost:8000`.
+
+## Ukigara Clock sample
+
+Use **Load sample · Ukigara Clock** in the Objects panel. The bundled
+`samples/ukigara-clock.toolpath` contains model extrusion geometry converted
+from the supplied `6hontai_clock.gcode`, centered in XY and retaining Z and tool IDs.
+Start/end commands, nozzle wiping and purge moves are excluded. Original extrusion
+amounts, speeds and temperatures are not retained. Generating G-code from this
+sample uses the current Pathloom settings; it does not reproduce the original print file.
