@@ -72,6 +72,7 @@
       <header class="topbar">
         <div class="status"><span class="dot"></span><span id="connectionStatus">Grasshopper disconnected</span></div>
         <div class="top-actions">
+          <button id="openSettings" class="settings-button">Settings</button>
           <label class="view-select"><span>VIEW</span><select id="viewMode"><option value="tool">Tool color</option><option value="order">Print order</option><option value="speed">Speed</option></select></label>
           <button id="generateBtn" class="primary">Generate G-code</button>
         </div>
@@ -97,9 +98,28 @@
   <div id="libraryModal" class="modal-backdrop" hidden>
     <section class="library-modal" role="dialog" aria-modal="true" aria-labelledby="libraryTitle">
       <div class="library-head">
-        <div><div class="eyebrow">LOCAL LIBRARY</div><h2 id="libraryTitle">Filament Library</h2><p>Saved in this browser on this device.</p></div>
-        <button id="closeLibrary" class="modal-close">×</button>
+        <div><div class="eyebrow">LOCAL SETTINGS</div><h2 id="libraryTitle">Settings</h2><p>Saved in this browser on this device.</p></div>
+        <button id="closeLibrary" class="modal-close" aria-label="Close settings">×</button>
       </div>
+      <div class="settings-tabs" role="tablist" aria-label="Settings">
+        <button id="printerSettingsTab" role="tab" aria-controls="printerSettings" aria-selected="true">Printer Profiles</button>
+        <button id="filamentSettingsTab" role="tab" aria-controls="filamentSettings" aria-selected="false">Filaments</button>
+      </div>
+      <section id="printerSettings" role="tabpanel" aria-labelledby="printerSettingsTab">
+        <form id="printerProfileForm">
+          <div class="form-grid">
+            <label class="profile-select"><span>Printer</span><select id="profilePrinter"></select></label>
+            <label><span>Print width (mm)</span><input id="profileWidth" type="number" min="0.01" step="0.01" required></label>
+            <label><span>Print height (mm)</span><input id="profileHeight" type="number" min="0.01" step="0.01" required></label>
+            <label><span>Filament diameter (mm)</span><input id="profileDiameter" type="number" min="0.01" step="0.01" required></label>
+            <label><span>Print speed (mm/s)</span><input id="profileSpeed" type="number" min="1" step="1" required></label>
+            <label><span>Travel speed (mm/s)</span><input id="profileTravel" type="number" min="1" step="1" required></label>
+          </div>
+          <p class="hint">Save to apply these defaults to Basic Settings. Existing objects keep their own print speeds.</p>
+          <button class="primary save-filament" type="submit">Save printer profile</button>
+        </form>
+      </section>
+      <section id="filamentSettings" role="tabpanel" aria-labelledby="filamentSettingsTab" hidden>
       <div id="filamentList" class="filament-list"></div>
       <form id="filamentForm" class="filament-form">
         <input id="filamentEditId" type="hidden">
@@ -113,6 +133,7 @@
         </div>
         <button class="primary save-filament" type="submit">Save filament</button>
       </form>
+      </section>
     </section>
   </div>
 

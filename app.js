@@ -21,10 +21,11 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true })
 renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setClearColor(0x000000,0);
 const scene = new THREE.Scene(); scene.fog = new THREE.Fog(0x0b0d10,280,520);
 const camera = new THREE.PerspectiveCamera(36,1,.1,1200); camera.position.set(220,-245,220);
+camera.up.set(0,0,1); // Z is vertical; OrbitControls must use the XY build plane.
 const controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping=true; controls.target.set(0,10,16); controls.maxPolarAngle=Math.PI/2.03; controls.minDistance=90; controls.maxDistance=520;
 scene.add(new THREE.HemisphereLight(0xffffff,0x1a1d21,1.5)); const keyLight=new THREE.DirectionalLight(0xffffff,1.5); keyLight.position.set(80,-120,180); scene.add(keyLight);
 const plate=new THREE.Mesh(new THREE.BoxGeometry(250,210,3),new THREE.MeshStandardMaterial({color:0x171c22,metalness:.18,roughness:.82})); plate.position.z=-1.8; scene.add(plate);
-const grid=new THREE.GridHelper(250,25,0x47515d,0x252c34); grid.rotation.x=Math.PI/2; grid.scale.y=210/250; grid.position.z=.1; scene.add(grid);
+const grid=new THREE.GridHelper(250,25,0x47515d,0x252c34); grid.rotation.x=Math.PI/2; grid.scale.z=210/250; grid.position.z=.1; scene.add(grid);
 const toolpathGroup=new THREE.Group(); scene.add(toolpathGroup); const renderedInstances=new Map();
 
 function showToast(message,kind=''){const t=$('#toast');t.textContent=message;t.className=`toast ${kind}`;t.hidden=false;clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>t.hidden=true,2600)}
@@ -72,8 +73,17 @@ function markPaletteSelection(){if(!activeTool)return;const source=sourceState.g
 function applyPaletteEntry(entry){if(!activeTool)return;const source=sourceState.get(activeTool.sourceId),tool=source?.tools.get(activeTool.toolId);if(!tool)return;tool.color=entry.hex;tool.name=entry.name;tool.filamentId=entry.filamentId||null;renderObjectUI();refreshVisibility();markPaletteSelection()}
 function openPalette(chip){const popover=$('#colorPopover'),chipRect=chip.getBoundingClientRect(),viewRect=viewport.getBoundingClientRect();popover.hidden=false;popover.style.left='18px';popover.style.top=`${Math.max(14,Math.min(viewRect.height-300,chipRect.top-viewRect.top))}px`;renderPalette()}
 
-function openLibrary(){renderFilamentLibrary();$('#libraryModal').hidden=false}
-function closeLibrary(){$('#libraryModal').hidden=true;resetFilamentForm()}
+let settingsReturnFocus=null;
+const PROFILE_KEY='pathloom.printerProfiles.v1';
+const profileFields=[['profileWidth','printWidth'],['profileHeight','printHeight'],['profileDiameter','filamentDiameter'],['profileSpeed','printSpeed'],['profileTravel','travelSpeed']];
+const profileDefaults=[0.6,0.3,1.75,35,180];
+function readPrinterProfiles(){try{const value=JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}');return value&&typeof value==='object'&&!Array.isArray(value)?value:{}}catch{return{}}}
+function selectSettingsTab(tab){const printer=tab==='printer';$('#printerSettings').hidden=!printer;$('#filamentSettings').hidden=printer;$('#printerSettingsTab').setAttribute('aria-selected',String(printer));$('#filamentSettingsTab').setAttribute('aria-selected',String(!printer))}
+function loadPrinterProfile(){const name=$('#profilePrinter').value,saved=readPrinterProfiles()[name];profileFields.forEach(([field,basic],i)=>{$(`#${field}`).value=Number(saved?.[basic])>0?Number(saved[basic]):profileDefaults[i]})}
+function applyPrinterProfile(name){const saved=readPrinterProfiles()[name];profileFields.forEach(([,basic],i)=>{$(`#${basic}`).value=Number(saved?.[basic])>0?Number(saved[basic]):profileDefaults[i]});refreshVisibility()}
+function openSettings(tab='printer'){settingsReturnFocus=document.activeElement;$('#profilePrinter').innerHTML=$('#printerSelect').innerHTML;$('#profilePrinter').value=$('#printerSelect').value;loadPrinterProfile();renderFilamentLibrary();selectSettingsTab(tab);$('#libraryModal').hidden=false;$(tab==='printer'?'#printerSettingsTab':'#filamentSettingsTab').focus()}
+function openLibrary(){openSettings('filament')}
+function closeLibrary(){$('#libraryModal').hidden=true;resetFilamentForm();settingsReturnFocus?.focus()}
 function renderFilamentLibrary(){const host=$('#filamentList');host.innerHTML='';if(!filamentLibrary.length){host.innerHTML='<div class="library-empty">No saved filaments yet.</div>';return}filamentLibrary.forEach(f=>{const row=document.createElement('div');row.className='filament-item';row.innerHTML=`<button class="filament-pick" title="Use this color"><i style="--filament-color:${f.color}"></i><span><strong>${escapeHtml(f.name)}</strong><small>${escapeHtml([f.brand,f.material,`${f.diameter} mm`].filter(Boolean).join(' · '))}</small></span></button><div class="filament-item-actions"><button class="edit-filament">Edit</button><button class="delete-filament">Delete</button></div>`;row.querySelector('.filament-pick').addEventListener('click',()=>{if(activeTool){applyPaletteEntry({name:f.name,hex:f.color,filamentId:f.id});$('#libraryModal').hidden=true;$('#colorPopover').hidden=false}else showToast('Open a tool color first to apply this filament')});row.querySelector('.edit-filament').addEventListener('click',()=>editFilament(f.id));row.querySelector('.delete-filament').addEventListener('click',()=>deleteFilament(f.id));host.appendChild(row)})}
 function editFilament(id){const f=filamentLibrary.find(x=>x.id===id);if(!f)return;$('#filamentEditId').value=f.id;$('#filamentName').value=f.name;$('#filamentBrand').value=f.brand||'';$('#filamentMaterial').value=f.material||'PLA';$('#filamentDia').value=f.diameter||1.75;$('#filamentColor').value=f.color;$('#filamentHex').value=f.color;$('#filamentFormTitle').textContent='Edit filament';$('#cancelFilamentEdit').hidden=false}
 function resetFilamentForm(){$('#filamentForm').reset();$('#filamentEditId').value='';$('#filamentDia').value='1.75';$('#filamentColor').value='#223B59';$('#filamentHex').value='#223B59';$('#filamentFormTitle').textContent='Add filament';$('#cancelFilamentEdit').hidden=true}
@@ -94,5 +104,12 @@ $('#duplicateInstance').addEventListener('click',()=>{const data=instanceState.g
 $('#generateBtn').addEventListener('click',()=>{try{downloadText('pathloom-output.gcode',generateGcode());showToast('G-code generated')}catch(err){showToast(err.message,'error')}});
 $('#openLibrary').addEventListener('click',openLibrary);$('#openLibraryTop').addEventListener('click',openLibrary);$('#closeLibrary').addEventListener('click',closeLibrary);$('#libraryModal').addEventListener('pointerdown',e=>{if(e.target===$('#libraryModal'))closeLibrary()});$('#filamentForm').addEventListener('submit',upsertFilament);$('#cancelFilamentEdit').addEventListener('click',resetFilamentForm);$('#filamentColor').addEventListener('input',e=>$('#filamentHex').value=e.target.value.toUpperCase());$('#filamentHex').addEventListener('input',e=>{const hex=normalizeHex(e.target.value);if(hex)$('#filamentColor').value=hex});
 
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('#libraryModal').hidden)closeLibrary();else $('#colorPopover').hidden=true}});
+$('#openSettings').addEventListener('click',()=>openSettings());
+$('#printerSettingsTab').addEventListener('click',()=>selectSettingsTab('printer'));
+$('#filamentSettingsTab').addEventListener('click',()=>selectSettingsTab('filament'));
+$('#profilePrinter').addEventListener('change',loadPrinterProfile);
+$('#printerSelect').addEventListener('change',()=>applyPrinterProfile($('#printerSelect').value));
+$('#printerProfileForm').addEventListener('submit',e=>{e.preventDefault();const profiles=readPrinterProfiles(),name=$('#profilePrinter').value,profile={};for(const[field,basic]of profileFields){const value=Number($(`#${field}`).value);if(!Number.isFinite(value)||value<=0){showToast('Enter positive profile values','error');return}profile[basic]=value}try{profiles[name]=profile;localStorage.setItem(PROFILE_KEY,JSON.stringify(profiles));$('#printerSelect').value=name;applyPrinterProfile(name);showToast('Printer profile saved')}catch{showToast('Unable to save printer profile','error')}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(!$('#libraryModal').hidden)closeLibrary();else $('#colorPopover').hidden=true}if(e.key==='Tab'&&!$('#libraryModal').hidden){const items=[...$('#libraryModal').querySelectorAll('button,input,select')].filter(el=>!el.disabled&&el.getClientRects().length);const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
+if(readPrinterProfiles()[$('#printerSelect').value])applyPrinterProfile($('#printerSelect').value);
 renderPalette();renderFilamentLibrary();renderAllUI();buildInstances();resize();animate();
