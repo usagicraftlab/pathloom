@@ -21,6 +21,15 @@ function setStatus(text, ok = false) {
   }
 }
 
+function platformLabel(info) {
+  if (info?.platform === 'macos') {
+    if (info.arch === 'aarch64') return 'macOS · Apple Silicon';
+    if (info.arch === 'x86_64') return 'macOS · Intel';
+    return 'macOS';
+  }
+  return info?.platform || 'desktop';
+}
+
 async function initializeDesktopRuntime() {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) {
@@ -30,7 +39,7 @@ async function initializeDesktopRuntime() {
 
   try {
     const info = await invoke('runtime_info');
-    setStatus(`${info.name} · local`, true);
+    setStatus(`${info.name} · ${platformLabel(info)} · local`, true);
   } catch (error) {
     console.error('Pathloom desktop runtime unavailable', error);
     setStatus('Desktop · runtime error', false);
