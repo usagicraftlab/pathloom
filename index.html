@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pathloom</title>
-  <link rel="stylesheet" href="./style.css?v=20261011-6" />
+  <link rel="stylesheet" href="./style.css?v=20261012-1" />
   <script type="importmap">
     {
       "imports": {
@@ -73,11 +73,12 @@
 
     <main class="workspace">
       <header class="topbar">
-        <div class="status"><span class="dot"></span><span id="connectionStatus">Grasshopper disconnected</span></div>
+        <div class="status"><span class="dot"></span><span id="connectionStatus">Grasshopper disconnected</span><span>·</span><span id="prusaStatus">PrusaLink checking…</span></div>
         <div class="top-actions">
           <button id="openSettings" class="settings-button">Settings</button>
           <label class="view-select"><span>VIEW</span><select id="viewMode"><option value="tool">Tool color</option><option value="order">Print order</option><option value="speed">Speed</option></select></label>
           <button id="generateBtn" class="primary">Generate G-code</button>
+          <button id="sendPrintBtn" class="primary" disabled title="Available when Pathloom is running locally and PrusaLink is connected">Send &amp; Print</button>
         </div>
       </header>
 
@@ -138,6 +139,7 @@
     </section>
   </div>
 
-  <script type="module" src="./app.js?v=20261011-6"></script>
+  <script type="module" src="./app.js?v=20261012-1"></script>
+  <script type="module" src="./prusalink-client.js?v=20261012-1"></script>
 </body>
 </html>
