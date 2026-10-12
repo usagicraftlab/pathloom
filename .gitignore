@@ -3,3 +3,6 @@ local-config.json
 .env.*
 !.env.example
 .DS_Store
+node_modules/
+desktop-dist/
+src-tauri/target/
