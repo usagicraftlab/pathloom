@@ -1,0 +1,11 @@
+{
+  "name": "pathloom",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node local-server.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
