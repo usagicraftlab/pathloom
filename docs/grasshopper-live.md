@@ -8,9 +8,42 @@ ws://127.0.0.1:8765
 
 The connection is intended for Rhino / Grasshopper running on the same Mac. No LAN or internet access is required.
 
+## Recommended Grasshopper setup
+
+Use one C# Script component with these inputs:
+
+- `Curves` — Curve, List Access
+- `Tools` — int, List Access
+- `Source` — string, Item Access
+- `Label` — string, Item Access
+- `Step` — double, Item Access
+- `Send` — bool, Item Access
+
+Output:
+
+- `Status` — string
+
+Paste `examples/grasshopper/PathloomSender.cs` into the C# Script body.
+
+The sender converts the Grasshopper curve list directly into Pathloom's live toolpath format:
+
+```text
+Curve list order -> path order
+Tools             -> tool ID
+Curve geometry    -> XYZ points
+```
+
+Polyline curves keep their vertices. Other curves are sampled at approximately `Step` millimeters.
+
+`Tools` may contain either one value, applied to every curve, or one value for each curve.
+
+Keep `Source` unchanged between recomputes, for example `gh-live-1`. Pathloom then updates the existing source geometry instead of creating another object.
+
+With `Send = true`, Grasshopper recomputes will send the current geometry to Pathloom automatically. Use `Send = false` while editing the definition if you do not want updates sent.
+
 ## Message format
 
-Grasshopper sends one JSON message whenever its toolpath changes:
+The sender generates a message equivalent to:
 
 ```json
 {
@@ -32,9 +65,7 @@ Grasshopper sends one JSON message whenever its toolpath changes:
 }
 ```
 
-`source` is the stable identity of the Grasshopper object. Pathloom should keep the same Pathloom object and replace only its geometry when another `toolpath.update` arrives with the same `source`.
-
-This allows Pathloom-side state to survive Grasshopper recomputes:
+`source` is the stable identity of the Grasshopper object. When another `toolpath.update` arrives with the same `source`, Pathloom replaces that source's geometry while preserving Pathloom-side state where possible:
 
 - instance placement
 - duplicate count
@@ -47,7 +78,7 @@ Grasshopper remains responsible for **where the nozzle travels**. Pathloom remai
 
 ## Validation
 
-The desktop runtime currently rejects messages when:
+The desktop runtime rejects messages when:
 
 - `type` is not `toolpath.update`
 - `source` is empty
@@ -57,12 +88,6 @@ The desktop runtime currently rejects messages when:
 
 Invalid messages are reported in Pathloom without stopping the local WebSocket server.
 
-## Current implementation status
-
-The macOS/Tauri runtime now starts the localhost WebSocket listener and forwards valid messages to the Pathloom UI as `grasshopper-toolpath-update` events. The UI shows whether Grasshopper is waiting, connected, or sending data.
-
-The remaining integration step is binding these events directly to Pathloom's internal source state so repeated updates replace the source geometry instead of creating a new object.
-
 ## Security boundary
 
-The listener binds to `127.0.0.1`, not `0.0.0.0`. It is therefore intentionally local-only. Pathloom does not need to expose a Grasshopper endpoint to the local network or internet.
+The listener binds to `127.0.0.1`, not `0.0.0.0`. It is therefore intentionally local-only. Pathloom does not expose the Grasshopper endpoint to the local network or internet.
