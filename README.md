@@ -2,7 +2,7 @@
 
 Preview, color, arrange, and prepare custom 3D printing toolpaths.
 
-Pathloom is now being developed primarily as a **local desktop application**. GitHub remains the source/history repository, but the intended runtime is Pathloom Desktop rather than a hosted web app.
+Pathloom is now being developed primarily as a **local macOS desktop application**. GitHub remains the source/history repository, but the intended runtime is Pathloom Desktop rather than a hosted web app.
 
 ## Current workflow
 
@@ -14,14 +14,15 @@ Pathloom is now being developed primarily as a **local desktop application**. Gi
 - Instance duplication, placement and sequential print order
 - Filament Library and Printer Profiles stored locally
 - Generic G-code generation
-- Tauri desktop shell foundation
+- Tauri v2 desktop shell foundation
+- macOS `.app` / `.dmg` bundle configuration
 
 ## Desktop architecture
 
 ```text
-Grasshopper
-    ↓ local connection (planned)
-Pathloom Desktop
+Grasshopper for Mac
+    ↓ localhost / WebSocket (next stage)
+Pathloom.app
 ├─ Toolpath preview / editing
 ├─ G-code generation
 ├─ Local file access
@@ -33,15 +34,28 @@ Prusa printer
 
 The previous `Pathloom Web + Bridge` experiment remains in Git history, but it is no longer the primary architecture. `bridge-server.mjs`, `bridge-client.js`, `local-server.mjs`, and `prusalink-client.js` are currently retained only as migration references while their useful functionality is moved into the Tauri runtime.
 
-## Run Pathloom Desktop
+## Run Pathloom on macOS
 
 Requirements:
 
+- macOS 12 or newer
 - Node.js 20+
-- Rust toolchain
-- Tauri system prerequisites for your OS
+- Xcode Command Line Tools
+- Rust stable toolchain
 
-Install JavaScript dependencies once:
+Install Apple's command line tools once:
+
+```bash
+xcode-select --install
+```
+
+Install Rust if needed:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+Clone the repository, then install JavaScript dependencies once:
 
 ```bash
 npm install
@@ -56,16 +70,24 @@ npm start
 or:
 
 ```bash
-npm run desktop
+npm run mac:dev
 ```
 
-Build a desktop application bundle:
+Build Pathloom.app and a DMG installer:
 
 ```bash
-npm run desktop:build
+npm run mac:build
 ```
 
-Tauri uses `scripts/desktop-dev-server.mjs` during development and `scripts/prepare-desktop.mjs` to create the packaged frontend assets in `desktop-dist/` during builds. Build outputs and `desktop-dist/` are ignored by Git.
+Build only the DMG:
+
+```bash
+npm run mac:dmg
+```
+
+Tauri uses `scripts/desktop-dev-server.mjs` during development and `scripts/prepare-desktop.mjs` to create packaged frontend assets in `desktop-dist/` during builds. Build outputs and `desktop-dist/` are ignored by Git.
+
+The current macOS bundle target is `.app` + `.dmg`, with `com.usagicraftlab.pathloom` as the bundle identifier. The runtime reports whether it is running on Apple Silicon or Intel Mac.
 
 ## `.toolpath` format
 
@@ -102,8 +124,8 @@ It uses relative extrusion (`M83`) and inserts numeric tool changes (`T0`, `T1`,
 
 ## Next desktop stages
 
-1. Move printer communication from the legacy local server/Bridge into Tauri native commands.
-2. Add Grasshopper live connection over localhost/WebSocket.
+1. Add Grasshopper for Mac live connection over localhost/WebSocket.
+2. Move printer communication from the legacy local server/Bridge into Tauri native commands.
 3. Move sensitive printer credentials into OS-protected local storage instead of browser storage or repository files.
 4. Add printer status and Send to Printer workflow.
 5. Add project save/load and persistent local state.
