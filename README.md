@@ -2,24 +2,70 @@
 
 Preview, color, arrange, and prepare custom 3D printing toolpaths.
 
-## Implemented core workflow
+Pathloom is now being developed primarily as a **local desktop application**. GitHub remains the source/history repository, but the intended runtime is Pathloom Desktop rather than a hosted web app.
 
-- Project-level print settings: printer, print width, print height, filament diameter, print speed, travel speed
+## Current workflow
+
 - `＋ Add .toolpath` import with validation
 - One `.toolpath` file = one source object
-- Object → Tool hierarchy
-- Object-level Print speed and E-rate multiplier
-- Tool-level speed override and E-rate multiplier
-- Fast persistent filament-color palette for rapid visual comparison
-- Dynamic 3D preview from imported XYZ paths
-- Layer and cumulative path scrubbers
+- Dynamic Three.js toolpath preview
 - Tool color / Print order / Speed view modes
-- Instance duplication and deletion
-- Sequential print-order drag-and-drop
-- Auto arrange plus manual X / Y / rotation editing
-- Generic G-code generation using imported path geometry and project/object/tool settings
-- Local PrusaLink bridge foundation
-- GitHub Pages deployment
+- Object → Tool print-setting hierarchy
+- Instance duplication, placement and sequential print order
+- Filament Library and Printer Profiles stored locally
+- Generic G-code generation
+- Tauri desktop shell foundation
+
+## Desktop architecture
+
+```text
+Grasshopper
+    ↓ local connection (planned)
+Pathloom Desktop
+├─ Toolpath preview / editing
+├─ G-code generation
+├─ Local file access
+├─ Printer integration
+└─ Local settings / credentials
+    ↓
+Prusa printer
+```
+
+The previous `Pathloom Web + Bridge` experiment remains in Git history, but it is no longer the primary architecture. `bridge-server.mjs`, `bridge-client.js`, `local-server.mjs`, and `prusalink-client.js` are currently retained only as migration references while their useful functionality is moved into the Tauri runtime.
+
+## Run Pathloom Desktop
+
+Requirements:
+
+- Node.js 20+
+- Rust toolchain
+- Tauri system prerequisites for your OS
+
+Install JavaScript dependencies once:
+
+```bash
+npm install
+```
+
+Start the desktop development app:
+
+```bash
+npm start
+```
+
+or:
+
+```bash
+npm run desktop
+```
+
+Build a desktop application bundle:
+
+```bash
+npm run desktop:build
+```
+
+Tauri uses `scripts/desktop-dev-server.mjs` during development and `scripts/prepare-desktop.mjs` to create the packaged frontend assets in `desktop-dist/` during builds. Build outputs and `desktop-dist/` are ignored by Git.
 
 ## `.toolpath` format
 
@@ -42,7 +88,7 @@ Pathloom currently accepts JSON saved as `.toolpath` or `.json`.
 }
 ```
 
-Each file represents one object. Multiple copies are handled as project instances rather than by duplicating path data inside the file.
+Each file represents one object. Multiple copies are project instances rather than duplicated path data inside the file.
 
 ## G-code note
 
@@ -50,67 +96,21 @@ The current generator outputs generic motion/extrusion G-code using:
 
 `E = path length × print width × print height ÷ filament area × object E-rate × tool E-rate`
 
-It uses relative extrusion (`M83`) and inserts numeric tool changes (`T0`, `T1`, etc.) when tool IDs are numeric. Printer-specific start/end G-code, temperature handling and machine-specific safeguards belong in Printer Profiles and are not yet applied automatically.
+It uses relative extrusion (`M83`) and inserts numeric tool changes (`T0`, `T1`, etc.) when tool IDs are numeric.
 
-## Local printer mode
+**This is not yet printer-ready production G-code.** Printer-specific start/end G-code, temperatures, retraction, safe travel, collision/gantry clearance and other safeguards are still to be implemented in Printer Profiles / the desktop printer layer.
 
-Pathloom is moving toward a local-first printer connection. The included `local-server.mjs` serves Pathloom and proxies requests to PrusaLink on the same LAN. The PrusaLink API key remains in a local file and is never served to browser JavaScript.
+## Next desktop stages
 
-Requirements: Node.js 20 or newer, and a Prusa printer with PrusaLink enabled.
-
-1. Clone the repository.
-2. Copy `local-config.example.json` to `local-config.json`.
-3. Set your printer's local PrusaLink URL/IP and API key in `local-config.json`.
-4. Run:
-
-```bash
-npm start
-```
-
-5. Open:
-
-```text
-http://127.0.0.1:8000
-```
-
-`local-config.json` is ignored by Git so the API key is not committed.
-
-The local bridge currently provides:
-
-- `GET /api/prusalink/config` — local connection configuration without exposing the API key
-- `GET /api/prusalink/status` — printer/job telemetry through PrusaLink
-- `POST /api/prusalink/upload?filename=...&print=1` — upload G-code to USB storage and optionally start printing immediately
-
-The next UI step is wiring Pathloom's generated G-code directly to this upload endpoint as **Send & Print**, so no intermediate file selection is required.
-
-## Next stages
-
-- Wire generated G-code directly to local PrusaLink `Send & Print`
-- Grasshopper live bridge / localhost connector
-- Printer Profiles with Start / End G-code
-- Sequential-print collision and gantry-clearance checks
-- Project save/load and persistent state
-
-## Run locally without printer integration
-
-Because the app uses ES modules, it can also be served with a basic HTTP server when printer integration is not needed.
-
-```bash
-python3 -m http.server 8000
-```
-
-Then open `http://localhost:8000`.
+1. Move printer communication from the legacy local server/Bridge into Tauri native commands.
+2. Add Grasshopper live connection over localhost/WebSocket.
+3. Move sensitive printer credentials into OS-protected local storage instead of browser storage or repository files.
+4. Add printer status and Send to Printer workflow.
+5. Add project save/load and persistent local state.
+6. Add sequential-print collision and gantry-clearance checks.
 
 ## Ukigara Clock sample
 
-Use **Load sample · Ukigara Clock** in the Objects panel. The bundled
-`samples/ukigara-clock.toolpath` contains model extrusion geometry converted
-from the supplied `6hontai_clock.gcode`, centered in XY and retaining Z and tool IDs.
-Start/end commands, nozzle wiping and purge moves are excluded. Original extrusion
-amounts, speeds and temperatures are not retained. Generating G-code from this
-sample uses the current Pathloom settings; it does not reproduce the original print file.
+Use **Load sample · Ukigara Clock** in the Objects panel. The bundled `samples/ukigara-clock.toolpath` contains model extrusion geometry converted from the supplied source G-code, centered in XY and retaining Z and tool IDs. Original extrusion amounts, speeds, temperatures, start/end commands, wiping and purge moves are not retained.
 
-Three.js 0.170.0 and OrbitControls are bundled under `vendor/three/` from the
-integrity-verified npm package, with its MIT license. The app requires no CDN
-requests at runtime. The initial camera looks from the front-left above the XY
-plate: X runs down-right, Y up-right into depth, and Z upward.
+Three.js 0.170.0 and OrbitControls are bundled under `vendor/three/` from the integrity-verified npm package, with its MIT license.
