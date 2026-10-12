@@ -7,6 +7,9 @@
     "desktop": "tauri dev",
     "desktop:build": "tauri build",
     "desktop:prepare": "node scripts/prepare-desktop.mjs",
+    "mac:dev": "tauri dev",
+    "mac:build": "tauri build --bundles app,dmg",
+    "mac:dmg": "tauri build --bundles dmg",
     "legacy:bridge": "node bridge-server.mjs"
   },
   "devDependencies": {
