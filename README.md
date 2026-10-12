@@ -18,6 +18,7 @@ Preview, color, arrange, and prepare custom 3D printing toolpaths.
 - Sequential print-order drag-and-drop
 - Auto arrange plus manual X / Y / rotation editing
 - Generic G-code generation using imported path geometry and project/object/tool settings
+- Local PrusaLink bridge foundation
 - GitHub Pages deployment
 
 ## `.toolpath` format
@@ -51,17 +52,48 @@ The current generator outputs generic motion/extrusion G-code using:
 
 It uses relative extrusion (`M83`) and inserts numeric tool changes (`T0`, `T1`, etc.) when tool IDs are numeric. Printer-specific start/end G-code, temperature handling and machine-specific safeguards belong in Printer Profiles and are not yet applied automatically.
 
+## Local printer mode
+
+Pathloom is moving toward a local-first printer connection. The included `local-server.mjs` serves Pathloom and proxies requests to PrusaLink on the same LAN. The PrusaLink API key remains in a local file and is never served to browser JavaScript.
+
+Requirements: Node.js 20 or newer, and a Prusa printer with PrusaLink enabled.
+
+1. Clone the repository.
+2. Copy `local-config.example.json` to `local-config.json`.
+3. Set your printer's local PrusaLink URL/IP and API key in `local-config.json`.
+4. Run:
+
+```bash
+npm start
+```
+
+5. Open:
+
+```text
+http://127.0.0.1:8000
+```
+
+`local-config.json` is ignored by Git so the API key is not committed.
+
+The local bridge currently provides:
+
+- `GET /api/prusalink/config` — local connection configuration without exposing the API key
+- `GET /api/prusalink/status` — printer/job telemetry through PrusaLink
+- `POST /api/prusalink/upload?filename=...&print=1` — upload G-code to USB storage and optionally start printing immediately
+
+The next UI step is wiring Pathloom's generated G-code directly to this upload endpoint as **Send & Print**, so no intermediate file selection is required.
+
 ## Next stages
 
+- Wire generated G-code directly to local PrusaLink `Send & Print`
 - Grasshopper live bridge / localhost connector
 - Printer Profiles with Start / End G-code
-- Filament Library persistence
 - Sequential-print collision and gantry-clearance checks
 - Project save/load and persistent state
 
-## Run locally
+## Run locally without printer integration
 
-Because the app uses ES modules, serve the folder over HTTP rather than opening `index.html` directly.
+Because the app uses ES modules, it can also be served with a basic HTTP server when printer integration is not needed.
 
 ```bash
 python3 -m http.server 8000
