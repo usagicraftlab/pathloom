@@ -1,4 +1,4 @@
-import { cp, mkdir, rm, copyFile } from 'node:fs/promises';
+import { cp, mkdir, rm, copyFile, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,5 +15,13 @@ for (const file of ['index.html', 'app.js', 'style.css', 'desktop-client.js']) {
 for (const dir of ['samples', 'vendor']) {
   await cp(path.join(root, dir), path.join(out, dir), { recursive: true });
 }
+
+const orbitControlsPath = path.join(out, 'vendor', 'three', 'OrbitControls.js');
+const orbitControls = await readFile(orbitControlsPath, 'utf8');
+await writeFile(
+  orbitControlsPath,
+  orbitControls.replace("from 'three';", "from './three.module.js';"),
+  'utf8'
+);
 
 console.log(`Prepared Pathloom desktop assets in ${out}`);
