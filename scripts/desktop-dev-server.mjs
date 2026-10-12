@@ -28,6 +28,14 @@ function resolveAllowed(urlPath) {
   return null;
 }
 
+function transformDesktopModule(filePath, body) {
+  const relative = path.relative(root, filePath).replaceAll(path.sep, '/');
+  if (relative === 'vendor/three/OrbitControls.js') {
+    return Buffer.from(body.toString('utf8').replace("from 'three';", "from './three.module.js';"));
+  }
+  return body;
+}
+
 http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${host}:${port}`);
   const filePath = resolveAllowed(url.pathname);
@@ -38,7 +46,8 @@ http.createServer(async (req, res) => {
   try {
     const info = await stat(filePath);
     if (!info.isFile()) throw new Error('Not a file');
-    const body = await readFile(filePath);
+    const rawBody = await readFile(filePath);
+    const body = transformDesktopModule(filePath, rawBody);
     res.writeHead(200, {
       'Content-Type': mime[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
       'Content-Length': body.length,
