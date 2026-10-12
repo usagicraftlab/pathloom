@@ -6,6 +6,8 @@ struct RuntimeInfo {
     mode: &'static str,
     name: &'static str,
     version: &'static str,
+    platform: &'static str,
+    arch: &'static str,
 }
 
 #[tauri::command]
@@ -14,6 +16,8 @@ fn runtime_info() -> RuntimeInfo {
         mode: "desktop",
         name: "Pathloom Desktop",
         version: env!("CARGO_PKG_VERSION"),
+        platform: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
     }
 }
 
