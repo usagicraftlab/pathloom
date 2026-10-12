@@ -16,12 +16,14 @@ Pathloom is now being developed primarily as a **local macOS desktop application
 - Generic G-code generation
 - Tauri v2 desktop shell foundation
 - macOS `.app` / `.dmg` bundle configuration
+- Local-only Grasshopper WebSocket listener on `ws://127.0.0.1:8765`
+- Validation and UI events for Grasshopper `toolpath.update` messages
 
 ## Desktop architecture
 
 ```text
 Grasshopper for Mac
-    ↓ localhost / WebSocket (next stage)
+    ↓ ws://127.0.0.1:8765
 Pathloom.app
 ├─ Toolpath preview / editing
 ├─ G-code generation
@@ -33,6 +35,30 @@ Prusa printer
 ```
 
 The previous `Pathloom Web + Bridge` experiment remains in Git history, but it is no longer the primary architecture. `bridge-server.mjs`, `bridge-client.js`, `local-server.mjs`, and `prusalink-client.js` are currently retained only as migration references while their useful functionality is moved into the Tauri runtime.
+
+## Grasshopper live connection
+
+Pathloom Desktop now starts a WebSocket server bound to localhost only:
+
+```text
+ws://127.0.0.1:8765
+```
+
+Grasshopper sends the same core geometry represented by `.toolpath`: path order, tool ID and XYZ points. A live message uses a stable `source` ID so repeated Grasshopper recomputes can update the same Pathloom source while Pathloom-side settings remain independent.
+
+Protocol details and the current integration status are in:
+
+```text
+docs/grasshopper-live.md
+```
+
+A dependency-free Grasshopper C# WebSocket sender example is included at:
+
+```text
+examples/grasshopper/PathloomSender.cs
+```
+
+The Tauri runtime already accepts and validates live messages and forwards them to the UI. The remaining UI binding is to apply each valid `toolpath.update` directly to Pathloom's internal source state while preserving placement, duplicates, colors, speeds, E-rate and print order.
 
 ## Run Pathloom on macOS
 
@@ -124,12 +150,13 @@ It uses relative extrusion (`M83`) and inserts numeric tool changes (`T0`, `T1`,
 
 ## Next desktop stages
 
-1. Add Grasshopper for Mac live connection over localhost/WebSocket.
-2. Move printer communication from the legacy local server/Bridge into Tauri native commands.
-3. Move sensitive printer credentials into OS-protected local storage instead of browser storage or repository files.
-4. Add printer status and Send to Printer workflow.
-5. Add project save/load and persistent local state.
-6. Add sequential-print collision and gantry-clearance checks.
+1. Bind Grasshopper live events directly to Pathloom source geometry while preserving Pathloom-side settings.
+2. Keep the Grasshopper connection persistent from the GH component instead of reconnecting for each test send.
+3. Move printer communication from the legacy local server/Bridge into Tauri native commands.
+4. Move sensitive printer credentials into OS-protected local storage instead of browser storage or repository files.
+5. Add printer status and Send to Printer workflow.
+6. Add project save/load and persistent local state.
+7. Add sequential-print collision and gantry-clearance checks.
 
 ## Ukigara Clock sample
 
