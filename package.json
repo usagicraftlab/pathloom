@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node local-server.mjs"
+    "start": "node bridge-server.mjs",
+    "bridge": "node bridge-server.mjs"
   },
   "engines": {
     "node": ">=20"
