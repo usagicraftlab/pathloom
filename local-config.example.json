@@ -1,0 +1,7 @@
+{
+  "prusalink": {
+    "baseUrl": "http://192.168.1.50",
+    "apiKey": "PASTE_YOUR_PRUSALINK_API_KEY_HERE",
+    "storage": "usb"
+  }
+}
