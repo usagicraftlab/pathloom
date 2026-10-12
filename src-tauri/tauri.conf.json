@@ -28,6 +28,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": ["app", "dmg"],
+    "macOS": {
+      "bundleName": "Pathloom",
+      "minimumSystemVersion": "12.0"
+    }
   }
 }
