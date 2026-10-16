@@ -1,4 +1,5 @@
 // Planar curve primitives and reusable geometry transformations.
+import ClipperLib from './vendor/clipper/clipper-browser.js';
 const number=(min,max,integer=false)=>({min,max,integer});
 export const COMPONENT_GROUPS=['Curve','Transform','Pattern','Toolpath','Utility','Custom'];
 export const BASIC_COMPONENTS={
@@ -18,11 +19,58 @@ export const BASIC_COMPONENTS={
   seam:{label:'Curve seam',group:'Curve',accepts:'geometry',returns:'same',params:{fraction:'number'},defaults:{fraction:.25},constraints:{fraction:number(0,1)}},
   'array-grid':{label:'Rectangular array',group:'Pattern',accepts:'geometry',returns:'same',params:{columns:'number',rows:'number',spacing:'point'},defaults:{columns:2,rows:2,spacing:[60,60,0]},constraints:{columns:number(1,16,true),rows:number(1,16,true)}},
   'array-polar':{label:'Polar array',group:'Pattern',accepts:'geometry',returns:'same',params:{count:'number',radius:'number',angle:'number',pivot:'point'},defaults:{count:4,radius:80,angle:360,pivot:[0,0,0]},constraints:{count:number(1,16,true),radius:number(0,1000),angle:number(-36000,36000)}},
+  'curve-boolean':{label:'Curve Boolean',group:'Curve',description:'Boolean regions from closed, coplanar curve sets. A is the subject; B is the clipping set. Union combines both sets; Difference is A minus B; Intersection keeps their overlap; XOR keeps non-overlapping areas. B is optional for Union.',accepts:null,returns:'contours',curveSelection:'closed',minCurves:{a:1,b:0},params:{a:'curves',b:'curves',mode:'number',samples:'number'},defaults:{a:[],b:[],mode:0,samples:180},choices:{mode:[{value:0,label:'Union'},{value:1,label:'Difference'},{value:2,label:'Intersection'},{value:3,label:'XOR'}]},constraints:{mode:number(0,3,true),samples:number(12,720,true)}},
+  offset:{label:'Offset curve',group:'Curve',description:'Offset closed planar contours. Positive values expand outer boundaries; holes offset in the opposite direction.',accepts:'contours',returns:'contours',params:{distance:'number'},defaults:{distance:1},constraints:{distance:number(-100,100)}},
+  'join-close':{label:'Join / Close curves',group:'Curve',description:'Join open curve segments whose endpoints are within tolerance, then close only when the remaining endpoints are within that tolerance. Does not add long closing chords.',accepts:null,returns:'contours',curveSelection:'any',minCurves:{curves:1},params:{curves:'curves',tolerance:'number',samples:'number'},defaults:{curves:[],tolerance:.1,samples:180},constraints:{tolerance:number(.001,5),samples:number(12,720,true)}},
+  'divide-curve':{label:'Divide curve',group:'Curve',description:'Return evenly spaced points along each selected curve. Closed curves return count points without duplicating the seam; open curves return count + 1 points including endpoints.',accepts:null,returns:'points',curveSelection:'any',minCurves:{curves:1},params:{curves:'curves',count:'number'},defaults:{curves:[],count:12},constraints:{count:number(1,720,true)}},
+  'evaluate-curve':{label:'Evaluate curve',group:'Curve',description:'Return one point on each selected curve at normalized arc-length parameter t from 0 to 1.',accepts:null,returns:'points',curveSelection:'any',minCurves:{curves:1},params:{curves:'curves',t:'number'},defaults:{curves:[],t:.5},constraints:{t:number(0,1)}},
 };
 const rotate=(point,angle,pivot)=>{const c=Math.cos(angle),s=Math.sin(angle),x=point[0]-pivot[0],y=point[1]-pivot[1];return[pivot[0]+x*c-y*s,pivot[1]+x*s+y*c,...point.slice(2)]};
 function resample(points,count){const lengths=[0];for(let i=1;i<points.length;i++)lengths.push(lengths.at(-1)+Math.hypot(...points[i].map((v,a)=>v-points[i-1][a])));const total=lengths.at(-1);if(total<1e-6)throw new Error('Cannot resample a collapsed curve');let segment=1;const result=[];for(let i=0;i<count;i++){const distance=total*i/count;while(segment<lengths.length-1&&lengths[segment]<distance)segment++;const t=(distance-lengths[segment-1])/(lengths[segment]-lengths[segment-1]||1);result.push(points[segment-1].map((v,a)=>v+(points[segment][a]-v)*t))}result.push([...result[0]]);return result}
+const CLIPPER_SCALE=10000;
+const toClipPath=points=>points.slice(0,-1).map(([x,y])=>({X:Math.round(x*CLIPPER_SCALE),Y:Math.round(y*CLIPPER_SCALE)}));
+const fromClipPath=path=>path.map(({X,Y})=>[X/CLIPPER_SCALE,Y/CLIPPER_SCALE]);
+function validClipPaths(contours){const paths=contours.map(contour=>toClipPath(contour.points)).filter(path=>path.length>=3&&Math.abs(ClipperLib.Clipper.Area(path))>=1);if(!paths.length)throw new Error('Operation needs at least one non-collapsed closed curve');return paths}
+function executeCurveBoolean(a,b,mode){
+  if(!Number.isInteger(mode)||mode<0||mode>3)throw new Error('Choose Union, Difference, Intersection or XOR');
+  if(!a.length)throw new Error('Curve Boolean needs at least one curve in A');if(mode!==0&&!b.length)throw new Error('Difference, Intersection and XOR need at least one curve in B');
+  const subject=validClipPaths(a),clip=b.length?validClipPaths(b):[],engine=new ClipperLib.Clipper(ClipperLib.Clipper.ioStrictlySimple);
+  engine.AddPaths(subject,ClipperLib.PolyType.ptSubject,true);if(clip.length)engine.AddPaths(clip,ClipperLib.PolyType.ptClip,true);
+  const solution=new ClipperLib.PolyTree(),types=[ClipperLib.ClipType.ctUnion,ClipperLib.ClipType.ctDifference,ClipperLib.ClipType.ctIntersection,ClipperLib.ClipType.ctXor];
+  if(!engine.Execute(types[mode],solution,ClipperLib.PolyFillType.pftEvenOdd,ClipperLib.PolyFillType.pftEvenOdd))throw new Error('Curve Boolean failed; check for invalid or intersecting input curves');
+  const paths=ClipperLib.Clipper.PolyTreeToPaths(solution).map(fromClipPath).filter(path=>path.length>=3);if(!paths.length)throw new Error('Curve Boolean result is empty');
+  return paths.map(points=>({points:[...points,[...points[0]]]}));
+}
+function executeOffset(source,distance){
+  const rawPaths=validClipPaths(source);if(!Number.isFinite(distance)||Math.abs(distance)<1e-8)return structuredClone(source);
+  const normalizer=new ClipperLib.Clipper(ClipperLib.Clipper.ioStrictlySimple);normalizer.AddPaths(rawPaths,ClipperLib.PolyType.ptSubject,true);const normalizedTree=new ClipperLib.PolyTree();if(!normalizer.Execute(ClipperLib.ClipType.ctUnion,normalizedTree,ClipperLib.PolyFillType.pftEvenOdd,ClipperLib.PolyFillType.pftEvenOdd))throw new Error('Offset could not normalize the input regions');const paths=ClipperLib.Clipper.PolyTreeToPaths(normalizedTree);
+  const engine=new ClipperLib.ClipperOffset(2,CLIPPER_SCALE*.01);engine.AddPaths(paths,ClipperLib.JoinType.jtRound,ClipperLib.EndType.etClosedPolygon);
+  const solution=new ClipperLib.PolyTree();engine.Execute(solution,distance*CLIPPER_SCALE);
+  const result=ClipperLib.Clipper.PolyTreeToPaths(solution).map(fromClipPath).filter(path=>path.length>=3);
+  if(!result.length)throw new Error('Offset removed all contours; reduce the offset distance');return result.map(points=>({points:[...points,[...points[0]]]}));
+}
+function sampleOpenControl(points,count){const out=[],n=points.length;for(let k=0;k<=count;k++){const u=k/count*(n-1),i=Math.min(n-2,Math.floor(u)),t=u-i,p0=points[Math.max(0,i-1)],p1=points[i],p2=points[i+1],p3=points[Math.min(n-1,i+2)];out.push(p1.map((v,a)=>.5*((2*v)+(-p0[a]+p2[a])*t+(2*p0[a]-5*v+4*p2[a]-p3[a])*t*t+(-p0[a]+3*p1[a]-3*p2[a]+p3[a])*t*t*t)))}return out}
+function inputCurvePoints(input,samples,sectionPoints){const curve=input.curve;if(curve.closed)return sectionPoints(curve,samples);if(curve.type==='polyline')return curve.points.map(p=>[...p]);return sampleOpenControl(curve.points,Math.max(samples,(curve.points.length-1)*4))}
+function curveLengths(points){const lengths=[0];for(let i=1;i<points.length;i++)lengths.push(lengths.at(-1)+Math.hypot(points[i][0]-points[i-1][0],points[i][1]-points[i-1][1]));if(lengths.at(-1)<1e-8)throw new Error('Cannot evaluate a collapsed curve');return lengths}
+function pointAtLength(points,lengths,t){const target=lengths.at(-1)*t;let i=1;while(i<lengths.length-1&&lengths[i]<target)i++;const span=lengths[i]-lengths[i-1],u=(target-lengths[i-1])/(span||1);return[points[i-1][0]+(points[i][0]-points[i-1][0])*u,points[i-1][1]+(points[i][1]-points[i-1][1])*u,.1]}
+function joinCurves(inputs,samples,tolerance,sectionPoints){
+  const closed=[],remaining=[];for(const input of inputs){const points=inputCurvePoints(input,samples,sectionPoints);if(points.length<2)continue;if(input.curve.closed)closed.push({points:[...points.slice(0,-1),[...points[0]]]});else remaining.push(points)}
+  const distance=(a,b)=>Math.hypot(a[0]-b[0],a[1]-b[1]),joined=[];
+  while(remaining.length){let chain=remaining.shift(),changed=true;while(changed){changed=false;for(let i=0;i<remaining.length;i++){const next=remaining[i],forward=distance(chain.at(-1),next[0])<=tolerance&&distance(next.at(-1),chain[0])<=tolerance,backward=distance(chain.at(-1),next.at(-1))<=tolerance&&distance(next[0],chain[0])<=tolerance;if(forward||backward){const oriented=backward?[...next].reverse():next,tail=[(chain.at(-1)[0]+oriented[0][0])/2,(chain.at(-1)[1]+oriented[0][1])/2],head=[(oriented.at(-1)[0]+chain[0][0])/2,(oriented.at(-1)[1]+chain[0][1])/2];chain=[...chain.slice(0,-1),tail,...oriented.slice(1,-1),head];chain[chain.length-1]=[...chain[0]];joined.push({points:chain});remaining.splice(i,1);chain=null;break}const matches=[['head',distance(chain[0],next.at(-1)),false],['tail',distance(chain.at(-1),next[0]),false],['head',distance(chain[0],next[0]),true],['tail',distance(chain.at(-1),next.at(-1)),true]].filter(x=>x[1]<=tolerance).sort((a,b)=>a[1]-b[1]);if(!matches.length)continue;if(matches.length>1&&Math.abs(matches[0][1]-matches[1][1])<1e-8)throw new Error('Join is ambiguous at a branching endpoint');const[side,,reverse]=matches[0],oriented=reverse?[...next].reverse():next,join=side==='head'?oriented.at(-1):oriented[0],target=side==='head'?chain[0]:chain.at(-1),snap=[(join[0]+target[0])/2,(join[1]+target[1])/2];chain=side==='head'?[snap,...oriented.slice(0,-1),...chain.slice(1)]:[...chain.slice(0,-1),...oriented.slice(1),snap];remaining.splice(i,1);changed=true;break}if(!chain)break}
+    if(!chain)continue;
+    if(distance(chain[0],chain.at(-1))>tolerance)throw new Error('Curves did not form a closed loop within tolerance');chain[chain.length-1]=[...chain[0]];joined.push({points:chain});
+  }return[...closed,...joined];
+}
+export function executeCurveInputComponent(operation,p,{inputs=new Map(),sectionPoints=()=>{throw new Error('Curve sampling is unavailable')},validateSection=()=>{}}={}){
+  if(operation==='curve-boolean'){const curves=ids=>ids.map(id=>{const input=inputs.get(id);if(!input||input.type!=='curve'||!input.curve.closed)throw new Error('Curve Boolean accepts closed planar curves only');const points=sectionPoints(input.curve,p.samples);validateSection(points);return{points}});return executeCurveBoolean(curves(p.a),curves(p.b),p.mode)}
+  if(operation==='join-close'){if(!(p.tolerance>0))throw new Error('Join tolerance must be positive');return joinCurves(p.curves.map(id=>inputs.get(id)).filter(Boolean),p.samples,p.tolerance,sectionPoints)}
+  if(operation==='divide-curve'||operation==='evaluate-curve'){const output=[];for(const id of p.curves){const input=inputs.get(id);if(!input||input.type!=='curve')throw new Error('Select valid curves');const points=inputCurvePoints(input,180,sectionPoints),lengths=curveLengths(points);if(operation==='evaluate-curve')output.push(pointAtLength(points,lengths,p.t));else{if(!Number.isInteger(p.count)||p.count<1)throw new Error('Division count must be a positive integer');const n=input.curve.closed?p.count:p.count+1;for(let i=0;i<n;i++)output.push(pointAtLength(points,lengths,i/p.count))}}if(!output.length)throw new Error('Select at least one curve');return output}
+  return null;
+}
 export function executeBasicComponent(operation,p,source){
   const spec=BASIC_COMPONENTS[operation];if(!spec)return null;
+  if(operation==='curve-boolean'||operation==='join-close'||operation==='divide-curve'||operation==='evaluate-curve')return null;
+  if(operation==='offset')return executeOffset(source,p.distance);
   if(!spec.accepts){
     if(p.center[2]!==0)throw new Error('Curve primitives are in XY; move in Z after Stack');let points=[];
     if(operation==='rectangle'){const w=p.width/2,h=p.height/2;points=[[-w,-h],[w,-h],[w,h],[-w,h]]}

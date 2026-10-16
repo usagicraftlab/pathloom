@@ -36,10 +36,10 @@ export function initNodeEditor(host,api){
   }
   function addPorts(id,node,spec,step){const inputs=document.createElement('div');inputs.className='node-input-ports';
     if(id===OUTPUT_NODE)inputs.append(port(id,'in','Toolpaths','output'));
-    else if(step?.operation==='sections')inputs.append(port(id,'in','Curves','curves'));
+    else if(spec&&step){for(const[key,type]of Object.entries(spec.params||{}))if(type==='curves')inputs.append(port(id,'in',key==='curves'?'Curves':`${key.toUpperCase()} · Curves`,key))}
     else if(spec?.accepts==='branches'){for(let i=0;i<step.sources.length+(step.sources.length<8?1:0);i++)inputs.append(port(id,'in','Toolpaths',String(i)))}
     else if(spec?.accepts)inputs.append(port(id,'in',spec.accepts==='contours'?'Sections':spec.accepts==='geometry'?'Geometry':'Toolpaths'));
-    if(inputs.children.length)node.prepend(inputs);if(id!==OUTPUT_NODE){const outputs=document.createElement('div');outputs.className='node-output-ports';outputs.append(port(id,'out',spec?.returns==='contours'?'Sections':id.startsWith('input:')?'Curve':'Toolpaths'));node.append(outputs)}
+    if(inputs.children.length)node.prepend(inputs);if(id!==OUTPUT_NODE){const outputs=document.createElement('div');outputs.className='node-output-ports';outputs.append(port(id,'out',spec?.returns==='contours'?'Sections':spec?.returns==='points'?'Points':id.startsWith('input:')?'Curve':'Toolpaths'));node.append(outputs)}
   }
   function render(cards,d){
     definition=d;connecting=null;mouse=null;const previous=positions;nodes=new Map();world.querySelectorAll('.graph-node').forEach(node=>node.remove());

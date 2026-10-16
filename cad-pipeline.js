@@ -1,4 +1,4 @@
-import {BASIC_COMPONENTS,executeBasicComponent,COMPONENT_GROUPS} from './cad-components.js';
+import {BASIC_COMPONENTS,executeBasicComponent,executeCurveInputComponent,COMPONENT_GROUPS} from './cad-components.js';
 export {COMPONENT_GROUPS};
 // Typed input registry and versioned, data-only processing graph.
 export const OPERATIONS = {
@@ -61,6 +61,7 @@ const idValid=id=>typeof id==='string'&&/^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(id)
 const limit=(v,min,max,label)=>{if(!finite(v)||v<min||v>max)throw new Error(`Invalid ${label}`);return v};
 export function numberParameters(definition){return definition?.version===2?definition.inputs.filter(input=>input.type==='number'):definition?.parameters||[]}
 export function inputReferences(step){return Object.values(step.params||{}).flatMap(value=>value&&typeof value==='object'&&!Array.isArray(value)&&typeof value.input==='string'?[value.input]:[])}
+export function curveInputReferences(step,spec){return Object.entries(step.params||{}).filter(([key])=>spec?.params?.[key]==='curves').flatMap(([,ids])=>Array.isArray(ids)?ids:[])}
 export function migrateDefinition(legacy){
   if(legacy.version===2)return structuredClone(legacy);
   const inputs=[{id:'section',name:'Section',group:'Geometry',type:'curve',visible:true,curve:{...structuredClone(legacy.curve),closed:true}},
@@ -110,17 +111,19 @@ export function validatePipeline(raw){
     for(const[key,type]of Object.entries(spec.params)){
       const value=step.params[key];
       if(type==='curves'){
-        if(!Array.isArray(value)||!value.length||value.length>16||new Set(value).size!==value.length||value.some(id=>inputs.get(id)?.type!=='curve'||!inputs.get(id).curve.closed||inputs.get(id).curve.points.length<3))throw new Error('Select one or more closed section curves');
+        const minimum=spec.minCurves?.[key]??1;if(!Array.isArray(value)||value.length<minimum||value.length>16||new Set(value).size!==value.length||value.some(id=>inputs.get(id)?.type!=='curve'||spec.curveSelection==='closed'&&!inputs.get(id).curve.closed||inputs.get(id).curve.points.length<2))throw new Error(`Select ${spec.curveSelection==='closed'?'closed ':''}curve inputs for ${step.id}.${key}`);
       }else if(value&&typeof value==='object'&&!Array.isArray(value)){
         const input=inputs.get(value.input);if(Object.keys(value).length!==1||!input||input.type!==type)throw new Error(`Wrong input type for ${step.id}.${key}`);
       }else if(type==='number'&&!finite(value)||type==='boolean'&&typeof value!=='boolean'||type==='point'&&(!Array.isArray(value)||value.length!==3||!value.every(finite))||type==='list'&&(!Array.isArray(value)||!value.length||value.length>256||!value.every(finite)))throw new Error(`Invalid ${step.id}.${key}`);
+      if(spec.choices?.[key]&&!spec.choices[key].some(choice=>choice.value===value))throw new Error(`Invalid choice for ${step.id}.${key}`);
     }
+    if(step.operation==='sections'&&step.params.curves.some(id=>!inputs.get(id)?.curve.closed))throw new Error('Sections accepts closed curves only');
     results.set(step.id,spec.returns==='same'?results.get(step.source):spec.returns);
   }
   if(results.get(d.output)!=='paths')throw new Error('Pipeline output must contain paths');
   return d;
 }
-export function usedBy(definition,inputId){return definition.steps.filter(step=>inputReferences(step).includes(inputId)||(step.operation==='sections'&&step.params.curves.includes(inputId))).map(step=>step.id)}
+export function usedBy(definition,inputId){return definition.steps.filter(step=>inputReferences(step).includes(inputId)||curveInputReferences(step,operationSpec(definition,step)).includes(inputId)).map(step=>step.id)}
 export function resolveValue(definition,value){return value&&typeof value==='object'&&!Array.isArray(value)&&typeof value.input==='string'?definition.inputs.find(input=>input.id===value.input)?.value:value}
 export function pipelineLayerHeight(definition){
   if(definition?.version!==2)return definition?.parameters?.find(p=>p.key==='layerHeight')?.value;
@@ -144,6 +147,7 @@ export function appendComponent(definition,operation){
   if(spec.accepts==='branches'){const candidates=[d.output,...d.steps.map(s=>s.id).reverse()].filter((id,i,a)=>a.indexOf(id)===i&&type(id)==='paths');if(candidates.length<2)throw new Error('Merge needs two existing Toolpath outputs');step.sources=candidates.slice(0,2)}
   else if(spec.accepts){const accepts=type=>spec.accepts==='geometry'?['paths','contours'].includes(type):type===spec.accepts;const upstream=accepts(type(d.output))?d.output:[...d.steps].reverse().find(s=>accepts(type(s.id)))?.id;if(!upstream)throw new Error('Connect compatible geometry first');step.source=upstream}
   else if(operation==='sections'){const curve=d.inputs.find(i=>i.type==='curve'&&i.curve.closed);if(!curve)throw new Error('Sections needs a closed curve input');step.params.curves=[curve.id]}
+  for(const[key,type]of Object.entries(spec.params))if(type==='curves'&&!step.params[key].length){const closed=spec.curveSelection==='closed',candidates=d.inputs.filter(input=>input.type==='curve'&&(!closed||input.curve.closed));if(operation==='curve-boolean'&&key==='b'){const next=candidates.find(input=>input.id!==step.params.a?.[0]);if(next)step.params[key]=[next.id]}else if(candidates[0])step.params[key]=[candidates[0].id];else if((spec.minCurves?.[key]??1)>0)throw new Error(`${spec.label} needs a curve input`)}
   d.steps.push(step);if(operationSpec(d,step).returns==='paths')d.output=step.id;return validatePipeline(d);
 }
 export function componentGroup(definition,step){return step.group||operationSpec(definition,step)?.group||'Custom'}
@@ -163,7 +167,8 @@ export function executePipeline(raw,{sectionPoints,validateSection}){
     const p=Object.fromEntries(Object.entries(step.params).map(([key,value])=>[key,resolve(value)]));let result;
     const source=step.source?results.get(step.source):null;
     const spec=operationSpec(definition,step);for(const[key,bounds]of Object.entries(BASIC_COMPONENTS[step.operation]?.constraints||{})){limit(p[key],bounds.min??-10000,bounds.max??10000,key);if(bounds.integer&&!Number.isInteger(p[key]))throw new Error(`${key} must be an integer`)}
-    if(BASIC_COMPONENTS[step.operation]){result=executeBasicComponent(step.operation,p,source);if(spec.returns==='contours')for(const contour of result)validateSection(contour.points)}
+    if(BASIC_COMPONENTS[step.operation]&&Object.values(spec.params).includes('curves')){result=executeCurveInputComponent(step.operation,p,{inputs,sectionPoints,validateSection});if(spec.returns==='contours')for(const contour of result)validateSection(contour.points)}
+    else if(BASIC_COMPONENTS[step.operation]){result=executeBasicComponent(step.operation,p,source);if(spec.returns==='contours')for(const contour of result)validateSection(contour.points)}
     else if(step.operation==='sections'){
       limit(p.samples,12,720,'samples');if(!Number.isInteger(p.samples))throw new Error('Samples must be an integer');
       result=p.curves.map(id=>{const points=sectionPoints(inputs.get(id).curve,p.samples);validateSection(points);return{inputId:id,points}});
@@ -217,12 +222,14 @@ export function executePipeline(raw,{sectionPoints,validateSection}){
       }
     }
     if(spec.returns==='paths'||spec.returns==='contours'){ensureBudget(result);intermediatePoints+=result.reduce((n,path)=>n+path.points.length,0);if(intermediatePoints>2000000)throw new Error('Processing graph is too large; reduce points or operations')}
+    else if(spec.returns==='points'){if(!Array.isArray(result)||result.length>300000||result.some(point=>!Array.isArray(point)||point.length!==3||!point.every(finite)))throw new Error('Point output exceeds the supported limit or contains invalid coordinates');intermediatePoints+=result.length;if(intermediatePoints>2000000)throw new Error('Processing graph is too large; reduce points or operations')}
     results.set(step.id,result);
   }
   const paths=results.get(definition.output).sort((a,b)=>a.points[0][2]-b.points[0][2]).map((path,order)=>({...path,order,points:path.points.map(point=>point.map(v=>Number(v.toFixed(6))))}));
   for(const path of paths){const z=path.points[0][2];if(z<0||path.points.some(point=>point.some(v=>!finite(v)||Math.abs(v)>10000)||Math.abs(point[2]-z)>1e-6))throw new Error('Output must be finite and planar with nonnegative Z');path.points[path.points.length-1]=[...path.points[0]];}
   validateOutput(paths);
-  return{definition,paths,section:[],warnings};
+  const previewPoints=definition.previewOutputId&&operationSpec(definition,definition.steps.find(step=>step.id===definition.previewOutputId))?.returns==='points'?results.get(definition.previewOutputId):[];
+  return{definition,paths,previewPoints:previewPoints||[],section:[],warnings};
 }
 // Spatial bins test self-intersections and intersections between contours at a Z.
 export function validateOutput(paths){
@@ -253,6 +260,7 @@ export function stageDefinition(raw,stepId){
   const definition=validatePipeline(migrateDefinition(raw));
   const index=definition.steps.findIndex(step=>step.id===stepId);
   if(index<0)throw new Error('Unknown processing stage');
+  if(operationSpec(definition,definition.steps[index]).returns==='points'){definition.previewOutputId=stepId;return definition}
   definition.steps=definition.steps.slice(0,index+1);
   const step=definition.steps[index];
   if(operationSpec(definition,step).returns==='contours'){
@@ -303,7 +311,7 @@ export function validateStepEdit(before,after,stepId){
   if(!target||!updated)throw new Error('Keep the selected component ID when editing it');
   if(original.output!==next.output||original.steps.length!==next.steps.length||original.steps.some((step,index)=>step.id!==next.steps[index]?.id))throw new Error('Edit only the selected component; use a custom recipe for multiple internal steps');
   for(const step of original.steps)if(step.id!==stepId&&recipeFingerprint(step)!==recipeFingerprint(next.steps.find(s=>s.id===step.id)))throw new Error(`AI changed another component (${step.id}); the edit was not applied`);
-  const editable=new Set([...inputReferences(target),...inputReferences(updated),...(target.operation==='sections'?target.params.curves:[]),...(updated.operation==='sections'?updated.params.curves:[])]);
+  const editable=new Set([...inputReferences(target),...inputReferences(updated),...curveInputReferences(target,operationSpec(original,target)),...curveInputReferences(updated,operationSpec(next,updated))]);
   for(const input of original.inputs)if(!editable.has(input.id)&&recipeFingerprint(input)!==recipeFingerprint(next.inputs.find(i=>i.id===input.id)))throw new Error(`AI changed an unrelated input (${input.name}); the edit was not applied`);
   return next;
 }

@@ -612,6 +612,7 @@ initCad({
     const current=sourceState.get(window.PathloomCad?.snapshot()?.sourceId),instance=[...instanceState.values()].find(instance=>instance.source===current?.id);
     for(const path of result.paths){const key=String(path.tool);if(!grouped.has(key))grouped.set(key,[]);const positions=grouped.get(key);for(let i=1;i<path.points.length;i++)positions.push(...path.points[i-1],...path.points[i])}
     for(const[tool,positions]of grouped){const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));const line=new THREE.LineSegments(geometry,new THREE.LineBasicMaterial({color:current?.tools.has(tool)?toolPreviewColor(current,tool):sharedToolAppearance(tool,Number(tool)||0).color}));cadProposalGroup.add(line)}
+    if(result.previewPoints?.length){const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(result.previewPoints.flat(),3));cadProposalGroup.add(new THREE.Points(geometry,new THREE.PointsMaterial({color:0xff553d,size:7,sizeAttenuation:false,depthTest:false})));}
     if(exclusive&&current)for(const group of toolpathGroup.children)if(instanceState.get(group.userData.instanceId)?.source===current.id){group.visible=false;cadHiddenGroups.push(group)}
     if(instance){cadProposalGroup.position.set(instance.x,instance.y,0);cadProposalGroup.rotation.z=instance.rotation*Math.PI/180}
     scene.add(cadProposalGroup);previewDirty=true;
