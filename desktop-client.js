@@ -1,6 +1,5 @@
 const statusLabel = document.getElementById('desktopStatus');
 const grasshopperLabel = document.getElementById('connectionStatus');
-const sendButton = document.getElementById('sendPrintBtn');
 const toast = document.getElementById('toast');
 
 let ghEndpoint = null;
@@ -18,12 +17,6 @@ function notify(message, kind = '') {
 
 function setStatus(text, ok = false) {
   if (statusLabel) statusLabel.textContent = text;
-  if (sendButton) {
-    sendButton.disabled = true;
-    sendButton.title = ok
-      ? 'Printer integration will be moved into the Pathloom desktop runtime next.'
-      : 'Open Pathloom through the desktop app to enable local integrations.';
-  }
 }
 
 function setGrasshopperStatus(text) {
@@ -100,6 +93,10 @@ async function initializeGrasshopperEvents() {
     setGrasshopperStatus('Grasshopper · connection error');
   });
 
+  await listen('load-ukigara-clock', () => {
+    window.Pathloom?.loadUkigaraSample?.();
+  });
+
   try {
     const status = await invoke('grasshopper_bridge_status');
     ghEndpoint = status.endpoint || ghEndpoint;
@@ -132,8 +129,84 @@ async function initializeDesktopRuntime() {
   }
 }
 
-sendButton?.addEventListener('click', () => {
+document.addEventListener('pathloom:send-to-printer', () => {
   notify('Printer connection is being migrated into Pathloom Desktop.');
 });
 
 initializeDesktopRuntime();
+
+const liveFileStatus = document.getElementById('liveToolpathStatus');
+const liveFileSessions = new Map();
+let choosingLiveFiles = false;
+
+function refreshLiveFileStatus() {
+  if (!liveFileSessions.size) {
+    liveFileStatus.textContent = '';
+    liveFileStatus.hidden = true;
+    return;
+  }
+  liveFileStatus.hidden = false;
+  const errors = [...liveFileSessions.values()].filter(session => session.error);
+  liveFileStatus.textContent = errors.length
+    ? `Live · ${liveFileSessions.size} files · ${errors.map(session => `${session.name}: ${session.error}`).join(' · ')}`
+    : `Live · ${liveFileSessions.size} files · reloads saved changes every second`;
+}
+
+function stopLiveFile(source) {
+  const session = liveFileSessions.get(source);
+  if (session) clearTimeout(session.timer);
+  liveFileSessions.delete(source);
+  refreshLiveFileStatus();
+}
+
+async function pollLiveFile(session) {
+  try {
+    const text = await window.__TAURI__.core.invoke('read_live_toolpath', { path: session.path });
+    if (liveFileSessions.get(session.source) !== session) return;
+    if (text !== session.lastText) {
+      const raw = JSON.parse(text);
+      if (!window.Pathloom?.upsertLiveToolpath) throw new Error('Preview is still loading');
+      window.Pathloom.upsertLiveToolpath({paths: raw.paths, source: session.source,
+        label: session.name.replace(/\.(toolpath|json)$/i, ''), origin: 'live file'});
+      session.lastText = text;
+    }
+    session.error = null;
+  } catch (error) {
+    if (liveFileSessions.get(session.source) !== session) return;
+    session.error = error.message || String(error);
+  }
+  refreshLiveFileStatus();
+  if (liveFileSessions.get(session.source) === session) {
+    session.timer = setTimeout(() => pollLiveFile(session), 1000);
+  }
+}
+
+document.addEventListener('pathloom:add-live-files', async () => {
+  if (choosingLiveFiles) return;
+  choosingLiveFiles = true;
+  const button = document.getElementById('addToolpath');
+  button.disabled = true;
+  try {
+    const paths = await window.__TAURI__.core.invoke('choose_live_toolpath');
+    for (const path of paths || []) {
+      const source = `file:${path}`;
+      if (liveFileSessions.has(source)) continue;
+      const session = {path, source, name: path.split(/[\\/]/).pop(), lastText: null, timer: null};
+      liveFileSessions.set(source, session);
+      pollLiveFile(session);
+    }
+  } catch (error) {
+    notify(`Unable to choose files: ${error.message || error}`, 'error');
+  } finally {
+    choosingLiveFiles = false;
+    button.disabled = false;
+    refreshLiveFileStatus();
+  }
+});
+
+document.addEventListener('pathloom:source-removed', event => stopLiveFile(event.detail?.liveSource));
+window.addEventListener('pagehide', () => {
+  for (const source of [...liveFileSessions.keys()]) stopLiveFile(source);
+});
+
+document.addEventListener('pathloom:stop-live-files',()=>{for(const source of [...liveFileSessions.keys()])stopLiveFile(source)});

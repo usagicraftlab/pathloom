@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pathloom</title>
-  <link rel="stylesheet" href="./style.css?v=20261012-3" />
+  <link rel="stylesheet" href="./style.css?v=20261012-22" />
   <script type="importmap">
     {
       "imports": {
@@ -13,81 +13,159 @@
     }
   </script>
 </head>
-<body>
+<body data-workspace-mode="generate">
+  <dialog id="componentSaveDialog" class="component-save-dialog">
+    <form id="componentSaveForm">
+      <header><strong>Save Component</strong><button id="componentSaveClose" type="button" aria-label="Close Save Component">×</button></header>
+      <label>Name<input id="componentSaveName" required maxlength="120"></label>
+      <label>Group<input id="componentSaveGroup" list="componentGroupOptions" required maxlength="80" placeholder="Choose or enter a group"></label><datalist id="componentGroupOptions"></datalist>
+      <label id="componentRevisionRow"><input id="componentSaveRevision" type="checkbox">Update saved Component · keep previous version</label>
+      <p id="componentSaveError" role="status"></p><button id="componentSaveConfirm" type="submit">Save Component</button>
+    </form>
+  </dialog>
   <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand-row">
-        <div><div class="eyebrow">TOOLPATH WORKSPACE</div><h1>PATHLOOM</h1></div>
-        <button id="openLibraryTop" class="icon-btn" aria-label="Filament Library" title="Filament Library">●</button>
-      </div>
-
-      <section class="panel basic-panel">
-        <div class="section-title">BASIC SETTINGS</div>
-        <label class="field-row"><span>Preview</span><select id="previewGeometry"><option value="solid">Print thickness</option><option value="line">Lightweight lines</option></select></label>
-        <label class="field-row"><span>Printer</span><select id="printerSelect"><option>Prusa MK4S</option><option>Bambu A1</option><option>Prusa CoreOne</option><option>Snapmaker U1</option></select></label>
-        <label class="field-row"><span>Print width</span><div class="number-wrap"><input id="printWidth" type="number" step="0.01" value="0.60"><span>mm</span></div></label>
-        <label class="field-row"><span>Print height</span><div class="number-wrap"><input id="printHeight" type="number" step="0.01" value="0.30"><span>mm</span></div></label>
-        <label class="field-row"><span>Print speed</span><div class="number-wrap"><input id="printSpeed" type="number" step="1" value="35"><span>mm/s</span></div></label>
-        <label class="field-row"><span>Travel speed</span><div class="number-wrap"><input id="travelSpeed" type="number" step="1" value="180"><span>mm/s</span></div></label>
+    <nav class="workspace-modes" role="tablist" aria-label="Workspace stage">
+      <button type="button" role="tab" id="modeGenerate" data-workspace-mode="generate" aria-selected="true" aria-controls="cadPanel" aria-label="パス生成（AI）" title="パス生成（AI）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18C4 7 20 17 20 6M4 6h4v4H4zM16 14h4v4h-4zM12 2v4m-2-2h4"/></svg></button>
+      <button type="button" role="tab" id="modeParameters" data-workspace-mode="parameters" aria-selected="false" tabindex="-1" aria-controls="cadPanel" aria-label="パラメータ調整" title="パラメータ調整"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="10" cy="18" r="2"/></svg></button>
+      <button type="button" role="tab" id="modeOutput" data-workspace-mode="output" aria-selected="false" tabindex="-1" aria-controls="outputPanel" aria-label="出力設定" title="出力設定"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H4V9h16v8h-3M7 14h10v7H7zM17 11h1"/></svg></button>
+    </nav>
+    <aside class="sidebar" id="outputPanel" aria-label="Output settings">
+      <div class="output-actions">          <button id="executeOutputBtn" class="primary">Generate G-code</button>
+          <select id="outputAction" class="output-command" aria-label="Choose output command" title="Generate G-code"><option value="generate">Generate G-code</option><option value="send">Send to Printer</option></select></div>
+      <section class="panel sidebar-island basic-panel">
+        <button class="island-header" aria-expanded="true"><span class="island-chevron">⌄</span><span>Basic Settings</span></button>
+        <div class="island-content basic-content">
+          <label class="field-row"><span>Printer</span><select id="printerSelect"><option>Prusa MK4S</option><option>Prusa CoreOne</option></select></label>
+          <label class="field-row"><span>Print width</span><div class="number-wrap"><input id="printWidth" type="number" step="0.01" value="0.60"><span>mm</span></div></label>
+          <label class="field-row"><span>Print height</span><div class="number-wrap"><input id="printHeight" type="number" step="0.01" value="0.30"><span>mm</span></div></label>
+          <label class="field-row"><span>Print speed</span><div class="number-wrap"><input id="printSpeed" type="number" step="1" value="35"><span>mm/s</span></div></label>
+          <label class="field-row"><span>Travel speed</span><div class="number-wrap"><input id="travelSpeed" type="number" step="1" value="180"><span>mm/s</span></div></label>
+          <label class="field-row"><span>Nozzle temperature</span><div class="number-wrap"><input id="nozzleTemperature" type="number" min="0" step="1" value="210"><span>°C</span></div></label>
+          <label class="field-row"><span>Bed temperature</span><div class="number-wrap"><input id="bedTemperature" type="number" min="0" step="1" value="60"><span>°C</span></div></label>
+          <label class="field-row"><span>Fan speed</span><div class="number-wrap"><input id="fanSpeed" type="number" min="0" max="100" step="1" value="50"><span>%</span></div></label>
+        </div>
       </section>
 
-      <div class="tab-row" role="tablist">
-        <button class="tab active" data-tab="objects">Objects</button>
-        <button class="tab" data-tab="order">Print Order</button>
-        <button class="tab" data-tab="arrange">Arrange</button>
-      </div>
-
-      <section class="panel tab-panel active" id="tab-objects">
-        <div id="objectList"></div>
-        <button id="addToolpath" class="add-object" title="Import a toolpath file as a new object">＋ Add .toolpath</button>
-        <button id="loadSample" class="add-object">Load sample · Ukigara Clock</button>
-        <a class="sample-download" href="./samples/ukigara-clock.toolpath" download="ukigara-clock.toolpath">Download sample · .toolpath</a>
-        <p class="button-help">Geometry preview from G-code · original print settings are not retained</p>
-        <input id="toolpathInput" type="file" accept=".toolpath,.json,application/json" multiple hidden>
-        <p class="button-help">Import a toolpath file as a new object</p>
+      <section class="panel sidebar-island" id="objectsIsland">
+        <button class="island-header" aria-expanded="true"><span class="island-chevron">⌄</span><span>Objects</span></button>
+        <div class="island-content" id="tab-objects">
+          <div id="objectList"></div>
+          <button id="addToolpath" class="add-object" title="Add toolpath files and automatically follow saved changes">＋ Add .toolpath</button>
+          <p id="liveToolpathStatus" class="hint" role="status" aria-live="polite" hidden></p>
+          <div class="objects-connection-status status"><span class="dot" aria-hidden="true"></span><span id="connectionStatus">Grasshopper disconnected</span></div>
+          <input id="toolpathInput" type="file" accept=".toolpath,.json,application/json" multiple hidden>
+        </div>
       </section>
 
-      <section class="panel tab-panel" id="tab-order">
-        <div class="section-title">SEQUENTIAL PRINT ORDER</div>
-        <p class="hint">Drag instances to change the print order.</p>
-        <div id="orderList" class="order-list"></div>
-      </section>
-
-      <section class="panel tab-panel" id="tab-arrange">
-        <div class="section-title">ARRANGE</div>
-        <div class="segmented"><button class="active" data-arrange-mode="auto">Auto</button><button data-arrange-mode="manual">Manual</button></div>
-        <label class="field-row"><span>Spacing</span><div class="number-wrap"><input id="spacing" type="number" value="18"><span>mm</span></div></label>
-        <button id="autoArrange" class="primary-soft">Auto arrange instances</button>
-        <div id="instanceGrid" class="instance-grid"></div>
-        <div id="instanceEditor" class="instance-editor" hidden>
-          <div class="section-title">SELECTED INSTANCE</div>
-          <div class="instance-editor-grid">
-            <label><span>X</span><input id="instanceX" type="number" step="1"></label>
-            <label><span>Y</span><input id="instanceY" type="number" step="1"></label>
-            <label><span>Rotation</span><input id="instanceRotation" type="number" step="1"></label>
+      <section class="panel sidebar-island" id="layoutIsland">
+        <button class="island-header" aria-expanded="true"><span class="island-chevron">⌄</span><span>Layouts</span></button>
+        <div class="island-content" id="tab-order">
+          <p class="hint">Drag instances to change the print order.</p>
+          <label class="print-order-toggle"><input id="showPrintOrder" type="checkbox" checked><span>Show print order in 3D</span></label>
+          <div id="orderList" class="order-list"></div>
+          <div class="arrange-section">
+            <label class="auto-arrange-toggle"><input id="autoArrangeEnabled" type="checkbox" checked><span>Auto arrange</span></label>
+            <fieldset id="arrangeGridSettings" class="arrange-settings">
+              <label class="field-row"><span>Columns</span><div class="number-wrap"><input id="gridColumns" type="number" min="1" step="1" value="3"></div></label>
+              <label class="field-row"><span>Rows</span><div class="number-wrap"><input id="gridRows" type="number" min="1" step="1" value="2"></div></label>
+              <label class="field-row"><span>X spacing</span><div class="number-wrap"><input id="gridSpacingX" type="number" min="0" step="1" value="66"><span>mm</span></div></label>
+              <label class="field-row"><span>Y spacing</span><div class="number-wrap"><input id="gridSpacingY" type="number" min="0" step="1" value="66"><span>mm</span></div></label>
+              <label class="field-row"><span>Grid</span><select id="gridPattern"><option value="rectangular">Rectangular</option><option value="staggered">Staggered</option><option value="diamond">Diamond</option></select></label>
+              <label class="field-row" id="rowOffsetField"><span>Row offset</span><div class="number-wrap"><input id="gridRowOffset" type="number" min="-100" max="100" step="1" value="50"><span>%</span></div></label>
+              <label class="field-row"><span>Rotation</span><div class="number-wrap"><input id="gridRotation" type="number" min="-180" max="180" step="1" value="0"><span>°</span></div></label>
+            </fieldset>
           </div>
-          <div class="instance-actions"><button id="duplicateInstance">Duplicate</button><button id="deleteInstance">Delete</button></div>
         </div>
       </section>
     </aside>
 
     <main class="workspace">
       <header class="topbar">
-        <div class="status"><span class="dot"></span><span id="connectionStatus">Grasshopper disconnected</span><span>·</span><span id="desktopStatus">Desktop · checking…</span></div>
         <div class="top-actions">
-          <button id="openSettings" class="settings-button">Settings</button>
-          <label class="view-select"><span>VIEW</span><select id="viewMode"><option value="tool">Tool color</option><option value="order">Print order</option><option value="speed">Speed</option></select></label>
-          <button id="generateBtn" class="primary">Generate G-code</button>
-          <button id="sendPrintBtn" class="primary" disabled title="Printer integration will be handled by Pathloom Desktop">Send to Printer</button>
+          <span id="projectName" class="project-name">Untitled</span>
+          <button id="projectOpen" hidden class="settings-button" type="button">Open</button>
+          <button id="projectSave" hidden class="settings-button" type="button">Save</button>
+          <button id="projectSaveAs" hidden class="settings-button" type="button">Save as</button>
+          <button id="cadToggle" hidden class="settings-button" type="button">Generate</button>
+          <button id="openSettings" hidden class="settings-button">Settings</button>
+
         </div>
       </header>
 
+      <div id="cadPanel" class="cad-workspace">
+        <aside class="cad-panel cad-chat-column" aria-label="Chat">
+        <section class="panel sidebar-island">
+          <button class="island-header" aria-expanded="true"><span class="island-chevron">⌄</span><span>Processing</span></button>
+          <div class="island-content">
+            <button id="cadShowFinal" hidden></button><div id="cadSteps" aria-label="Components"></div><p id="cadProcessingStatus" class="hint" role="status"></p>
+            <div hidden><select id="cadAddOperationType"></select><button id="cadAddOperation" type="button"></button></div>
+            <div id="cadChatMessages" hidden class="cad-chat-messages" role="log" aria-label="Design conversation"></div>
+            <form id="cadChatForm"><div id="cadEditTarget" class="cad-edit-target" hidden><span id="cadEditTargetLabel"></span><button id="cadClearEditTarget" type="button" aria-label="Clear edit target">×</button></div><textarea id="cadChatInput" rows="3" maxlength="6000" placeholder="断面を積層して、上ほど細く、少しねじって…" aria-label="Design request"></textarea><div class="cad-buttons"><button id="cadChatSend" type="submit">Send</button><button id="cadChatCancel" type="button" hidden>Cancel</button></div></form>
+            <div id="cadProposalActions" class="cad-buttons" hidden><button id="cadProposalApply" type="button">Apply</button><button id="cadProposalDiscard" type="button">Discard</button></div>
+            <details class="cad-secondary"><summary id="cadConnectionSummary">Connection &amp; model</summary>
+              <p id="cadAiStatus" class="hint" role="status">Connect Codex to use chat.</p>
+              <div class="cad-buttons"><button id="cadAiRefresh" type="button">Connect</button><button id="cadAiLogin" type="button">Sign in with ChatGPT</button></div>
+              <label class="field-row"><span>Model</span><select id="cadAiModel" aria-label="AI model"></select></label>
+              <p id="cadAiUsage" class="hint"></p>
+              <a href="https://chatgpt.com/codex/settings/usage" target="_blank" rel="noopener noreferrer">Usage details ↗</a>
+            </details>
+          </div>
+        </section>
+        </aside>
+        <aside class="cad-panel cad-inputs-column" aria-label="Parameters">
+          <section class="panel sidebar-island">
+            <button class="island-header" aria-expanded="true"><span class="island-chevron">⌄</span><span>Parameters</span></button>
+            <div class="island-content">
+              <div hidden>              <label class="field-row"><span>Name</span><input id="cadName" maxlength="120"></label>
+              <div class="cad-buttons"><button id="cadNew" type="button">＋ New</button><button id="cadUndo" type="button">Undo</button><button id="cadRedo" type="button">Redo</button></div>
+              <div class="cad-buttons"><select id="cadAddInputType" aria-label="New input type"><option value="curve">Curve</option><option value="point">Point</option><option value="number">Number</option><option value="list">Number list</option></select><button id="cadAddInput" type="button">＋ Input</button></div>
+</div>
+
+              <div id="cadInputList"></div>
+              <div id="cadInputInspector" class="input-context cad-panel" role="dialog" aria-label="Input settings" hidden>
+                <label class="cad-checkbox"><input id="cadExposeInput" type="checkbox">Show in Parameters</label><label class="field-row"><span>Input name</span><input id="cadInputName" maxlength="120"></label>
+                <details class="cad-secondary"><summary>Organize</summary><label class="field-row"><span>Group</span><input id="cadInputGroup" maxlength="80"></label><button id="cadDeleteInput" type="button">Remove input</button><p id="cadInputUsage" class="hint"></p></details>
+                <div id="cadParameters"></div>
+                <details id="cadNumberRange" class="cad-secondary"><summary>Range &amp; unit</summary><label class="field-row"><span>Min</span><input id="cadNumbermin" type="number"></label><label class="field-row"><span>Max</span><input id="cadNumbermax" type="number"></label><label class="field-row"><span>Step</span><input id="cadNumberstep" type="number"></label><label class="field-row"><span>Unit</span><input id="cadNumberunit" maxlength="12"></label></details>
+                <div id="cadCurveSettings">
+                  <details class="cad-secondary"><summary>Curve settings</summary><label class="field-row"><span>Type</span><select id="cadCurveType"><option value="control">Control points</option><option value="polyline">Polyline</option></select></label><label class="cad-checkbox"><input id="cadCurveClosed" type="checkbox">Closed</label><button id="cadDrawNew" type="button">Draw new</button><details class="cad-secondary"><summary>Point coordinates</summary><div id="cadPoints"></div><button id="cadAddPoint" type="button">＋ Point</button></details></details>
+                </div>
+                <div id="cadPointSettings"><label class="field-row"><span>X</span><input id="cadPoint0" type="number" step=".5"></label><label class="field-row"><span>Y</span><input id="cadPoint1" type="number" step=".5"></label><label class="field-row"><span>Z</span><input id="cadPoint2" type="number" step=".5"></label></div>
+                <div id="cadListSettings"><textarea id="cadListValues" rows="3" aria-label="Number list values" placeholder="0, 1, 2"></textarea></div>
+              </div>
+
+
+              <details id="cadLegacyLibrary" class="cad-secondary" hidden><summary>Components</summary>
+                <input id="cadLibrarySearch" type="search" placeholder="Search name, description, tags…" aria-label="Search library">
+                <select id="cadLibraryFilter" aria-label="Library type"><option value="operation">Components</option></select>
+                <select id="cadLibrary" aria-label="Saved items"></select><p id="cadLibraryInfo" class="hint"></p>
+                <button id="cadLibraryLoad" type="button">Use selected</button>
+                <details class="cad-secondary"><summary>Save Component</summary>
+                  <select id="cadLibraryKind" aria-label="Save type"><option value="operation">Component</option></select><select id="cadLibraryStep" aria-label="Component to save"></select>
+                  <input id="cadLibraryName" maxlength="120" placeholder="Name" aria-label="Library name"><textarea id="cadLibraryDescription" rows="2" maxlength="1000" placeholder="Purpose / conditions" aria-label="Library description"></textarea><input id="cadLibraryTags" placeholder="Tags, separated by commas" aria-label="Library tags">
+                  <label class="cad-checkbox"><input id="cadLibraryRevision" type="checkbox">New version of selected item</label><button id="cadLibrarySave" type="button">Save Component</button>
+                </details>
+                <details class="cad-secondary"><summary>Import / export</summary><div class="cad-buttons"><button id="cadExportDefinition" type="button">Project definition</button><button id="cadExportLibraryItem" type="button">Library item</button><label class="cad-import">Import<input id="cadImportDefinition" type="file" accept=".json" hidden></label><button id="cadExportPaths" type="button">.toolpath</button></div></details>
+              </details>
+            </div>
+          </section>
+        </aside>
+      </div>
       <div id="viewport" class="viewport">
-        <canvas id="threeCanvas"></canvas>
+        <canvas id="threeCanvas"></canvas><div class="geometry-visibility">              <label class="cad-checkbox"><input id="cadShowInputs" type="checkbox" checked>Show geometry inputs</label></div>
+        <section class="print-estimate-overlay" aria-label="Print estimate">
+                        <p id="cadStatus" class="hint" role="status"></p>
+          <div id="printTimeEstimate">Print time in total: —</div>
+          <div id="printTimeDetails"></div>
+          <strong>Filament usage</strong>
+          <div id="filamentUsageDetails"></div>
+        </section>
+        <div id="printOrderMarkers" aria-hidden="true"></div>
         <div id="emptyState" class="empty-state" hidden><strong>Add a .toolpath file</strong><span>Pathloom reads path order, tool ID and XYZ points.</span></div>
-        <div class="viewport-label">BUILD PLATE · 250 × 210 mm</div>
-        <div class="layer-control"><span>TOP</span><input id="layerSlider" type="range" min="1" max="1" value="1" orient="vertical"><span id="layerValue">1</span></div>
-        <div class="path-control"><span>PATH</span><input id="pathSlider" type="range" min="0" max="100" value="100"></div>
+        <div id="buildVolumeLabel" class="viewport-label" hidden>BUILD PLATE · 250 × 210 mm · MAX HEIGHT 220 mm</div>
+        <div class="preview-object-control" aria-label="Preview object"><button id="previousObject" aria-label="Previous object">‹</button><span id="previewObjectName">No objects</span><button id="nextObject" aria-label="Next object">›</button></div>
+        <div class="layer-control"><span>LAYER</span><input id="layerSlider" type="range" min="1" max="1" value="1" step="1" orient="vertical" aria-label="Preview layer"><span id="layerValue">1 / 1</span></div>
+        <div class="path-control"><span>POINT</span><button id="previousPath" aria-label="Previous XYZ point">‹</button><input id="pathSlider" type="range" min="0" max="1" value="1" step="1" aria-label="XYZ point progress within selected layer"><button id="nextPath" aria-label="Next XYZ point">›</button><span id="pathValue">0 / 0</span></div>
         <div id="colorPopover" class="color-popover" hidden>
           <div class="popover-head"><strong>FILAMENT COLORS</strong><button id="closePalette">×</button></div>
           <p>Click colors to preview. Palette stays open.</p>
@@ -99,10 +177,16 @@
     </main>
   </div>
 
+  <dialog id="removeObjectDialog" class="remove-object-dialog" aria-labelledby="removeObjectTitle" aria-describedby="removeObjectMessage">
+    <h2 id="removeObjectTitle">Delete object?</h2>
+    <p id="removeObjectMessage"></p>
+    <div class="remove-object-actions"><button id="cancelRemoveObject" class="settings-button">Cancel</button><button id="confirmRemoveObject" class="primary">Delete</button></div>
+  </dialog>
+
   <div id="libraryModal" class="modal-backdrop" hidden>
     <section class="library-modal" role="dialog" aria-modal="true" aria-labelledby="libraryTitle">
       <div class="library-head">
-        <div><div class="eyebrow">LOCAL SETTINGS</div><h2 id="libraryTitle">Settings</h2><p>Saved locally on this device.</p></div>
+        <h2 id="libraryTitle">Settings</h2>
         <button id="closeLibrary" class="modal-close" aria-label="Close settings">×</button>
       </div>
       <div class="settings-tabs" role="tablist" aria-label="Settings">
@@ -114,10 +198,14 @@
           <div class="form-grid">
             <label class="profile-select"><span>Printer</span><select id="profilePrinter"></select></label>
             <label><span>Filament diameter (mm)</span><input id="profileDiameter" type="number" min="0.01" step="0.01" required></label>
-            <label><span>Print speed (mm/s)</span><input id="profileSpeed" type="number" min="1" step="1" required></label>
-            <label><span>Travel speed (mm/s)</span><input id="profileTravel" type="number" min="1" step="1" required></label>
+            <label><span>Bed width · X (mm)</span><input id="profileBedWidth" type="number" min="0.01" step="0.01" required></label>
+            <label><span>Bed depth · Y (mm)</span><input id="profileBedDepth" type="number" min="0.01" step="0.01" required></label>
+            <label><span>Maximum height · Z (mm)</span><input id="profileMaxHeight" type="number" min="0.01" step="0.01" required></label>
+            <label class="custom-gcode-field"><span>Start custom G-code</span><textarea id="profileStartGcode" rows="6" spellcheck="false" placeholder="G28 ; home all axes"></textarea></label>
+            <label class="custom-gcode-field"><span>Tool change G-code</span><textarea id="profileToolChangeGcode" rows="8" spellcheck="false" placeholder="T{to_tool}"></textarea></label>
+            <label class="custom-gcode-field"><span>End custom G-code</span><textarea id="profileEndGcode" rows="6" spellcheck="false" placeholder="M84 ; disable motors"></textarea></label>
           </div>
-          <p class="hint">Save to apply these defaults to Basic Settings. Existing objects keep their own print speeds.</p>
+          <p class="hint">Prusa exports include QOI/PNG thumbnails, estimated time, progress, layer markers and filament usage. Available variables include {from_tool}, {to_tool}, {tool_change_index}, {tool_change_load}, {start_x}, {start_y}, {layer_z}, temperatures, fan speed, print area and travel values.</p>
           <button class="primary save-filament" type="submit">Save printer profile</button>
         </form>
       </section>
@@ -139,7 +227,7 @@
     </section>
   </div>
 
-  <script type="module" src="./app.js?v=20261012-3"></script>
+  <script type="module" src="./app.js?v=20261012-21"></script>
   <script type="module" src="./desktop-client.js?v=20261012-3"></script>
 </body>
 </html>

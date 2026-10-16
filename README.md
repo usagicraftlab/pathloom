@@ -36,6 +36,25 @@ Prusa printer
 
 The previous `Pathloom Web + Bridge` experiment remains in Git history, but it is no longer the primary architecture. `bridge-server.mjs`, `bridge-client.js`, `local-server.mjs`, and `prusalink-client.js` are currently retained only as migration references while their useful functionality is moved into the Tauri runtime.
 
+## Live file mode (Python workflow)
+
+In Pathloom Desktop, click **Add .toolpath** and select one or more existing `.toolpath` (or `.json`) files. Each file is loaded immediately and automatically reread every second. Edit your Python generator and rerun it to save to the same path; no socket connection or separate Start button is needed.
+
+Each file updates the same object while preserving placement, duplicates, print order, and settings for retained tool IDs. Invalid or temporarily missing files leave the previous preview intact and are retried automatically. Adding the same file again does not create a duplicate. Deleting an object stops watching its file. After restarting the app, add the files again. Browser preview imports remain snapshots.
+
+For Python generators, write a temporary file in the same directory and replace the output atomically to avoid reading a partial save:
+
+```python
+import json
+import os
+from pathlib import Path
+
+output = Path("/absolute/path/output.toolpath")
+temporary = output.with_name(output.name + ".tmp")
+temporary.write_text(json.dumps({"paths": paths}), encoding="utf-8")
+os.replace(temporary, output)
+```
+
 ## Grasshopper live connection
 
 Pathloom Desktop now starts a WebSocket server bound to localhost only:
@@ -160,6 +179,18 @@ It uses relative extrusion (`M83`) and inserts numeric tool changes (`T0`, `T1`,
 
 ## Ukigara Clock sample
 
-Use **Load sample · Ukigara Clock** in the Objects panel. The bundled `samples/ukigara-clock.toolpath` contains model extrusion geometry converted from the supplied source G-code, centered in XY and retaining Z and tool IDs. Original extrusion amounts, speeds, temperatures, start/end commands, wiping and purge moves are not retained.
+Use **Load sample · Ukigara Clock** in the top menu bar. The bundled `samples/ukigara-clock.toolpath` contains model extrusion geometry converted from the supplied source G-code, centered in XY and retaining Z and tool IDs. Original extrusion amounts, speeds, temperatures, start/end commands, wiping and purge moves are not retained.
 
 Three.js 0.170.0 and OrbitControls are bundled under `vendor/three/` from the integrity-verified npm package, with its MIT license.
+
+## Prusa G-code metadata
+
+Exports include QOI thumbnails at 16×16, 313×173 and 480×240, plus PNG at 380×285, captured with a dedicated camera that fits all model instances in a square view on white. Window dimensions, preview camera and layer visibility do not affect the thumbnail. Rectangular image formats receive white side margins. Prusa-style estimated time, tool-indexed filament length/volume, printer name, layer height and extrusion width comments are included, with layer markers and M73 progress updates. Estimates exclude acceleration, heating and custom G-code motions/extrusion. Weight and cost are omitted. Existing custom printer G-code is preserved.
+
+## Parametric generator
+
+Click **Generate → ＋ Generated object**. Adjust height, layer height, rotation and top scale; the shape recomputes locally. Choose Polyline or Control point curve, edit XY coordinates, or drag the displayed handles directly on the XY plane. **Draw new** creates a new section by clicking points; right-click finishes drawing. **Show input curve and points** hides only the helpers.
+
+**Save / Save as / Open** stores the complete workspace in a `.pathloom` file, including paths, Components, inputs, placements and print settings. In generation mode, connect Component outputs to typed inputs on the node canvas. Right-click blank space → **Add Component** to browse basic curves, transforms, patterns and toolpath processing, or choose **New Component with AI…**. Right-click an existing Component → **Edit with AI…** to revise it while preserving its identity and group. **Save Component…** chooses a name and group for reuse through **Add Component → Library**. Unsaved custom Components are pale purple, saved and built-in Components white, and curve inputs yellow. Later AI edits of saved Components create immutable library revisions. Only explicitly exposed controls appear in Parameters; all numeric adjustments run locally. Chat uses your local Codex ChatGPT account; arbitrary JavaScript is not executed. See [the stage report](docs/ai-cad.md).
+
+Run generator and project tests with `npm test`.
