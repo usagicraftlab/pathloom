@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::{menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder}, Emitter, State};
+use tauri::{menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder}, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tokio::net::TcpListener;
 use tokio_tungstenite::{accept_async, tungstenite::Message};
@@ -84,6 +84,109 @@ async fn read_live_toolpath(path: String) -> Result<String, String> {
             return Err("Choose a .toolpath or .json file".into());
         }
         std::fs::read_to_string(path).map_err(|error| format!("Unable to read file: {error}"))
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn choose_and_inspect_step_brep(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog().file()
+        .set_title("Import STEP as CAD B-rep")
+        .add_filter("STEP model", &["step", "stp"])
+        .pick_file(move |file| {
+            let _ = sender.send(file.map(|file| file.into_path().map_err(|error| error.to_string())));
+        });
+    let Some(path) = receiver.await.map_err(|error| error.to_string())? else { return Ok(None); };
+    let path = path?;
+    if !path.is_absolute() { return Err("Choose an absolute STEP file path".into()); }
+    if !matches!(path.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase().as_str(), "step" | "stp") {
+        return Err("Choose a .step or .stp file".into());
+    }
+    let metadata = std::fs::metadata(&path).map_err(|error| format!("Unable to read STEP file: {error}"))?;
+    if metadata.len() > 100 * 1024 * 1024 { return Err("STEP file exceeds the 100 MB import limit".into()); }
+    tauri::async_runtime::spawn_blocking(move || {
+        let cache = app.path().app_cache_dir().map_err(|error| error.to_string())?.join("native");
+        let assets = app.path().app_data_dir().map_err(|error| error.to_string())?.join("brep-assets");
+        std::fs::create_dir_all(&cache).map_err(|error| error.to_string())?;
+        std::fs::create_dir_all(&assets).map_err(|error| error.to_string())?;
+        let script = cache.join("step_brep_bridge.py");
+        std::fs::write(&script, include_bytes!("../../native/step_brep_bridge.py"))
+            .map_err(|error| format!("Unable to prepare the native B-rep bridge: {error}"))?;
+        let asset_id = format!("{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_nanos());
+        let asset_path = assets.join(format!("{asset_id}.usda"));
+        let python = std::env::var_os("PATHLOOM_BREP_PYTHON").unwrap_or_else(|| {
+            if cfg!(windows) { "python".into() } else { "python3".into() }
+        });
+        let output = std::process::Command::new(python)
+            .arg(&script)
+            .arg(&path)
+            .arg(&asset_path)
+            .output()
+            .map_err(|error| format!("Unable to start the B-rep Python runtime. Set PATHLOOM_BREP_PYTHON to CPython 3.12: {error}"))?;
+        if output.stdout.len() > 256 * 1024 * 1024 {
+            let _ = std::fs::remove_file(&asset_path);
+            return Err("Native B-rep response exceeds 256 MB".into());
+        }
+        let value: Value = serde_json::from_slice(&output.stdout)
+            .map_err(|error| format!("Native B-rep bridge returned invalid JSON: {error}"))?;
+        if !output.status.success() {
+            let _ = std::fs::remove_file(&asset_path);
+            return Err(value.get("error").and_then(Value::as_str).map(str::to_owned)
+                .unwrap_or_else(|| String::from_utf8_lossy(&output.stderr).trim().to_owned()));
+        }
+        let mut value = value;
+        if let Some(object) = value.as_object_mut() { object.insert("assetId".into(), Value::String(asset_id)); }
+        Ok(value)
+    }).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn move_step_brep_faces(
+    app: tauri::AppHandle,
+    asset_id: String,
+    brep_index: usize,
+    face_indices: Vec<usize>,
+    dx: f64,
+    dy: f64,
+) -> Result<Value, String> {
+    if asset_id.is_empty() || asset_id.len() > 96 || !asset_id.chars().all(|value| value.is_ascii_alphanumeric() || value == '-') {
+        return Err("Invalid CAD asset reference".into());
+    }
+    if face_indices.is_empty() || face_indices.len() > 200_000 {
+        return Err("Select one or more CAD faces".into());
+    }
+    if !dx.is_finite() || !dy.is_finite() || dx.abs() > 1000.0 || dy.abs() > 1000.0 || dx.hypot(dy) < 1e-8 {
+        return Err("Enter a finite, non-zero X or Y movement within ±1000 mm".into());
+    }
+    let mut unique = face_indices.clone();
+    unique.sort_unstable();
+    unique.dedup();
+    if unique.len() != face_indices.len() { return Err("CAD face selection contains duplicates".into()); }
+    tauri::async_runtime::spawn_blocking(move || {
+        let cache = app.path().app_cache_dir().map_err(|error| error.to_string())?.join("native");
+        let assets = app.path().app_data_dir().map_err(|error| error.to_string())?.join("brep-assets");
+        std::fs::create_dir_all(&cache).map_err(|error| error.to_string())?;
+        let script = cache.join("step_brep_bridge.py");
+        std::fs::write(&script, include_bytes!("../../native/step_brep_bridge.py"))
+            .map_err(|error| format!("Unable to prepare the native B-rep bridge: {error}"))?;
+        let asset_path = assets.join(format!("{asset_id}.usda"));
+        if !asset_path.is_file() { return Err("The editable CAD asset is missing; reimport the STEP file".into()); }
+        let python = std::env::var_os("PATHLOOM_BREP_PYTHON").unwrap_or_else(|| {
+            if cfg!(windows) { "python".into() } else { "python3".into() }
+        });
+        let face_list = face_indices.iter().map(usize::to_string).collect::<Vec<_>>().join(",");
+        let output = std::process::Command::new(python)
+            .arg(script).arg("move-usd").arg(asset_path).arg(brep_index.to_string())
+            .arg(face_list).arg(dx.to_string()).arg(dy.to_string())
+            .output().map_err(|error| format!("Unable to start the B-rep Python runtime: {error}"))?;
+        if output.stdout.len() > 256 * 1024 * 1024 { return Err("Native B-rep response exceeds 256 MB".into()); }
+        let value: Value = serde_json::from_slice(&output.stdout)
+            .map_err(|error| format!("Native B-rep bridge returned invalid JSON: {error}"))?;
+        if !output.status.success() {
+            return Err(value.get("error").and_then(Value::as_str).map(str::to_owned)
+                .unwrap_or_else(|| String::from_utf8_lossy(&output.stderr).trim().to_owned()));
+        }
+        Ok(value)
     }).await.map_err(|error| error.to_string())?
 }
 
@@ -295,7 +398,7 @@ pub fn run() {
             tauri::async_runtime::spawn(run_grasshopper_server(app_handle, shared));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![runtime_info, grasshopper_bridge_status, read_live_toolpath, choose_live_toolpath, project_files::save_pathloom_project, project_files::open_pathloom_project, project_files::cad_library, codex_bridge::codex_status, codex_bridge::codex_login, codex_bridge::codex_cancel, codex_bridge::codex_propose])
+        .invoke_handler(tauri::generate_handler![runtime_info, grasshopper_bridge_status, read_live_toolpath, choose_live_toolpath, choose_and_inspect_step_brep, move_step_brep_faces, project_files::save_pathloom_project, project_files::open_pathloom_project, project_files::cad_library, codex_bridge::codex_status, codex_bridge::codex_login, codex_bridge::codex_cancel, codex_bridge::codex_propose])
         .run(tauri::generate_context!())
         .expect("error while running Pathloom");
 }

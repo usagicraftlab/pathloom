@@ -51,6 +51,9 @@
         <div class="island-content" id="tab-objects">
           <div id="objectList"></div>
           <button id="addToolpath" class="add-object" title="Add toolpath files and automatically follow saved changes">＋ Add .toolpath</button>
+          <div class="cad-buttons"><button id="importStep" type="button">＋ Import STEP</button><input id="stepInput" type="file" accept=".step,.stp,model/step" multiple hidden></div>
+          <div id="importedShapeList"></div>
+          <p class="hint">STEPは形状参照として表示できます。面編集はB-repカーネル接続後に対応します。</p>
           <p id="liveToolpathStatus" class="hint" role="status" aria-live="polite" hidden></p>
           <div class="objects-connection-status status"><span class="dot" aria-hidden="true"></span><span id="connectionStatus">Grasshopper disconnected</span></div>
           <input id="toolpathInput" type="file" accept=".toolpath,.json,application/json" multiple hidden>
@@ -117,7 +120,7 @@
             <div class="island-content">
               <div hidden>              <label class="field-row"><span>Name</span><input id="cadName" maxlength="120"></label>
               <div class="cad-buttons"><button id="cadNew" type="button">＋ New</button><button id="cadUndo" type="button">Undo</button><button id="cadRedo" type="button">Redo</button></div>
-              <div class="cad-buttons"><select id="cadAddInputType" aria-label="New input type"><option value="curve">Curve</option><option value="point">Point</option><option value="number">Number</option><option value="list">Number list</option></select><button id="cadAddInput" type="button">＋ Input</button></div>
+              <div class="cad-buttons"><select id="cadAddInputType" aria-label="New input type"><option value="curve">Curve</option><option value="point">Point</option><option value="number">Number</option><option value="list">Number list</option></select><button id="cadAddInput" type="button">＋ Input</button><button id="importDxf" type="button">＋ Import DXF</button><input id="dxfInput" type="file" accept=".dxf,application/dxf" multiple hidden></div>
 </div>
 
               <div id="cadInputList"></div>

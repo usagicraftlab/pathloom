@@ -204,6 +204,51 @@ document.addEventListener('pathloom:add-live-files', async () => {
   }
 });
 
+let importingStepBrep = false;
+document.addEventListener('pathloom:import-step-brep', async () => {
+  if (importingStepBrep) return;
+  importingStepBrep = true;
+  const button = document.getElementById('importStep');
+  button.disabled = true;
+  try {
+    const result = await window.__TAURI__.core.invoke('choose_and_inspect_step_brep');
+    if (!result) return;
+    if (!window.Pathloom?.addImportedBrepInspection) throw new Error('3D view is still loading');
+    window.Pathloom.addImportedBrepInspection(result);
+    const faceCount = (result.breps || []).reduce((sum, brep) => sum + (brep.faces?.length || 0), 0);
+    notify(`STEP imported as CAD B-rep · ${faceCount} faces`);
+  } catch (error) {
+    console.error('Native STEP B-rep import failed', error);
+    notify(`STEP import failed: ${error.message || error}`, 'error');
+  } finally {
+    importingStepBrep = false;
+    button.disabled = false;
+  }
+});
+
+let movingStepFaces = false;
+document.addEventListener('pathloom:move-step-faces', async event => {
+  if (movingStepFaces) return;
+  const detail = event.detail || {};
+  movingStepFaces = true;
+  try {
+    const result = await window.__TAURI__.core.invoke('move_step_brep_faces', {
+      assetId: detail.assetId,
+      brepIndex: detail.brepIndex,
+      faceIndices: detail.faceIndices,
+      dx: detail.dx,
+      dy: detail.dy
+    });
+    window.Pathloom.applyImportedBrepEdit(detail.shapeId, result);
+    notify(`Moved ${detail.faceIndices.length} CAD face(s) · ${detail.dx} × ${detail.dy} mm`);
+  } catch (error) {
+    console.error('CAD face movement failed', error);
+    notify(`Face movement failed: ${error.message || error}`, 'error');
+  } finally {
+    movingStepFaces = false;
+  }
+});
+
 document.addEventListener('pathloom:source-removed', event => stopLiveFile(event.detail?.liveSource));
 window.addEventListener('pagehide', () => {
   for (const source of [...liveFileSessions.keys()]) stopLiveFile(source);

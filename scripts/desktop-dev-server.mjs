@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const host = '127.0.0.1';
 const port = 1420;
-const allowedRootFiles = new Set(['index.html', 'app.js', 'print-time.js', 'gcode-metadata.js', 'cad-kernel.js', 'cad-pipeline.js', 'cad-components.js', 'cad-library.js', 'cad-input-ui.js', 'cad-graph.js', 'cad-node-editor.js', 'cad-worker.js', 'cad-ui.js', 'cad-chat.js', 'pathloom-project.js', 'style.css', 'desktop-client.js']);
+const allowedRootFiles = new Set(['index.html', 'app.js', 'print-time.js', 'gcode-metadata.js', 'cad-kernel.js', 'cad-pipeline.js', 'cad-components.js', 'cad-library.js', 'cad-input-ui.js', 'cad-graph.js', 'cad-node-editor.js', 'cad-worker.js', 'cad-ui.js', 'cad-chat.js', 'pathloom-project.js', 'dxf-import.js', 'step-import.js', 'step-geometry.js', 'step-slice-worker.js', 'style.css', 'desktop-client.js']);
 const allowedDirs = ['samples', 'vendor'];
 const mime = {
   '.html': 'text/html; charset=utf-8',

@@ -4,6 +4,7 @@ import { initCad } from './cad-ui.js';
 import { BASIC_FIELDS, validateProject } from './pathloom-project.js';
 import { durationText, thumbnailBlock, encodeQoi, progressCommand, usageComments } from './gcode-metadata.js';
 import { estimatePrintTime, estimateFilamentUsage } from './print-time.js';
+import { normalizeStepResult } from './step-import.js';
 
 const LIBRARY_KEY = 'pathloom.filamentLibrary.v1';
 const sourceState = new Map();
@@ -18,7 +19,9 @@ let filamentLibrary = loadFilamentLibrary();
 const $ = sel => document.querySelector(sel);
 const canvas = $('#threeCanvas');
 const viewport = $('#viewport');
-let THREE,renderer,scene,camera,controls,toolpathGroup,buildVolumeGroup,previewPointMarker;
+let THREE,renderer,scene,camera,controls,toolpathGroup,importedShapeGroup,buildVolumeGroup,previewPointMarker;
+let importedShapes=[];
+const selectedBrepFaces=new Map();
 const configuredBuildVolume={bedWidth:250,bedDepth:210,maxHeight:220};
 const renderedInstances=new Map();
 const previewGeometryCache=new Map();
@@ -40,9 +43,85 @@ controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping
 scene.add(new THREE.HemisphereLight(0xffffff,0x9aa5b1,1.65)); const keyLight=new THREE.DirectionalLight(0xffffff,1.35); keyLight.position.set(80,-120,180); scene.add(keyLight);
 updateBuildVolumePreview();
 toolpathGroup=new THREE.Group(); scene.add(toolpathGroup);
+importedShapeGroup=new THREE.Group();scene.add(importedShapeGroup);
 previewPointMarker=new THREE.Points(new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute([0,0,0],3)),new THREE.PointsMaterial({color:0xffffff,size:7,sizeAttenuation:false,depthTest:false}));previewPointMarker.renderOrder=10;previewPointMarker.visible=false;scene.add(previewPointMarker);
-  buildInstances();resize();animate();window.PathloomCad?.refreshInputs?.();
+  buildInstances();renderImportedShapes();resize();animate();window.PathloomCad?.refreshInputs?.();
 }
+
+function renderImportedShapes(){
+  const host=$('#importedShapeList');
+  if(host){
+    host.replaceChildren();
+    for(const shape of importedShapes){
+      const card=document.createElement('div');card.className='imported-shape-card';
+      const row=document.createElement('div');row.className='imported-shape-row';
+      const name=document.createElement('span');name.textContent=shape.faces?.length?`${shape.name} · ${shape.faces.length} CAD faces`:shape.name;name.title=shape.faces?.length?`${shape.name} · NVIDIA usd-brep`:`${shape.name} · STEP reference`;
+      const visible=document.createElement('input');visible.type='checkbox';visible.checked=shape.visible!==false;visible.setAttribute('aria-label',`Show ${shape.name}`);visible.addEventListener('change',()=>{shape.visible=visible.checked;renderImportedShapes()});
+      const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.setAttribute('aria-label',`Remove ${shape.name}`);remove.addEventListener('click',()=>{importedShapes=importedShapes.filter(item=>item.id!==shape.id);renderImportedShapes()});
+      row.append(name,visible,remove);card.append(row);
+      if(shape.faces?.length){const selected=selectedBrepFaces.get(shape.id)?.size||0;const faceHint=document.createElement('div');faceHint.className='step-face-hint';faceHint.textContent=`CAD face selection · ${selected} selected · Shift-click to add/remove`;card.append(faceHint)}
+      if(shape.assetId&&shape.faces?.length){const editor=document.createElement('div');editor.className='step-face-editor';const title=document.createElement('strong');title.textContent='Move selected CAD face(s)';const fields=document.createElement('div');fields.className='step-face-move-fields';const makeOffset=axis=>{const label=document.createElement('label');label.textContent=`${axis} · mm`;const input=document.createElement('input');input.type='number';input.step='.1';input.min='-1000';input.max='1000';input.value='0';input.setAttribute('aria-label',`Move selected faces ${axis}`);label.append(input);fields.append(label);return input};const xOffset=makeOffset('X'),yOffset=makeOffset('Y');const move=document.createElement('button');move.type='button';move.textContent='Apply face movement';move.disabled=!selectedBrepFaces.get(shape.id)?.size;move.addEventListener('click',()=>document.dispatchEvent(new CustomEvent('pathloom:move-step-faces',{detail:{shapeId:shape.id,assetId:shape.assetId,brepIndex:shape.brepIndex,faceIndices:[...(selectedBrepFaces.get(shape.id)||[])],dx:Number(xOffset.value),dy:Number(yOffset.value)}})));editor.append(title,fields,move);card.append(editor)}
+      const tools=document.createElement('details');tools.className='step-shape-tools';const summary=document.createElement('summary');summary.textContent='STEP Slice · lines';tools.append(summary);
+      const heightLabel=document.createElement('label');heightLabel.className='field-row';const heightName=document.createElement('span');heightName.textContent='Layer height';const heightWrap=document.createElement('div');heightWrap.className='number-wrap';const height=document.createElement('input');height.type='number';height.min='.05';height.max='10';height.step='.05';height.value=String(shape.sliceLayerHeight??.2);height.addEventListener('change',()=>{shape.sliceLayerHeight=Number(height.value)});height.setAttribute('aria-label',`${shape.name} layer height`);const unit=document.createElement('span');unit.textContent='mm';heightWrap.append(height,unit);heightLabel.append(heightName,heightWrap);
+      const slice=document.createElement('button');slice.type='button';slice.className='step-slice-button';slice.textContent='Generate line toolpaths';slice.addEventListener('click',()=>sliceStepShape(shape,Number(height.value)));
+      tools.append(heightLabel,slice);card.append(tools);host.append(card);
+    }
+  }
+  const empty=$('#emptyState');if(empty)empty.hidden=sourceState.size>0||importedShapes.length>0;
+  if(!THREE||!importedShapeGroup)return;
+  importedShapeGroup.traverse(node=>{node.geometry?.dispose();if(Array.isArray(node.material))node.material.forEach(m=>m.dispose());else node.material?.dispose()});importedShapeGroup.clear();
+  for(const shape of importedShapes){
+    const group=new THREE.Group();group.visible=shape.visible!==false;
+    shape.meshes.forEach((mesh,meshIndex)=>{
+      const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(mesh.positions,3));if(mesh.normals?.length===mesh.positions.length)geometry.setAttribute('normal',new THREE.Float32BufferAttribute(mesh.normals,3));else geometry.computeVertexNormals();geometry.setIndex(mesh.indices);
+      const object=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:new THREE.Color(...mesh.color),metalness:.12,roughness:.72,side:THREE.DoubleSide}));object.userData={shapeId:shape.id,meshIndex,triangleFaces:Array.isArray(mesh.triangleFaces)?mesh.triangleFaces:null};group.add(object);
+      const chosen=selectedBrepFaces.get(shape.id);if(chosen?.size&&Array.isArray(mesh.triangleFaces)){const positions=[];for(let triangle=0;triangle<mesh.triangleFaces.length;triangle++){if(!chosen.has(mesh.triangleFaces[triangle]))continue;for(let corner=0;corner<3;corner++){const vertex=mesh.indices[triangle*3+corner]*3;positions.push(mesh.positions[vertex],mesh.positions[vertex+1],mesh.positions[vertex+2])}}if(positions.length){const selectedGeometry=new THREE.BufferGeometry();selectedGeometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));selectedGeometry.computeVertexNormals();const highlight=new THREE.Mesh(selectedGeometry,new THREE.MeshStandardMaterial({color:0xff553d,emissive:0x6a1008,metalness:0,roughness:.5,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));highlight.userData.faceSelectionOverlay=true;group.add(highlight)}}
+    });
+    importedShapeGroup.add(group);
+  }
+  previewDirty=true;
+}
+
+async function sliceStepShape(shape,layerHeight){
+  if(!Number.isFinite(layerHeight)||layerHeight<.05||layerHeight>10){showToast('Layer height must be between 0.05 and 10 mm','error');return}shape.sliceLayerHeight=layerHeight;shape.sliceJobRevision=(shape.sliceJobRevision||0)+1;const revision=shape.sliceJobRevision;
+  const worker=new Worker('./step-slice-worker.js',{type:'module'});
+  try{const result=await new Promise((resolve,reject)=>{worker.onmessage=event=>event.data?.ok?resolve(event.data.paths):reject(new Error(event.data?.error||'STEP slicing failed'));worker.onerror=event=>reject(new Error(event.message||'STEP slicing worker failed'));worker.postMessage({meshes:shape.meshes,layerHeight})});if(shape.sliceJobRevision!==revision)return;const filename=`${shape.name.replace(/\.(step|stp)$/i,'')}-${layerHeight}mm.toolpath`,toolpath=sanitizeToolpath({paths:result},filename),source=[...sourceState.values()].find(item=>item.stepSliceSource===shape.id);if(source){source.filename=toolpath.filename;source.label=filename.replace(/\.toolpath$/i,'');source.paths=toolpath.paths;source.maxLayer=toolpath.maxLayer;source.stepSliceHeight=layerHeight;previewGeometryCache.delete(source.id);renderAllUI();buildInstances();showToast(`${result.length} STEP contours updated`)}else{const sourceId=addSource(toolpath),created=sourceState.get(sourceId);created.stepSliceSource=shape.id;created.stepSliceHeight=layerHeight;showToast(`${result.length} sliced contours added as toolpaths`)}}catch(error){if(shape.sliceJobRevision===revision)showToast(error.message,'error')}finally{worker.terminate()}
+}
+
+function addImportedBrepInspection(result){
+  if(!result?.success||!Array.isArray(result.breps)||!result.breps.length)throw new Error(result?.error||'Native B-rep import returned no shapes');
+  for(const brep of result.breps){
+    const mesh=brep.mesh;if(!mesh||!Array.isArray(mesh.positions)||!Array.isArray(mesh.indices)||mesh.positions.length%3||mesh.indices.length%3)throw new Error('Native B-rep import returned an invalid display mesh');
+    if(mesh.positions.length/3>500000||mesh.indices.length/3>2000000||mesh.indices.some(index=>!Number.isInteger(index)||index<0||index>=mesh.positions.length/3))throw new Error('Native B-rep mesh exceeds Pathloom limits');
+    const shapeName=result.breps.length===1?result.name:`${result.name} · ${brep.name}`;
+    if(!Array.isArray(brep.faces)||!Array.isArray(mesh.triangleFaces)||mesh.triangleFaces.length!==mesh.indices.length/3||mesh.triangleFaces.some(index=>!Number.isInteger(index)||index<0||index>=brep.faces.length))throw new Error('Native B-rep import returned an invalid triangle-to-face map');
+    importedShapes.push({id:`brep-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,7)}`,name:shapeName,visible:true,assetId:result.assetId,brepIndex:result.assetId?result.breps.indexOf(brep):undefined,faces:brep.faces,meshes:[{name:brep.name,positions:mesh.positions,normals:mesh.normals,indices:mesh.indices,color:[.72,.76,.81],triangleFaces:mesh.triangleFaces}]});
+  }
+  renderImportedShapes();
+}
+
+function applyImportedBrepEdit(shapeId,result){
+  const shape=importedShapes.find(item=>item.id===shapeId),brep=shape&&result?.breps?.[shape.brepIndex];if(!shape||!brep?.mesh)throw new Error('Edited CAD shape was not returned');
+  if(!Array.isArray(brep.mesh.triangleFaces)||brep.mesh.triangleFaces.length!==brep.mesh.indices.length/3||brep.mesh.triangleFaces.some(index=>!Number.isInteger(index)||index<0||index>=brep.faces.length))throw new Error('Edited CAD face mapping is invalid');
+  shape.faces=brep.faces;shape.meshes=[{name:brep.name,positions:brep.mesh.positions,normals:brep.mesh.normals,indices:brep.mesh.indices,color:[.72,.76,.81],triangleFaces:brep.mesh.triangleFaces}];selectedBrepFaces.delete(shapeId);renderImportedShapes();
+}
+
+function selectImportedFace(event){
+  if(event.button!==0||!THREE||!camera||!importedShapeGroup)return;
+  const rect=canvas.getBoundingClientRect();if(!rect.width||!rect.height)return;
+  const ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1),camera);
+  const hit=ray.intersectObject(importedShapeGroup,true).find(item=>item.object.visible&&!item.object.userData.faceSelectionOverlay&&item.object.userData.triangleFaces);
+  if(!hit)return;
+  const shapeId=hit.object.userData.shapeId,faceIndex=hit.object.userData.triangleFaces[hit.faceIndex];if(!Number.isInteger(faceIndex))return;
+  if(!event.shiftKey)selectedBrepFaces.clear();
+  let selected=selectedBrepFaces.get(shapeId);if(!selected){selected=new Set();selectedBrepFaces.set(shapeId,selected)}
+  if(event.shiftKey&&selected.has(faceIndex))selected.delete(faceIndex);else selected.add(faceIndex);
+  if(!selected.size)selectedBrepFaces.delete(shapeId);
+  renderImportedShapes();
+}
+let facePickStart=null;
+canvas.addEventListener('pointerdown',event=>{facePickStart=event.button===0?[event.clientX,event.clientY]:null});
+canvas.addEventListener('pointerup',event=>{if(!facePickStart)return;const distance=Math.hypot(event.clientX-facePickStart[0],event.clientY-facePickStart[1]);facePickStart=null;if(distance<4)selectImportedFace(event)});
 
 function updateBuildVolumePreview(){
   const {bedWidth:width,bedDepth:depth,maxHeight:height}=configuredBuildVolume;
@@ -131,7 +210,7 @@ function createInstanceGroup(instanceId,data){
   }
   group.position.set(data.x,data.y,0);group.rotation.z=THREE.MathUtils.degToRad(data.rotation);return group;
 }
-function buildInstances(){schedulePrintEstimate();requestAnimationFrame(()=>window.PathloomCad?.refreshInputs?.());updateLayerRange();$('#emptyState').hidden=sourceState.size>0;if(!toolpathGroup)return;toolpathGroup.traverse(child=>{if(child.isMesh||child.isLine){child.geometry.dispose();child.material.dispose()}});toolpathGroup.clear();renderedInstances.clear();for(const id of previewGeometryCache.keys())if(!sourceState.has(id))previewGeometryCache.delete(id);for(const[id,data]of instanceState){if(!sourceState.has(data.source))continue;const group=createInstanceGroup(id,data);toolpathGroup.add(group);renderedInstances.set(id,group)}refreshVisibility()}
+function buildInstances(){schedulePrintEstimate();requestAnimationFrame(()=>window.PathloomCad?.refreshInputs?.());updateLayerRange();$('#emptyState').hidden=sourceState.size>0||importedShapes.length>0;if(!toolpathGroup)return;toolpathGroup.traverse(child=>{if(child.isMesh||child.isLine){child.geometry.dispose();child.material.dispose()}});toolpathGroup.clear();renderedInstances.clear();for(const id of previewGeometryCache.keys())if(!sourceState.has(id))previewGeometryCache.delete(id);for(const[id,data]of instanceState){if(!sourceState.has(data.source))continue;const group=createInstanceGroup(id,data);toolpathGroup.add(group);renderedInstances.set(id,group)}refreshVisibility()}
 function previewInstances(){return [...instanceState.entries()].filter(([,data])=>sourceState.has(data.source)).sort((a,b)=>a[1].order-b[1].order)}
 function updatePrintOrderMarkers(){
   const layoutIsland=$('#layoutIsland'),active=layoutIsland&&!layoutIsland.classList.contains('collapsed')&&!layoutIsland.classList.contains('disabled')&&$('#showPrintOrder').checked;const host=$('#printOrderMarkers');host.innerHTML='';if(!active||!THREE||!camera)return;
@@ -508,7 +587,7 @@ function generateGcode(){
   lines.push('M73 P100 R0',`; estimated printing time (normal mode) = ${durationText(estimate.totalSeconds)}`,...usageComments(usage,filamentD));
   lines.push('\n; End G-code',endCode,'; End of Pathloom output');return lines.join('\n');
 }
-window.Pathloom={generateGcode,upsertLiveToolpath,loadUkigaraSample};
+window.Pathloom={generateGcode,upsertLiveToolpath,loadUkigaraSample,addImportedBrepInspection,applyImportedBrepEdit};
 function downloadText(name,text){const blob=new Blob([text],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500)}
 function resize(){if(!renderer)return;const w=viewport.clientWidth,h=viewport.clientHeight;renderer.setSize(w,h,false);toolpathGroup?.traverse(child=>child.material?.uniforms?.resolution?.value.set(w,h));camera.aspect=w/h;camera.updateProjectionMatrix();previewDirty=true}
 new ResizeObserver(resize).observe(viewport);function animate(){controls.update();if(previewDirty){renderer.render(scene,camera);updatePrintOrderMarkers();previewDirty=false}requestAnimationFrame(animate)}
@@ -516,7 +595,9 @@ document.querySelectorAll('.island-header').forEach(header=>header.addEventListe
 document.querySelectorAll('.basic-panel input[type="number"]').forEach(input=>input.addEventListener('wheel',event=>{if(!event.deltaY)return;event.preventDefault();if(event.deltaY<0)input.stepUp();else input.stepDown();input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}))},{passive:false}));
 function formatBasicDecimal(input){const value=Number(input.value);if(Number.isFinite(value))input.value=value.toFixed(2)}
 for(const id of ['printWidth','printHeight']){const input=$(`#${id}`);input.addEventListener('change',()=>formatBasicDecimal(input));input.addEventListener('blur',()=>formatBasicDecimal(input));formatBasicDecimal(input)}
-$('#addToolpath').addEventListener('click',()=>{if(window.__TAURI__?.core?.invoke)document.dispatchEvent(new Event('pathloom:add-live-files'));else $('#toolpathInput').click()});$('#toolpathInput').addEventListener('change',e=>{importFiles([...e.target.files]);e.target.value=''});$('#layerSlider').addEventListener('input',e=>{$('#layerValue').textContent=`${e.target.value} / ${e.target.max}`;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false;refreshVisibility()});$('#pathSlider').addEventListener('input',()=>{inspectingLayerPaths=true;refreshVisibility()});$('#previousPath').addEventListener('click',()=>stepLayerPoint(-1));$('#nextPath').addEventListener('click',()=>stepLayerPoint(1));$('#previousObject').addEventListener('click',()=>switchPreviewObject(-1));$('#nextObject').addEventListener('click',()=>switchPreviewObject(1));$('#printSpeed').addEventListener('input',()=>{syncToolSpeedPlaceholders();refreshVisibility()});$('#closePalette').addEventListener('click',()=>$('#colorPopover').hidden=true);viewport.addEventListener('pointerdown',e=>{const p=$('#colorPopover');if(!p.hidden&&!p.contains(e.target))p.hidden=true});$('#colorPopover').addEventListener('pointerdown',e=>e.stopPropagation());
+$('#addToolpath').addEventListener('click',()=>{if(window.__TAURI__?.core?.invoke)document.dispatchEvent(new Event('pathloom:add-live-files'));else $('#toolpathInput').click()});$('#toolpathInput').addEventListener('change',e=>{importFiles([...e.target.files]);e.target.value=''});
+$('#importStep').addEventListener('click',()=>{if(window.__TAURI__?.core?.invoke)document.dispatchEvent(new Event('pathloom:import-step-brep'));else $('#stepInput').click()});$('#stepInput').addEventListener('change',async event=>{const files=[...event.target.files];event.target.value='';for(const file of files){const worker=new Worker('./vendor/occt/occt-import-js-worker.js');try{const buffer=await file.arrayBuffer();const result=await new Promise((resolve,reject)=>{worker.onmessage=e=>resolve(e.data);worker.onerror=e=>reject(new Error(e.message||'STEP importer failed'));worker.postMessage({buffer},[buffer])});const shape=normalizeStepResult(result,file.name);importedShapes.push(shape);renderImportedShapes();showToast(`${file.name} imported · display only`)}catch(error){console.error(error);showToast(`${file.name}: ${error.message}`,'error')}finally{worker.terminate()}}});
+$('#layerSlider').addEventListener('input',e=>{$('#layerValue').textContent=`${e.target.value} / ${e.target.max}`;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false;refreshVisibility()});$('#pathSlider').addEventListener('input',()=>{inspectingLayerPaths=true;refreshVisibility()});$('#previousPath').addEventListener('click',()=>stepLayerPoint(-1));$('#nextPath').addEventListener('click',()=>stepLayerPoint(1));$('#previousObject').addEventListener('click',()=>switchPreviewObject(-1));$('#nextObject').addEventListener('click',()=>switchPreviewObject(1));$('#printSpeed').addEventListener('input',()=>{syncToolSpeedPlaceholders();refreshVisibility()});$('#closePalette').addEventListener('click',()=>$('#colorPopover').hidden=true);viewport.addEventListener('pointerdown',e=>{const p=$('#colorPopover');if(!p.hidden&&!p.contains(e.target))p.hidden=true});$('#colorPopover').addEventListener('pointerdown',e=>e.stopPropagation());
 ['gridColumns','gridRows','gridSpacingX','gridSpacingY','gridRowOffset','gridRotation'].forEach(id=>$(`#${id}`).addEventListener('input',()=>autoArrange(true)));$('#gridPattern').addEventListener('change',()=>autoArrange(true));
 $('#autoArrangeEnabled').addEventListener('change',e=>{$('#arrangeGridSettings').disabled=!e.target.checked;if(e.target.checked)autoArrange(true)});
 $('#showPrintOrder').addEventListener('change',updatePrintOrderMarkers);
@@ -558,7 +639,7 @@ function assertPrintReferencesCurrent(){for(const source of sourceState.values()
 function captureProject(){
   assertPrintReferencesCurrent();
   for(const source of sourceState.values())if(source.generator&&source.generationError)throw new Error(`${source.label}: fix the generation error before saving`);
-  return {format:'pathloom',version:1,printLinks:structuredClone(printLinks),sources:[...sourceState.values()].map(source=>({...source,tools:[...source.tools],liveSource:source.generator?source.liveSource:undefined})),instances:[...instanceState],
+  return {format:'pathloom',version:1,printLinks:structuredClone(printLinks),sources:[...sourceState.values()].map(source=>({...source,tools:[...source.tools],liveSource:source.generator?source.liveSource:undefined})),instances:[...instanceState],importedShapes:importedShapes.map(({id,name,visible,sliceLayerHeight,assetId,brepIndex,faces,meshes})=>({id,name,visible,sliceLayerHeight,assetId,brepIndex,faces:faces?structuredClone(faces):undefined,meshes:structuredClone(meshes)})),
     settings:{printer:$('#printerSelect').value,...Object.fromEntries(BASIC_FIELDS.map(id=>[id,Number($('#'+id).value)]))},
     profile:{filamentDiameter:configuredFilamentDiameter,...configuredBuildVolume,startGcode:configuredStartGcode,toolChangeGcode:configuredToolChangeGcode,endGcode:configuredEndGcode},
     view:{layer:Number($('#layerSlider').value),showInputs:!$('#cadShowInputs')||$('#cadShowInputs').checked,camera:camera?.position.toArray(),target:controls?.target.toArray(),showPrintOrder:$('#showPrintOrder').checked},
@@ -568,7 +649,7 @@ function restoreProject(raw){
   const project=validateProject(raw);
   const sources=project.sources.map(source=>({...source,...sanitizeToolpath({paths:source.paths},source.filename),tools:new Map(source.tools)}));
   document.dispatchEvent(new Event('pathloom:stop-live-files'));
-  sourceState.clear();instanceState.clear();previewGeometryCache.clear();
+  sourceState.clear();instanceState.clear();previewGeometryCache.clear();selectedBrepFaces.clear();importedShapes=project.importedShapes||[];
   for(const key of Object.keys(printLinks))delete printLinks[key];Object.assign(printLinks,project.printLinks||{});
   for(const source of sources)sourceState.set(source.id,source);
   for(const[id,instance]of project.instances)instanceState.set(id,instance);
@@ -578,7 +659,7 @@ function restoreProject(raw){
   configuredFilamentDiameter=project.profile.filamentDiameter;Object.assign(configuredBuildVolume,{bedWidth:project.profile.bedWidth,bedDepth:project.profile.bedDepth,maxHeight:project.profile.maxHeight});
   configuredStartGcode=project.profile.startGcode;configuredToolChangeGcode=project.profile.toolChangeGcode;configuredEndGcode=project.profile.endGcode;
   $('#showPrintOrder').checked=project.view.showPrintOrder!==false;
-  syncPrintLinks();updateBuildVolumePreview();renderAllUI();buildInstances();
+  syncPrintLinks();updateBuildVolumePreview();renderAllUI();buildInstances();renderImportedShapes();
   $('#layerSlider').value=Math.min(Number($('#layerSlider').max),project.view.layer);
   const vector=value=>Array.isArray(value)&&value.length===3&&value.every(Number.isFinite);
   if(camera&&vector(project.view.camera))camera.position.fromArray(project.view.camera);

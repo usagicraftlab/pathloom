@@ -5,6 +5,19 @@ export const BASIC_FIELDS=['printWidth','printHeight','printSpeed','travelSpeed'
 export function validateProject(input){
   if(!input||input.format!=='pathloom'||input.version!==1)throw new Error('Unsupported .pathloom project');
   const project=structuredClone(input);
+  if(project.importedShapes!==undefined&&(!Array.isArray(project.importedShapes)||project.importedShapes.length>100))throw new Error('Invalid imported shapes');
+  let importedVertexCount=0;
+  const shapeIds=new Set();
+  for(const shape of project.importedShapes||[]){
+    if(!shape||typeof shape.id!=='string'||!shape.id||shapeIds.has(shape.id)||typeof shape.name!=='string'||typeof shape.visible!=='boolean'||shape.sliceLayerHeight!==undefined&&(!finite(shape.sliceLayerHeight)||shape.sliceLayerHeight<.05||shape.sliceLayerHeight>10)||shape.faces!==undefined&&(!Array.isArray(shape.faces)||shape.faces.length>200000||shape.faces.some((face,index)=>!face||face.index!==index||!finite(face.area)||face.area<0||typeof face.planar!=='boolean'||!Array.isArray(face.bounds)||face.bounds.length!==2||face.bounds.some(point=>!Array.isArray(point)||point.length!==3||!point.every(finite))))||!Array.isArray(shape.meshes)||!shape.meshes.length)throw new Error('Invalid imported shape');shapeIds.add(shape.id);
+    if(shape.assetId!==undefined&&(!/^[a-zA-Z0-9-]{1,96}$/.test(shape.assetId)||!Number.isInteger(shape.brepIndex)||shape.brepIndex<0||!shape.faces?.length))throw new Error('Invalid editable CAD asset reference');
+    for(const mesh of shape.meshes){
+      if(!mesh||typeof mesh.name!=='string'||!Array.isArray(mesh.positions)||mesh.positions.length<9||mesh.positions.length%3||!mesh.positions.every(finite)||!Array.isArray(mesh.indices)||!mesh.indices.length||!mesh.indices.every(index=>Number.isInteger(index)&&index>=0&&index<mesh.positions.length/3)||!Array.isArray(mesh.color)||mesh.color.length!==3||!mesh.color.every(value=>finite(value)&&value>=0&&value<=1)||!Array.isArray(mesh.normals)||mesh.normals.length!==0&&mesh.normals.length!==mesh.positions.length||!mesh.normals.every(finite))throw new Error('Invalid imported shape mesh');
+      if(mesh.brepFaces!==undefined&&(!Array.isArray(mesh.brepFaces)||mesh.brepFaces.length>100000||mesh.brepFaces.some(face=>!face||!Number.isInteger(face.first)||!Number.isInteger(face.last)||face.first<0||face.last<face.first||face.last>=mesh.indices.length/3)))throw new Error('Invalid imported face ranges');
+      if(mesh.triangleFaces!==undefined&&(!Array.isArray(mesh.triangleFaces)||mesh.triangleFaces.length!==mesh.indices.length/3||mesh.triangleFaces.some(index=>!Number.isInteger(index)||index<0||index>=(shape.faces?.length||0))))throw new Error('Invalid imported triangle-to-face map');
+      importedVertexCount+=mesh.positions.length/3;if(importedVertexCount>1000000)throw new Error('Imported shape vertex limit exceeded');
+    }
+  }
   if(!Array.isArray(project.sources)||!Array.isArray(project.instances)||project.sources.length>500||project.instances.length>1000)throw new Error('Invalid objects');
   const ids=new Set();let pointCount=0;
   for(const source of project.sources){
