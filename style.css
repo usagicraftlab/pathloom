@@ -323,3 +323,37 @@ body[data-workspace-mode=output] .path-control{display:grid;left:310px;right:64p
 .graph-node .print-output-heading{padding:10px 6px;gap:5px;font-size:10px}.print-output-icon{width:24px;height:24px}
 .imported-shape-row{display:grid;grid-template-columns:minmax(0,1fr) 24px 24px;align-items:center;gap:6px;padding:5px 2px;border-bottom:1px solid rgba(120,135,150,.16);font-size:12px}.imported-shape-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.imported-shape-row button{padding:1px 5px}.imported-shape-row input{justify-self:center}
 .imported-shape-card{border:1px solid rgba(120,135,150,.2);border-radius:5px;margin:6px 0;padding:2px 6px}.step-shape-tools{padding:0 2px 5px}.step-shape-tools summary{font-size:11px;color:#687785;cursor:pointer;padding:5px 0}.step-shape-tools .field-row{margin:3px 0}.step-slice-button{width:100%;margin-top:4px}.step-face-editor{padding:9px;margin-top:8px;border:1px solid rgba(255,85,61,.45);border-radius:5px;background:rgba(255,85,61,.055)}.step-face-editor>strong{font-size:12px}.step-face-editor .hint{margin:5px 0}.step-face-editor .field-row{margin:5px 0}.step-face-hint{font-size:10px;color:#687785;padding:3px 0 5px}.step-face-move-fields{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:7px 0}.step-face-move-fields label{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px;color:#687785}.step-face-move-fields input{width:76px}
+.step-input-filename{display:block;padding:0 6px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--muted)}
+.cad-face-editor select[multiple]{width:100%;margin-top:6px;font-size:11px}
+.cad-face-editor .field-row{margin-top:6px}
+.cad-face-editor>button{margin-top:8px;width:100%}
+.cad-gizmo-distance{position:fixed;z-index:300;pointer-events:none;padding:5px 8px;border-radius:5px;background:rgba(255,255,255,.85);backdrop-filter:blur(5px);font-size:11px;font-variant-numeric:tabular-nums;box-shadow:0 2px 9px #24374722}
+.cad-gizmo-axis{position:fixed;z-index:30;pointer-events:none;font-size:11px;font-weight:700;transform:translate(-50%,-50%);text-shadow:0 1px 2px white}
+.view-axis-buttons{position:absolute;right:18px;bottom:48px;z-index:25;display:grid;grid-template-columns:repeat(3,32px);gap:4px;padding:7px;border-radius:9px;background:rgba(255,255,255,.4);backdrop-filter:blur(5px)}
+.view-axis-button{height:29px;padding:0;font-size:11px;background:rgba(255,255,255,.5)}
+.view-axis-button[aria-pressed=true]{background:#d9e8f8;border-color:#8ab0d4}
+.cad-face-range{position:fixed;z-index:100;pointer-events:none;border:1px solid #4f99da;background:rgba(79,153,218,.13);border-radius:2px}
+.component-details-panel textarea.component-code-editor{width:100%;min-height:180px;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;tab-size:2}
+/* Orientation cube with six independently reachable direction arrows. */
+.view-axis-buttons.view-cube{width:160px;height:160px;display:block;padding:0;right:18px;bottom:42px;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:none}
+#viewCube{position:absolute;left:30px;top:30px;width:100px;height:100px;overflow:visible;pointer-events:auto;filter:drop-shadow(0 3px 6px #34485c18)}
+.cube-face{cursor:pointer;outline:none}.cube-face polygon{fill:rgba(255,255,255,.8);stroke:#99a7b5;stroke-width:1;stroke-linejoin:round}.cube-face text{fill:#536475;font-size:10px;text-anchor:middle;dominant-baseline:central;pointer-events:none}.cube-face:hover polygon,.cube-face:focus-visible polygon{fill:#e4eff8;stroke:#5789b3}.cube-face[aria-pressed=true] polygon{fill:#d4e5f5;stroke:#6a9ac1}
+.view-cube .cube-arrow{position:absolute;display:flex;align-items:center;justify-content:center;flex-direction:column;width:30px;height:30px;padding:2px;border:0;border-radius:7px;background:rgba(255,255,255,.4);color:#63809b;pointer-events:auto;cursor:pointer}.cube-arrow svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cube-arrow span{font-size:8px;line-height:9px;color:#586878}.view-cube .cube-arrow:hover,.view-cube .cube-arrow:focus-visible{background:#ffffffd9;outline:1px solid #a7b9c9}.view-cube .cube-arrow[aria-pressed=true]{background:#d9e8f8}
+.cube-arrow-top{left:65px;top:0}.cube-arrow-bottom{left:65px;bottom:0}.cube-arrow-left{left:0;top:30px}.cube-arrow-front{left:0;bottom:30px}.cube-arrow-back{right:0;top:30px}.cube-arrow-right{right:0;bottom:30px}
+.cube-arrow-bottom svg{transform:rotate(180deg)}.cube-arrow-left svg{transform:rotate(-60deg)}.cube-arrow-front svg{transform:rotate(-120deg)}.cube-arrow-back svg{transform:rotate(60deg)}.cube-arrow-right svg{transform:rotate(120deg)}
+.view-cube .cube-arrow-top,.view-cube .cube-arrow-bottom{color:#5580b1}.view-cube .cube-arrow-left,.view-cube .cube-arrow-right{color:#b16b68}.view-cube .cube-arrow-front,.view-cube .cube-arrow-back{color:#61947d}
+body[data-workspace-mode=output] .layer-control{bottom:222px}body[data-workspace-mode=output] .path-control{right:190px}
+#layerPauseMarkers{position:absolute;inset:2px 0;pointer-events:none}.layer-pause-marker{position:absolute;left:-13px;width:17px;height:17px;transform:translateY(50%);padding:0;border:1px solid #be9b5f;border-radius:4px;background:#fff3d7;color:#866125;font-size:10px;line-height:15px;cursor:pointer;pointer-events:auto}.layer-pause-marker:focus-visible{outline:2px solid #a88043}.layer-control input.has-layer-pause{accent-color:#b28b48}.layer-pause-menu{z-index:240}
+
+/* Object identity stays readable inside the compact printer component. */
+.print-object-name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;padding:0 8px 9px;font-size:10px;line-height:1.4;color:var(--muted);text-align:center}
+.component-details-panel .operation-card>label:has(>input[aria-label="Object name"]){display:grid;gap:5px;margin:8px 0 12px;font-size:11px}
+.component-details-panel input[aria-label="Object name"]{width:100%;min-width:0}
+/* Keep object navigation above the filename and print estimates. */
+.preview-object-control{top:12px}
+.print-estimate-overlay .project-name{overflow-wrap:anywhere}
+/* Printer names need more room than numeric value fields. */
+.basic-panel .field-row #printerSelect{width:128px}
+
+.print-estimate-overlay .project-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body[data-workspace-mode=output] .layer-control{top:max(260px,var(--print-estimate-bottom,260px))}

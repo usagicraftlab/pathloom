@@ -1,10 +1,11 @@
+import {initCadGizmo} from './cad-gizmo.js';
+import {moveStepFaces} from './step-import.js';
 let cadHiddenGroups=[],cadProposalGroup=null;
-import {numberParameters,pipelineLayerHeight,migrateDefinition} from './cad-pipeline.js';
+import {printOutputNodes,numberParameters,pipelineLayerHeight,migrateDefinition} from './cad-pipeline.js';
 import { initCad } from './cad-ui.js';
 import { BASIC_FIELDS, validateProject } from './pathloom-project.js';
-import { durationText, thumbnailBlock, encodeQoi, progressCommand, usageComments } from './gcode-metadata.js';
+import { validatePauseLayers, pauseGcode, durationText, thumbnailBlock, encodeQoi, progressCommand, usageComments } from './gcode-metadata.js';
 import { estimatePrintTime, estimateFilamentUsage } from './print-time.js';
-import { normalizeStepResult } from './step-import.js';
 
 const LIBRARY_KEY = 'pathloom.filamentLibrary.v1';
 const sourceState = new Map();
@@ -20,13 +21,13 @@ const $ = sel => document.querySelector(sel);
 const canvas = $('#threeCanvas');
 const viewport = $('#viewport');
 let THREE,renderer,scene,camera,controls,toolpathGroup,importedShapeGroup,buildVolumeGroup,previewPointMarker;
-let importedShapes=[];
+let importedShapes=[],selectedImportedId=null,importedGizmo=null;
 const selectedBrepFaces=new Map();
 const configuredBuildVolume={bedWidth:250,bedDepth:210,maxHeight:220};
 const renderedInstances=new Map();
 const previewGeometryCache=new Map();
 let previewDirty=true;
-let inspectingLayerPaths=false;
+let inspectingLayerPaths=false,axisView=null,axisDirection=null,axisUp=null;
 async function initializePreview(){
   const modules=await Promise.all([
     import('./vendor/three/three.module.js'),
@@ -39,7 +40,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setClearColor(0x0
 scene = new THREE.Scene(); scene.fog = new THREE.Fog(0xe9edf2,600,1000);
 camera = new THREE.PerspectiveCamera(36,1,.1,1200); camera.position.set(180,-320,340);
 camera.up.set(0,0,1);
-controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping=false; controls.mouseButtons.LEFT=null; controls.mouseButtons.MIDDLE=THREE.MOUSE.PAN; controls.mouseButtons.RIGHT=THREE.MOUSE.ROTATE; controls.addEventListener('change',()=>{previewDirty=true}); controls.target.set(0,0,16); controls.maxPolarAngle=Math.PI/2.03; controls.minDistance=90; controls.maxDistance=520;
+controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping=false; controls.mouseButtons.LEFT=null; controls.mouseButtons.MIDDLE=THREE.MOUSE.PAN; controls.mouseButtons.RIGHT=THREE.MOUSE.ROTATE; controls.addEventListener('change',()=>{previewDirty=true;if(axisView){const direction=camera.position.clone().sub(controls.target).normalize();if(direction.angleTo(axisDirection)>1e-5)restorePerspective();else{const distance=camera.position.distanceTo(controls.target);camera.position.copy(controls.target).addScaledVector(axisDirection,distance);camera.up.copy(axisUp);camera.lookAt(controls.target);camera.up.set(0,0,1)}}}); controls.target.set(0,0,16); controls.maxPolarAngle=Math.PI; controls.minDistance=90; controls.maxDistance=520;
 scene.add(new THREE.HemisphereLight(0xffffff,0x9aa5b1,1.65)); const keyLight=new THREE.DirectionalLight(0xffffff,1.35); keyLight.position.set(80,-120,180); scene.add(keyLight);
 updateBuildVolumePreview();
 toolpathGroup=new THREE.Group(); scene.add(toolpathGroup);
@@ -55,12 +56,11 @@ function renderImportedShapes(){
     for(const shape of importedShapes){
       const card=document.createElement('div');card.className='imported-shape-card';
       const row=document.createElement('div');row.className='imported-shape-row';
-      const name=document.createElement('span');name.textContent=shape.faces?.length?`${shape.name} · ${shape.faces.length} CAD faces`:shape.name;name.title=shape.faces?.length?`${shape.name} · NVIDIA usd-brep`:`${shape.name} · STEP reference`;
+      const name=document.createElement('span');name.textContent=shape.faces?.length?`${shape.name} · ${shape.faces.length} CAD faces`:shape.name;name.title=shape.faces?.length?`${shape.name} · ${shape.kernel||'CAD B-rep'}`:`${shape.name} · STEP reference`;
       const visible=document.createElement('input');visible.type='checkbox';visible.checked=shape.visible!==false;visible.setAttribute('aria-label',`Show ${shape.name}`);visible.addEventListener('change',()=>{shape.visible=visible.checked;renderImportedShapes()});
       const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.setAttribute('aria-label',`Remove ${shape.name}`);remove.addEventListener('click',()=>{importedShapes=importedShapes.filter(item=>item.id!==shape.id);renderImportedShapes()});
       row.append(name,visible,remove);card.append(row);
-      if(shape.faces?.length){const selected=selectedBrepFaces.get(shape.id)?.size||0;const faceHint=document.createElement('div');faceHint.className='step-face-hint';faceHint.textContent=`CAD face selection · ${selected} selected · Shift-click to add/remove`;card.append(faceHint)}
-      if(shape.assetId&&shape.faces?.length){const editor=document.createElement('div');editor.className='step-face-editor';const title=document.createElement('strong');title.textContent='Move selected CAD face(s)';const fields=document.createElement('div');fields.className='step-face-move-fields';const makeOffset=axis=>{const label=document.createElement('label');label.textContent=`${axis} · mm`;const input=document.createElement('input');input.type='number';input.step='.1';input.min='-1000';input.max='1000';input.value='0';input.setAttribute('aria-label',`Move selected faces ${axis}`);label.append(input);fields.append(label);return input};const xOffset=makeOffset('X'),yOffset=makeOffset('Y');const move=document.createElement('button');move.type='button';move.textContent='Apply face movement';move.disabled=!selectedBrepFaces.get(shape.id)?.size;move.addEventListener('click',()=>document.dispatchEvent(new CustomEvent('pathloom:move-step-faces',{detail:{shapeId:shape.id,assetId:shape.assetId,brepIndex:shape.brepIndex,faceIndices:[...(selectedBrepFaces.get(shape.id)||[])],dx:Number(xOffset.value),dy:Number(yOffset.value)}})));editor.append(title,fields,move);card.append(editor)}
+      if(shape.faces?.length){const selected=selectedBrepFaces.get(shape.id)?.size||0;const faceHint=document.createElement('div');faceHint.className='step-face-hint';faceHint.textContent=`CAD face selection · ${selected} selected · ⌘⇧ click to toggle faces · Click to select object`;card.append(faceHint)}
       const tools=document.createElement('details');tools.className='step-shape-tools';const summary=document.createElement('summary');summary.textContent='STEP Slice · lines';tools.append(summary);
       const heightLabel=document.createElement('label');heightLabel.className='field-row';const heightName=document.createElement('span');heightName.textContent='Layer height';const heightWrap=document.createElement('div');heightWrap.className='number-wrap';const height=document.createElement('input');height.type='number';height.min='.05';height.max='10';height.step='.05';height.value=String(shape.sliceLayerHeight??.2);height.addEventListener('change',()=>{shape.sliceLayerHeight=Number(height.value)});height.setAttribute('aria-label',`${shape.name} layer height`);const unit=document.createElement('span');unit.textContent='mm';heightWrap.append(height,unit);heightLabel.append(heightName,heightWrap);
       const slice=document.createElement('button');slice.type='button';slice.className='step-slice-button';slice.textContent='Generate line toolpaths';slice.addEventListener('click',()=>sliceStepShape(shape,Number(height.value)));
@@ -73,13 +73,13 @@ function renderImportedShapes(){
   for(const shape of importedShapes){
     const group=new THREE.Group();group.visible=shape.visible!==false;
     shape.meshes.forEach((mesh,meshIndex)=>{
-      const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(mesh.positions,3));if(mesh.normals?.length===mesh.positions.length)geometry.setAttribute('normal',new THREE.Float32BufferAttribute(mesh.normals,3));else geometry.computeVertexNormals();geometry.setIndex(mesh.indices);
-      const object=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:new THREE.Color(...mesh.color),metalness:.12,roughness:.72,side:THREE.DoubleSide}));object.userData={shapeId:shape.id,meshIndex,triangleFaces:Array.isArray(mesh.triangleFaces)?mesh.triangleFaces:null};group.add(object);
-      const chosen=selectedBrepFaces.get(shape.id);if(chosen?.size&&Array.isArray(mesh.triangleFaces)){const positions=[];for(let triangle=0;triangle<mesh.triangleFaces.length;triangle++){if(!chosen.has(mesh.triangleFaces[triangle]))continue;for(let corner=0;corner<3;corner++){const vertex=mesh.indices[triangle*3+corner]*3;positions.push(mesh.positions[vertex],mesh.positions[vertex+1],mesh.positions[vertex+2])}}if(positions.length){const selectedGeometry=new THREE.BufferGeometry();selectedGeometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));selectedGeometry.computeVertexNormals();const highlight=new THREE.Mesh(selectedGeometry,new THREE.MeshStandardMaterial({color:0xff553d,emissive:0x6a1008,metalness:0,roughness:.5,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));highlight.userData.faceSelectionOverlay=true;group.add(highlight)}}
+      const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(mesh.positions,3));if(mesh.normals?.length===mesh.positions.length)geometry.setAttribute('normal',new THREE.Float32BufferAttribute(mesh.normals,3));geometry.setIndex(mesh.indices);if(!mesh.normals?.length)geometry.computeVertexNormals();
+      const object=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:selectedImportedId===shape.id&&!selectedBrepFaces.get(shape.id)?.size?0x83b6e0:new THREE.Color(...mesh.color),metalness:.12,roughness:.72,side:THREE.DoubleSide}));object.userData={shapeId:shape.id,meshIndex,triangleFaces:Array.isArray(mesh.triangleFaces)?mesh.triangleFaces:null};group.add(object);
+      const chosen=selectedBrepFaces.get(shape.id);if(chosen?.size&&Array.isArray(mesh.triangleFaces)){const positions=[];for(let triangle=0;triangle<mesh.triangleFaces.length;triangle++){if(!chosen.has(mesh.triangleFaces[triangle]))continue;for(let corner=0;corner<3;corner++){const vertex=mesh.indices[triangle*3+corner]*3;positions.push(mesh.positions[vertex],mesh.positions[vertex+1],mesh.positions[vertex+2])}}if(positions.length){const selectedGeometry=new THREE.BufferGeometry();selectedGeometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));selectedGeometry.computeVertexNormals();const highlight=new THREE.Mesh(selectedGeometry,new THREE.MeshStandardMaterial({color:0xff553d,emissive:0x6a1008,metalness:0,roughness:.5,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1}));highlight.userData.faceSelectionOverlay=true;highlight.userData.shapeId=shape.id;group.add(highlight)}}
     });
     importedShapeGroup.add(group);
   }
-  previewDirty=true;
+  importedGizmo?.refresh();previewDirty=true;
 }
 
 async function sliceStepShape(shape,layerHeight){
@@ -101,7 +101,7 @@ function addImportedBrepInspection(result){
 }
 
 function applyImportedBrepEdit(shapeId,result){
-  const shape=importedShapes.find(item=>item.id===shapeId),brep=shape&&result?.breps?.[shape.brepIndex];if(!shape||!brep?.mesh)throw new Error('Edited CAD shape was not returned');
+  const shape=importedShapes.find(item=>item.id===shapeId);if(shape&&result?.brep){Object.assign(shape,{brep:result.brep,faces:result.faces,meshes:result.meshes,kernel:result.kernel});selectedBrepFaces.delete(shapeId);renderImportedShapes();return}const brep=shape&&result?.breps?.[shape.brepIndex];if(!shape||!brep?.mesh)throw new Error('Edited CAD shape was not returned');
   if(!Array.isArray(brep.mesh.triangleFaces)||brep.mesh.triangleFaces.length!==brep.mesh.indices.length/3||brep.mesh.triangleFaces.some(index=>!Number.isInteger(index)||index<0||index>=brep.faces.length))throw new Error('Edited CAD face mapping is invalid');
   shape.faces=brep.faces;shape.meshes=[{name:brep.name,positions:brep.mesh.positions,normals:brep.mesh.normals,indices:brep.mesh.indices,color:[.72,.76,.81],triangleFaces:brep.mesh.triangleFaces}];selectedBrepFaces.delete(shapeId);renderImportedShapes();
 }
@@ -113,15 +113,16 @@ function selectImportedFace(event){
   const hit=ray.intersectObject(importedShapeGroup,true).find(item=>item.object.visible&&!item.object.userData.faceSelectionOverlay&&item.object.userData.triangleFaces);
   if(!hit)return;
   const shapeId=hit.object.userData.shapeId,faceIndex=hit.object.userData.triangleFaces[hit.faceIndex];if(!Number.isInteger(faceIndex))return;
-  if(!event.shiftKey)selectedBrepFaces.clear();
-  let selected=selectedBrepFaces.get(shapeId);if(!selected){selected=new Set();selectedBrepFaces.set(shapeId,selected)}
-  if(event.shiftKey&&selected.has(faceIndex))selected.delete(faceIndex);else selected.add(faceIndex);
-  if(!selected.size)selectedBrepFaces.delete(shapeId);
+  document.dispatchEvent(new CustomEvent('pathloom:geometry-selection',{detail:{owner:'imported'}}));
+  if(event.metaKey&&event.shiftKey){if(selectedImportedId!==shapeId)selectedBrepFaces.clear();const selected=selectedBrepFaces.get(shapeId)||new Set();if(selected.has(faceIndex))selected.delete(faceIndex);else selected.add(faceIndex);selectedBrepFaces.set(shapeId,selected);selectedImportedId=selected.size?shapeId:null}else{selectedBrepFaces.clear();selectedImportedId=shapeId}
   renderImportedShapes();
 }
 let facePickStart=null;
 canvas.addEventListener('pointerdown',event=>{facePickStart=event.button===0?[event.clientX,event.clientY]:null});
 canvas.addEventListener('pointerup',event=>{if(!facePickStart)return;const distance=Math.hypot(event.clientX-facePickStart[0],event.clientY-facePickStart[1]);facePickStart=null;if(distance<4)selectImportedFace(event)});
+
+importedGizmo=initCadGizmo({preview:()=>({THREE,scene,camera,controls,canvas,dirty:()=>{previewDirty=true}}),error:message=>showToast(message,'error'),selection(){const shape=importedShapes.find(s=>s.id===selectedImportedId&&s.visible!==false);if(!shape?.brep)return null;return{id:shape.id,data:shape.brep.data,faces:new Set(selectedBrepFaces.get(shape.id)||[]),objects:importedShapeGroup?.children.flatMap(g=>g.children.filter(n=>n.userData.shapeId===shape.id))||[]}},async commit(target,offset){const shape=importedShapes.find(s=>s.id===target.id);if(shape?.brep?.data!==target.data)throw new Error('CAD object changed; select it again');const result=await moveStepFaces(shape,[...target.faces],offset,!target.faces.size);if(shape.brep.data!==target.data)throw new Error('CAD object changed during edit');applyImportedBrepEdit(shape.id,result)}});
+document.addEventListener('pathloom:geometry-selection',event=>{if(event.detail.owner!=='imported'&&selectedImportedId){selectedImportedId=null;selectedBrepFaces.clear();renderImportedShapes()}});
 
 function updateBuildVolumePreview(){
   const {bedWidth:width,bedDepth:depth,maxHeight:height}=configuredBuildVolume;
@@ -129,7 +130,7 @@ function updateBuildVolumePreview(){
   if(!scene)return;
   if(buildVolumeGroup){scene.remove(buildVolumeGroup);buildVolumeGroup.traverse(child=>{child.geometry?.dispose();if(Array.isArray(child.material))child.material.forEach(material=>material.dispose());else child.material?.dispose()})}
   buildVolumeGroup=new THREE.Group();
-  const plate=new THREE.Mesh(new THREE.BoxGeometry(width,depth,3),new THREE.MeshStandardMaterial({color:0xc9d0d8,metalness:.08,roughness:.88}));plate.position.z=-1.8;buildVolumeGroup.add(plate);
+  const plate=new THREE.Mesh(new THREE.BoxGeometry(width,depth,3),new THREE.MeshStandardMaterial({color:0xc9d0d8,metalness:.08,roughness:.88}));plate.userData.buildPlate=true;plate.position.z=-1.8;buildVolumeGroup.add(plate);
   const gridLines={minor:[],major:[]},addGridLine=(group,x1,y1,x2,y2)=>gridLines[group].push(x1,y1,.1,x2,y2,.1),gridStep=10;
   for(let index=Math.ceil(-width/2/gridStep);index<=Math.floor(width/2/gridStep);index++){const x=index*gridStep;addGridLine(index%5===0?'major':'minor',x,-depth/2,x,depth/2)}
   for(let index=Math.ceil(-depth/2/gridStep);index<=Math.floor(depth/2/gridStep);index++){const y=index*gridStep;addGridLine(index%5===0?'major':'minor',-width/2,y,width/2,y)}
@@ -140,6 +141,7 @@ function updateBuildVolumePreview(){
   const origin=new THREE.Vector3(-width/2,-depth/2,.5);
   for(const[direction,color]of [[new THREE.Vector3(1,0,0),0xff4545],[new THREE.Vector3(0,1,0),0x4bd665],[new THREE.Vector3(0,0,1),0x5588ff]])buildVolumeGroup.add(new THREE.ArrowHelper(direction,origin,28,color,5,2));
   scene.add(buildVolumeGroup);
+  if(camera.isOrthographicCamera)restorePerspective();
   const size=Math.max(width,depth,height),aspect=camera.aspect||1,distance=size/Math.sin(camera.fov*Math.PI/360)/Math.min(1,aspect);
   controls.target.set(0,0,height/2);camera.position.set(0,-distance*.8,height/2+distance*.6);controls.maxDistance=Math.max(520,distance*2);camera.far=Math.max(1200,distance*4);camera.updateProjectionMatrix();controls.update();previewDirty=true;
 }
@@ -159,11 +161,11 @@ function toolOutputAppearance(source,toolId){const tool=source?.tools.get(String
 function toolPreviewColor(source,toolId){return toolOutputAppearance(source,toolId)?.color||'#fff'}
 function sanitizeToolpath(raw,filename='Untitled.toolpath'){if(!raw||!Array.isArray(raw.paths))throw new Error('Missing paths[]');const paths=raw.paths.map((path,index)=>{if(!Array.isArray(path.points)||path.points.length<2)throw new Error(`Path ${index} needs at least 2 points`);const points=path.points.map(p=>{if(!Array.isArray(p)||p.length<3||p.slice(0,3).some(v=>!Number.isFinite(Number(v))))throw new Error(`Invalid XYZ point in path ${index}`);return p.slice(0,3).map(Number)});return{order:Number.isFinite(Number(path.order))?Number(path.order):index,tool:String(path.tool??0),points}}).sort((a,b)=>a.order-b.order);const zValues=[...new Set(paths.map(p=>Number(p.points[0][2].toFixed(4))))].sort((a,b)=>a-b);paths.forEach(p=>{const z=Number(p.points[0][2].toFixed(4));p.layer=zValues.indexOf(z)+1});return{filename,paths,maxLayer:Math.max(1,zValues.length)}}
 function sourceXYCenter(source){let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;for(const path of source?.paths||[])for(const[x,y]of path.points){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y)}return Number.isFinite(minX)?[(minX+maxX)/2,(minY+maxY)/2]:[0,0]}
-function addSource(toolpath,options={}){sourceCounter++;const id=options.id||`S${sourceCounter}`;const label=options.label||toolpath.filename.replace(/\.toolpath$|\.json$/i,'')||id;const tools=new Map();[...new Set(toolpath.paths.map(p=>p.tool))].forEach((toolId,index)=>{const appearance=sharedToolAppearance(toolId,index);tools.set(String(toolId),{...appearance,speedOverride:null,erate:1})});const source={id,label,filename:toolpath.filename,paths:toolpath.paths,maxLayer:toolpath.maxLayer,tools};sourceState.set(id,source);const[centerX,centerY]=sourceXYCenter(source);addInstance(id,`${id}-${nextInstanceNumber(id)}`,{x:-centerX,y:-centerY,rotation:0});autoArrange(false);renderAllUI();buildInstances();return id}
-function upsertLiveToolpath(payload){if(!payload||!Array.isArray(payload.paths))throw new Error('Grasshopper payload needs paths[]');const liveSource=String(payload.source||'').trim();if(!liveSource)throw new Error('Grasshopper source is required');const label=String(payload.label||liveSource||'Grasshopper Live').trim()||'Grasshopper Live';const toolpath=sanitizeToolpath({paths:payload.paths},`${label}.toolpath`);let source=[...sourceState.values()].find(item=>item.liveSource===liveSource);if(!source){const sourceId=addSource(toolpath,{label});source=sourceState.get(sourceId);source.liveSource=liveSource;showToast(`${label} connected from ${payload.origin||'Grasshopper'}`);return{sourceId,created:true}}const previousTools=source.tools;const nextTools=new Map();[...new Set(toolpath.paths.map(path=>String(path.tool)))].forEach((toolId,index)=>{const existing=previousTools.get(toolId);if(existing){nextTools.set(toolId,existing)}else{const appearance=sharedToolAppearance(toolId,index);nextTools.set(toolId,{...appearance,speedOverride:null,erate:1})}});source.label=label;source.filename=toolpath.filename;source.paths=toolpath.paths;source.maxLayer=toolpath.maxLayer;source.tools=nextTools;previewGeometryCache.delete(source.id);renderAllUI();buildInstances();return{sourceId:source.id,created:false}}
+function addSource(toolpath,options={}){sourceCounter++;const id=options.id||`S${sourceCounter}`;const label=options.label||toolpath.filename.replace(/\.toolpath$|\.json$/i,'')||id;const tools=new Map();[...new Set(toolpath.paths.map(p=>p.tool))].forEach((toolId,index)=>{const appearance=sharedToolAppearance(toolId,index);tools.set(String(toolId),{...appearance,speedOverride:null,erate:1})});const source={id,label,filename:toolpath.filename,paths:toolpath.paths,maxLayer:toolpath.maxLayer,tools};sourceState.set(id,source);const[centerX,centerY]=sourceXYCenter(source);addInstance(id,`${id}-${nextInstanceNumber(id)}`,{x:-centerX,y:-centerY,rotation:0});autoArrange(false);if(!options.deferRender){renderAllUI();buildInstances()}return id}
+function upsertLiveToolpath(payload){if(!payload||!Array.isArray(payload.paths))throw new Error('Grasshopper payload needs paths[]');const liveSource=String(payload.source||'').trim();if(!liveSource)throw new Error('Grasshopper source is required');const label=String(payload.label||liveSource||'Grasshopper Live').trim()||'Grasshopper Live';const toolpath=sanitizeToolpath({paths:payload.paths},`${label}.toolpath`);let source=[...sourceState.values()].find(item=>item.liveSource===liveSource);if(!source){const sourceId=addSource(toolpath,{label,deferRender:payload.deferRender});source=sourceState.get(sourceId);source.liveSource=liveSource;showToast(`${label} connected from ${payload.origin||'Grasshopper'}`);return{sourceId,created:true}}const previousTools=source.tools;const nextTools=new Map();[...new Set(toolpath.paths.map(path=>String(path.tool)))].forEach((toolId,index)=>{const existing=previousTools.get(toolId);if(existing){nextTools.set(toolId,existing)}else{const appearance=sharedToolAppearance(toolId,index);nextTools.set(toolId,{...appearance,speedOverride:null,erate:1})}});source.label=label;source.filename=toolpath.filename;source.paths=toolpath.paths;source.maxLayer=toolpath.maxLayer;source.tools=nextTools;previewGeometryCache.delete(source.id);if(!payload.deferRender){renderAllUI();buildInstances()}return{sourceId:source.id,created:false}}
 function nextInstanceNumber(sourceId){let max=0;for(const[id,inst]of instanceState)if(inst.source===sourceId){const n=Number(id.split('-').pop());if(Number.isFinite(n))max=Math.max(max,n)}return max+1}
 function addInstance(sourceId,id=`${sourceId}-${nextInstanceNumber(sourceId)}`,transform={}){const maxOrder=Math.max(0,...[...instanceState.values()].map(v=>v.order||0));instanceState.set(id,{source:sourceId,x:transform.x??0,y:transform.y??0,rotation:transform.rotation??0,order:maxOrder+1});selectedInstance=id;return id}
-function removeSource(sourceId){document.dispatchEvent(new CustomEvent('pathloom:source-removed',{detail:{liveSource:sourceState.get(sourceId)?.liveSource}}));sourceState.delete(sourceId);syncPrintLinks();for(const[id,inst]of[...instanceState])if(inst.source===sourceId)instanceState.delete(id);selectedInstance=[...instanceState.keys()][0]||null;normalizeOrder();renderAllUI();buildInstances()}
+function removeSource(sourceId,notify=true){const removed=sourceState.get(sourceId);if(notify)document.dispatchEvent(new CustomEvent('pathloom:source-removed',{detail:{sourceId,liveSource:removed?.liveSource,generatorGroup:removed?.generatorGroup,generatorOutputId:removed?.generatorOutputId}}));sourceState.delete(sourceId);syncPrintLinks();for(const[id,inst]of[...instanceState])if(inst.source===sourceId)instanceState.delete(id);selectedInstance=[...instanceState.keys()][0]||null;normalizeOrder();renderAllUI();buildInstances()}
 function normalizeOrder(){[...instanceState.entries()].sort((a,b)=>a[1].order-b[1].order).forEach(([,data],i)=>data.order=i+1)}
 function toolEffectiveSpeed(tool){return tool?.speedOverride??(Number($('#printSpeed').value)||35)}
 function createPathLineMaterial(color){
@@ -231,8 +233,22 @@ function updateLayerRange(reset=false){
   slider.max=max;slider.value=reset?max:Math.max(1,Math.min(max,Number(slider.value)));slider.disabled=!source||max===1;
   $('#layerValue').textContent=`${slider.value} / ${max}`;$('#pathSlider').disabled=!source;$('#previousPath').disabled=!source;$('#nextPath').disabled=!source;
   $('#previewObjectName').textContent=previewInstance==='ALL'?'ALL':data?instanceDisplayName(previewInstance,data):'No objects';
-  $('#previousObject').disabled=!entries.length;$('#nextObject').disabled=!entries.length;
+  $('#previousObject').disabled=!entries.length;$('#nextObject').disabled=!entries.length;renderLayerPauses();
 }
+const layerPauseMenu=document.createElement('div');layerPauseMenu.className='operation-context layer-pause-menu';layerPauseMenu.hidden=true;layerPauseMenu.setAttribute('aria-label','Layer pause menu');document.body.append(layerPauseMenu);
+function renderLayerPauses(){
+  const host=$('#layerPauseMarkers'),instance=instanceState.get(previewInstance),max=Number($('#layerSlider').max);if(!host)return;host.replaceChildren();
+  for(const layer of instance?.pauseLayers||[]){if(layer>max)continue;const marker=document.createElement('button');marker.type='button';marker.className='layer-pause-marker';marker.style.bottom=max>1?`calc(9px + (100% - 18px) * ${(layer-1)/(max-1)})`:'50%';marker.textContent='Ⅱ';marker.title=`Pause before layer ${layer}`;marker.setAttribute('aria-label',marker.title);marker.addEventListener('click',()=>{$('#layerSlider').value=layer;$('#layerSlider').dispatchEvent(new Event('input',{bubbles:true}))});marker.addEventListener('contextmenu',event=>{$('#layerSlider').value=layer;$('#layerSlider').dispatchEvent(new Event('input',{bubbles:true}));showLayerPauseMenu(event)});host.append(marker)}
+  const active=instance?.pauseLayers?.includes(Number($('#layerSlider').value));$('#layerSlider').classList.toggle('has-layer-pause',!!active);$('#layerSlider').title=active?'Pause before this layer · right-click to remove':'Right-click to insert a pause before this layer';
+}
+function showLayerPauseMenu(event){
+  if(document.body.dataset.workspaceMode!=='output')return;event.preventDefault();event.stopPropagation();const instance=instanceState.get(previewInstance);if(!instance){showToast('Select an object to add a layer pause');return}
+  const layer=Number($('#layerSlider').value),paused=instance.pauseLayers?.includes(layer);layerPauseMenu.replaceChildren();const toggle=document.createElement('button');toggle.type='button';toggle.textContent=paused?`Remove pause before layer ${layer}`:`Insert pause before layer ${layer}`;toggle.addEventListener('click',()=>{instance.pauseLayers=paused?instance.pauseLayers.filter(n=>n!==layer):[...(instance.pauseLayers||[]),layer].sort((a,b)=>a-b);layerPauseMenu.hidden=true;renderLayerPauses()});layerPauseMenu.append(toggle);
+  if(instance.pauseLayers?.length){const clear=document.createElement('button');clear.type='button';clear.textContent='Remove all pauses';clear.addEventListener('click',()=>{instance.pauseLayers=[];layerPauseMenu.hidden=true;renderLayerPauses()});layerPauseMenu.append(clear)}
+  layerPauseMenu.hidden=false;const rect=layerPauseMenu.getBoundingClientRect();layerPauseMenu.style.left=Math.max(8,Math.min(event.clientX,innerWidth-rect.width-8))+'px';layerPauseMenu.style.top=Math.max(8,Math.min(event.clientY,innerHeight-rect.height-8))+'px';toggle.focus();
+}
+document.querySelector('.layer-control').addEventListener('contextmenu',showLayerPauseMenu);
+document.addEventListener('pointerdown',event=>{if(!layerPauseMenu.contains(event.target))layerPauseMenu.hidden=true});document.addEventListener('keydown',event=>{if(event.key==='Escape')layerPauseMenu.hidden=true});new MutationObserver(()=>{layerPauseMenu.hidden=true}).observe(document.body,{attributes:true,attributeFilter:['data-workspace-mode']});
 function stepPreviewLayer(direction){const slider=$('#layerSlider');if(slider.disabled)return;const next=Math.max(Number(slider.min),Math.min(Number(slider.max),Number(slider.value)+direction));if(next===Number(slider.value))return;slider.value=next;$('#layerValue').textContent=`${next} / ${slider.max}`;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false;refreshVisibility()}
 function stepLayerPoint(direction){const slider=$('#pathSlider');if(slider.disabled)return;slider.value=Math.max(0,Math.min(Number(slider.max),Number(slider.value)+direction));inspectingLayerPaths=true;refreshVisibility()}
 function applyCadPreviewVisibility(){
@@ -241,6 +257,7 @@ function applyCadPreviewVisibility(){
   if(cadProposalGroup&&cad?.sourceId)for(const[id,group]of renderedInstances)if(instanceState.get(id)?.source===cad.sourceId){group.visible=false;if(!cadHiddenGroups.includes(group))cadHiddenGroups.push(group)}
 }
 function refreshVisibility(){
+  renderLayerPauses();
   const processing=window.PathloomCad?.isProcessing?.();if(processing){$('#layerSlider').value=$('#layerSlider').max;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false;$('#layerValue').textContent=`${$('#layerSlider').max} / ${$('#layerSlider').max}`}
   previewDirty=true;
   if(previewInstance==='ALL'){if(previewPointMarker)previewPointMarker.visible=false;$('#pathValue').textContent='ALL';for(const[id,group]of renderedInstances){group.visible=true;const source=sourceState.get(instanceState.get(id)?.source);for(const line of group.children){line.visible=true;line.geometry.setDrawRange(0,Infinity);line.material.color.set(toolPreviewColor(source,line.userData.toolId));line.material.uniforms.lineOpacity.value=1}}applyCadPreviewVisibility();updatePrintOrderMarkers();return}
@@ -539,7 +556,7 @@ function generateGcode(){
   if(!instanceState.size)throw new Error('Add a .toolpath file first');
   assertPrintReferencesCurrent();
   for(const source of sourceState.values())if(source.generator&&source.generationError)throw new Error(`${source.label}: ${source.generationError}`);
-  for(const source of sourceState.values())if(source.generator){const layerHeight=pipelineLayerHeight(source.generator);if(layerHeight===null||Math.abs(layerHeight-Number($('#printHeight').value))>1e-6)throw new Error(`Set Print height to ${layerHeight} mm to match ${source.label}`)}
+  for(const source of sourceState.values())if(source.generator){const layerHeight=pipelineLayerHeight(source.generator,source.generatorOutputId);if(layerHeight===null||Math.abs(layerHeight-Number($('#printHeight').value))>1e-6)throw new Error(`Set Print height to ${layerHeight} mm to match ${source.label}`)}
   const width=Number($('#printWidth').value),height=Number($('#printHeight').value),filamentD=configuredFilamentDiameter,travel=Number($('#travelSpeed').value),nozzleTemperature=Number($('#nozzleTemperature').value),bedTemperature=Number($('#bedTemperature').value),fanSpeed=Number($('#fanSpeed').value);
   if(![width,height,filamentD,travel].every(value=>Number.isFinite(value)&&value>0)||![nozzleTemperature,bedTemperature].every(value=>Number.isFinite(value)&&value>=0)||!Number.isFinite(fanSpeed)||fanSpeed<0||fanSpeed>100)throw new Error('Check Basic Settings');
   const orderedInstances=[...instanceState.entries()].sort((a,b)=>a[1].order-b[1].order),filamentArea=Math.PI*Math.pow(filamentD/2,2),ePerMmBase=width*height/filamentArea;
@@ -557,16 +574,16 @@ function generateGcode(){
   lines.push(progressCommand(0,estimate.totalSeconds));
   let elapsed=0,previousPoint=null;
   for(const[instanceIndex,[instanceId,instance]]of orderedInstances.entries()){
-    const source=sourceState.get(instance.source);lines.push(`\n; INSTANCE ${instanceDisplayName(instanceId,instance)}`);
+    const source=sourceState.get(instance.source);validatePauseLayers(instance.pauseLayers,source.maxLayer);lines.push(`\n; INSTANCE ${instanceDisplayName(instanceId,instance)}`);
     if(instanceIndex>0){
       const[previousId,previousInstance]=orderedInstances[instanceIndex-1],previousSource=sourceState.get(previousInstance.source),previousMaxZ=sourceMaxZ(previousSource),nextStart=printerPoints(source.paths[0],instance)[0],safeZ=Math.min(configuredBuildVolume.maxHeight,previousMaxZ+10),travelFeedrate=Math.round(travel*60);
       lines.push(`; Move safely from ${instanceDisplayName(previousId,previousInstance)} to ${instanceDisplayName(instanceId,instance)}`,`G1 Z${safeZ.toFixed(3)} F${travelFeedrate} ; raise 10 mm`,`G1 X${nextStart[0].toFixed(3)} Y${nextStart[1].toFixed(3)} F${travelFeedrate} ; move to next object`,`G1 Z${nextStart[2].toFixed(3)} F${travelFeedrate} ; lower to start Z`);
     }
-    let previousLayerZ=null;
+    let previousLayerZ=null;const emittedPauses=new Set();
     source.paths.forEach((path,pathIndex)=>{
       const tool=source.tools.get(path.tool),outputTool=toolOutputId(path.tool,tool),numericTool=Number(outputTool);
       const points=printerPoints(path,instance),[startX,startY,startZ]=points[0],travelFeedrate=Math.round(travel*60);
-      if(previousLayerZ!==startZ){lines.push(';LAYER_CHANGE',`;Z:${startZ.toFixed(3)}`,`;HEIGHT:${(previousLayerZ===null?startZ:startZ-previousLayerZ).toFixed(3)}`);previousLayerZ=startZ}
+      if(previousLayerZ!==startZ){lines.push(';LAYER_CHANGE',`;Z:${startZ.toFixed(3)}`,`;HEIGHT:${(previousLayerZ===null?startZ:startZ-previousLayerZ).toFixed(3)}`);previousLayerZ=startZ;if(!emittedPauses.has(path.layer)){lines.push(...pauseGcode(path.layer,instance.pauseLayers));emittedPauses.add(path.layer)}}
       if(previousPoint){const lift=pathIndex===0?Math.min(configuredBuildVolume.maxHeight,sourceMaxZ(sourceState.get(orderedInstances[instanceIndex-1][1].source))+10):startZ;elapsed+=(Math.abs(lift-previousPoint[2])+Math.hypot(startX-previousPoint[0],startY-previousPoint[1])+Math.abs(startZ-lift))/travel}
       if(currentTool!==null&&currentTool!==outputTool)elapsed+=30;
       lines.push(progressCommand(elapsed,estimate.totalSeconds));
@@ -587,16 +604,37 @@ function generateGcode(){
   lines.push('M73 P100 R0',`; estimated printing time (normal mode) = ${durationText(estimate.totalSeconds)}`,...usageComments(usage,filamentD));
   lines.push('\n; End G-code',endCode,'; End of Pathloom output');return lines.join('\n');
 }
-window.Pathloom={generateGcode,upsertLiveToolpath,loadUkigaraSample,addImportedBrepInspection,applyImportedBrepEdit};
+window.Pathloom={viewState:()=>({projection:camera?.isOrthographicCamera?'orthographic':'perspective',axis:axisView,position:camera?.position.toArray(),target:controls?.target.toArray()}),getImportedStep:id=>structuredClone(importedShapes.find(shape=>shape.id===id)),addImportedStep:shape=>{importedShapes.push(shape);renderImportedShapes()},generateGcode,upsertLiveToolpath,loadUkigaraSample,addImportedBrepInspection,applyImportedBrepEdit};
 function downloadText(name,text){const blob=new Blob([text],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500)}
-function resize(){if(!renderer)return;const w=viewport.clientWidth,h=viewport.clientHeight;renderer.setSize(w,h,false);toolpathGroup?.traverse(child=>child.material?.uniforms?.resolution?.value.set(w,h));camera.aspect=w/h;camera.updateProjectionMatrix();previewDirty=true}
-new ResizeObserver(resize).observe(viewport);function animate(){controls.update();if(previewDirty){renderer.render(scene,camera);updatePrintOrderMarkers();previewDirty=false}requestAnimationFrame(animate)}
+function restorePerspective(){
+  if(!camera?.isOrthographicCamera)return;const previous=camera,height=(previous.top-previous.bottom)/previous.zoom,distance=height/(2*Math.tan(Math.PI/10));camera=new THREE.PerspectiveCamera(36,viewport.clientWidth/viewport.clientHeight,.1,previous.far);camera.up.set(0,0,1);camera.position.copy(controls.target).add(previous.position.clone().sub(controls.target).normalize().multiplyScalar(distance));camera.quaternion.copy(previous.quaternion);controls.object=camera;axisView=null;axisDirection=null;document.querySelectorAll('.view-axis-button').forEach(button=>button.setAttribute('aria-pressed','false'));previewDirty=true;document.dispatchEvent(new Event('pathloom:camera-changed'));
+}
+function updateViewCube(){
+  const host=$('#viewCube');if(!host||!THREE||!camera)return;
+  const NS='http://www.w3.org/2000/svg',inverse=camera.quaternion.clone().invert(),project=p=>new THREE.Vector3(...p).applyQuaternion(inverse);
+  const faces=[['top','上',[0,0,1],[[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]]],['bottom','下',[0,0,-1],[[-1,-1,-1],[-1,1,-1],[1,1,-1],[1,-1,-1]]],['front','前',[0,-1,0],[[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]]],['back','後',[0,1,0],[[-1,1,-1],[-1,1,1],[1,1,1],[1,1,-1]]],['right','右',[1,0,0],[[1,-1,-1],[1,1,-1],[1,1,1],[1,-1,1]]],['left','左',[-1,0,0],[[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1]]]];
+  const focused=host.contains(document.activeElement)?document.activeElement.dataset.view:null;host.replaceChildren();
+  for(const [name,label,normal,corners]of faces.filter(face=>project(face[2]).z>1e-5).sort((a,b)=>project(a[2]).z-project(b[2]).z)){
+    const group=document.createElementNS(NS,'g'),polygon=document.createElementNS(NS,'polygon'),text=document.createElementNS(NS,'text'),center=project(normal);group.classList.add('cube-face');group.dataset.view=name;group.setAttribute('role','button');group.setAttribute('tabindex','0');group.setAttribute('aria-label',`${name} view`);group.setAttribute('aria-pressed',String(axisView===name));
+    polygon.setAttribute('points',corners.map(point=>{const p=project(point);return `${50+p.x*23},${50-p.y*23}`}).join(' '));text.setAttribute('x',50+center.x*23);text.setAttribute('y',50-center.y*23);text.textContent=label;group.append(polygon,text);host.append(group);if(focused===name)group.focus?.({preventScroll:true});
+  }
+}
+function setAxisView(name){
+  if(!THREE||!camera||!controls)return;const directions={top:[0,0,1],bottom:[0,0,-1],front:[0,-1,0],back:[0,1,0],left:[-1,0,0],right:[1,0,0]};const direction=directions[name];if(!direction)return;const distance=camera.position.distanceTo(controls.target),height=camera.isOrthographicCamera?(camera.top-camera.bottom)/camera.zoom:2*distance*Math.tan(Math.PI/10),aspect=viewport.clientWidth/viewport.clientHeight;
+  camera=new THREE.OrthographicCamera(-height*aspect/2,height*aspect/2,height/2,-height/2,.1,Math.max(1200,distance*4));camera.position.copy(controls.target).add(new THREE.Vector3(...direction).multiplyScalar(distance));axisDirection=new THREE.Vector3(...direction);axisUp=new THREE.Vector3(...(name==='top'?[0,1,0]:name==='bottom'?[0,-1,0]:[0,0,1]));camera.up.copy(axisUp);camera.lookAt(controls.target);camera.up.set(0,0,1);camera.updateMatrixWorld(true);controls.object=camera;axisView=name;document.querySelectorAll('.view-axis-button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.view===name)));previewDirty=true;document.dispatchEvent(new Event('pathloom:camera-changed'));
+}
+let axisRotationStart=null;
+canvas.addEventListener('pointerdown',event=>{axisRotationStart=event.button===2&&axisView&&controls?.enabled?[event.clientX,event.clientY]:null},true);
+canvas.addEventListener('pointermove',event=>{if(axisRotationStart&&axisView&&Math.hypot(event.clientX-axisRotationStart[0],event.clientY-axisRotationStart[1])>3)restorePerspective()},true);
+canvas.addEventListener('pointerup',()=>{axisRotationStart=null},true);canvas.addEventListener('pointercancel',()=>{axisRotationStart=null},true);
+document.querySelector('.view-cube').addEventListener('click',event=>{const target=event.target.closest('[data-view]');if(target)setAxisView(target.dataset.view)});document.querySelector('.view-cube').addEventListener('keydown',event=>{if(!['Enter',' '].includes(event.key)||event.target.tagName==='BUTTON')return;const target=event.target.closest('[data-view]');if(target){event.preventDefault();setAxisView(target.dataset.view)}});
+function resize(){if(!renderer)return;const w=viewport.clientWidth,h=viewport.clientHeight;renderer.setSize(w,h,false);toolpathGroup?.traverse(child=>child.material?.uniforms?.resolution?.value.set(w,h));if(camera.isOrthographicCamera){const half=(camera.top-camera.bottom)/2;camera.left=-half*w/h;camera.right=half*w/h}else camera.aspect=w/h;camera.updateProjectionMatrix();previewDirty=true}
+new ResizeObserver(resize).observe(viewport);function animate(){if(!camera.isOrthographicCamera)controls.update();const plate=buildVolumeGroup?.children.find(node=>node.userData.buildPlate);if(plate&&plate.visible!==(camera.position.z>=0)){plate.visible=camera.position.z>=0;previewDirty=true}if(previewDirty){renderer.render(scene,camera);updatePrintOrderMarkers();updateViewCube();previewDirty=false}requestAnimationFrame(animate)}
 document.querySelectorAll('.island-header').forEach(header=>header.addEventListener('click',()=>{if(header.disabled)return;const island=header.closest('.sidebar-island'),collapsed=island.classList.toggle('collapsed');header.setAttribute('aria-expanded',String(!collapsed));if(island.id==='layoutIsland'&&!collapsed)showAllObjects();else updatePrintOrderMarkers()}));
 document.querySelectorAll('.basic-panel input[type="number"]').forEach(input=>input.addEventListener('wheel',event=>{if(!event.deltaY)return;event.preventDefault();if(event.deltaY<0)input.stepUp();else input.stepDown();input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}))},{passive:false}));
 function formatBasicDecimal(input){const value=Number(input.value);if(Number.isFinite(value))input.value=value.toFixed(2)}
 for(const id of ['printWidth','printHeight']){const input=$(`#${id}`);input.addEventListener('change',()=>formatBasicDecimal(input));input.addEventListener('blur',()=>formatBasicDecimal(input));formatBasicDecimal(input)}
 $('#addToolpath').addEventListener('click',()=>{if(window.__TAURI__?.core?.invoke)document.dispatchEvent(new Event('pathloom:add-live-files'));else $('#toolpathInput').click()});$('#toolpathInput').addEventListener('change',e=>{importFiles([...e.target.files]);e.target.value=''});
-$('#importStep').addEventListener('click',()=>{if(window.__TAURI__?.core?.invoke)document.dispatchEvent(new Event('pathloom:import-step-brep'));else $('#stepInput').click()});$('#stepInput').addEventListener('change',async event=>{const files=[...event.target.files];event.target.value='';for(const file of files){const worker=new Worker('./vendor/occt/occt-import-js-worker.js');try{const buffer=await file.arrayBuffer();const result=await new Promise((resolve,reject)=>{worker.onmessage=e=>resolve(e.data);worker.onerror=e=>reject(new Error(e.message||'STEP importer failed'));worker.postMessage({buffer},[buffer])});const shape=normalizeStepResult(result,file.name);importedShapes.push(shape);renderImportedShapes();showToast(`${file.name} imported · display only`)}catch(error){console.error(error);showToast(`${file.name}: ${error.message}`,'error')}finally{worker.terminate()}}});
 $('#layerSlider').addEventListener('input',e=>{$('#layerValue').textContent=`${e.target.value} / ${e.target.max}`;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false;refreshVisibility()});$('#pathSlider').addEventListener('input',()=>{inspectingLayerPaths=true;refreshVisibility()});$('#previousPath').addEventListener('click',()=>stepLayerPoint(-1));$('#nextPath').addEventListener('click',()=>stepLayerPoint(1));$('#previousObject').addEventListener('click',()=>switchPreviewObject(-1));$('#nextObject').addEventListener('click',()=>switchPreviewObject(1));$('#printSpeed').addEventListener('input',()=>{syncToolSpeedPlaceholders();refreshVisibility()});$('#closePalette').addEventListener('click',()=>$('#colorPopover').hidden=true);viewport.addEventListener('pointerdown',e=>{const p=$('#colorPopover');if(!p.hidden&&!p.contains(e.target))p.hidden=true});$('#colorPopover').addEventListener('pointerdown',e=>e.stopPropagation());
 ['gridColumns','gridRows','gridSpacingX','gridSpacingY','gridRowOffset','gridRotation'].forEach(id=>$(`#${id}`).addEventListener('input',()=>autoArrange(true)));$('#gridPattern').addEventListener('change',()=>autoArrange(true));
 $('#autoArrangeEnabled').addEventListener('change',e=>{$('#arrangeGridSettings').disabled=!e.target.checked;if(e.target.checked)autoArrange(true)});
@@ -616,6 +654,8 @@ $('#removeObjectDialog').addEventListener('close',()=>pendingSourceRemoval=null)
 
 document.addEventListener('input',event=>{if(event.target.matches('#printSpeed, #travelSpeed, #printWidth, #printHeight, .tool-speed, .tool-erate'))schedulePrintEstimate()});
 
+const estimateOverlay=document.querySelector('.print-estimate-overlay');
+new ResizeObserver(()=>{viewport.style.setProperty('--print-estimate-bottom',Math.ceil(estimateOverlay.getBoundingClientRect().bottom+16)+'px')}).observe(estimateOverlay);
 for(const sidebarScroll of document.querySelectorAll('.sidebar,.cad-panel')){
   function updateSidebarFade(){sidebarScroll.classList.toggle('scrolled',sidebarScroll.scrollTop>0);sidebarScroll.classList.toggle('has-more-below',sidebarScroll.scrollTop+sidebarScroll.clientHeight<sidebarScroll.scrollHeight-1)}
   sidebarScroll.addEventListener('scroll',updateSidebarFade,{passive:true});updateSidebarFade();
@@ -639,7 +679,7 @@ function assertPrintReferencesCurrent(){for(const source of sourceState.values()
 function captureProject(){
   assertPrintReferencesCurrent();
   for(const source of sourceState.values())if(source.generator&&source.generationError)throw new Error(`${source.label}: fix the generation error before saving`);
-  return {format:'pathloom',version:1,printLinks:structuredClone(printLinks),sources:[...sourceState.values()].map(source=>({...source,tools:[...source.tools],liveSource:source.generator?source.liveSource:undefined})),instances:[...instanceState],importedShapes:importedShapes.map(({id,name,visible,sliceLayerHeight,assetId,brepIndex,faces,meshes})=>({id,name,visible,sliceLayerHeight,assetId,brepIndex,faces:faces?structuredClone(faces):undefined,meshes:structuredClone(meshes)})),
+  return {format:'pathloom',version:1,printLinks:structuredClone(printLinks),sources:[...sourceState.values()].map(source=>{const owner=source.generatorGroup&&[...sourceState.values()].find(s=>s.generatorGroup===source.generatorGroup&&s.generator);return {...source,tools:[...source.tools],liveSource:source.generator?source.liveSource:undefined,...(owner&&owner.id!==source.id?{generator:undefined,generatorRef:owner.id}:{generatorRef:undefined})}}),instances:[...instanceState],importedShapes:importedShapes.map(({id,name,visible,sliceLayerHeight,assetId,brepIndex,brep,kernel,faces,meshes})=>({id,name,visible,sliceLayerHeight,assetId,brepIndex,brep:brep?structuredClone(brep):undefined,kernel,faces:faces?structuredClone(faces):undefined,meshes:structuredClone(meshes)})),
     settings:{printer:$('#printerSelect').value,...Object.fromEntries(BASIC_FIELDS.map(id=>[id,Number($('#'+id).value)]))},
     profile:{filamentDiameter:configuredFilamentDiameter,...configuredBuildVolume,startGcode:configuredStartGcode,toolChangeGcode:configuredToolChangeGcode,endGcode:configuredEndGcode},
     view:{layer:Number($('#layerSlider').value),showInputs:!$('#cadShowInputs')||$('#cadShowInputs').checked,camera:camera?.position.toArray(),target:controls?.target.toArray(),showPrintOrder:$('#showPrintOrder').checked},
@@ -692,17 +732,29 @@ initCad({
   clearProposal:clearCadProposal,
   previewProposal(result,exclusive=false){
     clearCadProposal();if(!THREE||!scene)throw new Error('Wait for the 3D view');
-    cadProposalGroup=new THREE.Group();const grouped=new Map();
-    const current=sourceState.get(window.PathloomCad?.snapshot()?.sourceId),instance=[...instanceState.values()].find(instance=>instance.source===current?.id);
-    for(const path of result.paths){const key=String(path.tool);if(!grouped.has(key))grouped.set(key,[]);const positions=grouped.get(key);for(let i=1;i<path.points.length;i++)positions.push(...path.points[i-1],...path.points[i])}
-    for(const[tool,positions]of grouped){const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));const line=new THREE.LineSegments(geometry,new THREE.LineBasicMaterial({color:current?.tools.has(tool)?toolPreviewColor(current,tool):sharedToolAppearance(tool,Number(tool)||0).color}));cadProposalGroup.add(line)}
-    if(result.previewPoints?.length){const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(result.previewPoints.flat(),3));cadProposalGroup.add(new THREE.Points(geometry,new THREE.PointsMaterial({color:0xff553d,size:7,sizeAttenuation:false,depthTest:false})));}
-    if(exclusive&&current)for(const group of toolpathGroup.children)if(instanceState.get(group.userData.instanceId)?.source===current.id){group.visible=false;cadHiddenGroups.push(group)}
-    if(instance){cadProposalGroup.position.set(instance.x,instance.y,0);cadProposalGroup.rotation.z=instance.rotation*Math.PI/180}
+    cadProposalGroup=new THREE.Group();
+    const current=sourceState.get(window.PathloomCad?.snapshot()?.sourceId),multiple=result.objects?.length>1;
+    const objects=multiple?result.objects:[{paths:result.paths}];
+    for(const object of objects){
+      const source=multiple?[...sourceState.values()].find(s=>s.generatorGroup===current?.generatorGroup&&s.generatorOutputId===object.id):current;
+      const instances=[...instanceState.values()].filter(i=>i.source===source?.id),placements=instances.length?instances:[{x:0,y:0,rotation:0}];
+      for(const instance of placements){const group=new THREE.Group(),grouped=new Map();
+        for(const path of object.paths){const key=String(path.tool);if(!grouped.has(key))grouped.set(key,[]);const positions=grouped.get(key);for(let i=1;i<path.points.length;i++)positions.push(...path.points[i-1],...path.points[i])}
+        for(const[tool,positions]of grouped){const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));group.add(new THREE.LineSegments(geometry,new THREE.LineBasicMaterial({color:source?.tools.has(tool)?toolPreviewColor(source,tool):sharedToolAppearance(tool,Number(tool)||0).color})))}
+        if(result.previewPoints?.length){const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(result.previewPoints.flat(),3));group.add(new THREE.Points(geometry,new THREE.PointsMaterial({color:0xff553d,size:7,sizeAttenuation:false,depthTest:false})))}
+        group.position.set(instance.x,instance.y,0);group.rotation.z=instance.rotation*Math.PI/180;cadProposalGroup.add(group);
+      }
+    }
+    if(exclusive&&current)for(const group of toolpathGroup.children){const source=sourceState.get(instanceState.get(group.userData.instanceId)?.source);if(source?.id===current.id||multiple&&current.generatorGroup&&source?.generatorGroup===current.generatorGroup){group.visible=false;cadHiddenGroups.push(group)}}
     scene.add(cadProposalGroup);previewDirty=true;
   },
-  apply(result,key){const info=upsertLiveToolpath({source:key,label:result.definition.name,paths:result.paths,origin:'generator'});const source=sourceState.get(info.sourceId);source.generator=result.definition;source.generationError=null;syncPrintLinks();return info.sourceId},
-  invalidate(id,message){const source=sourceState.get(id);if(source?.generator)source.generationError=message},
+  apply(result,key,selectedId){
+    const previousSelection=selectedInstance,objects=result.objects||[{id:'main',name:result.definition.name,paths:result.paths}],kept=new Set();
+    for(const object of objects){const existing=[...sourceState.values()].find(s=>(s.generatorGroup===key&&s.generatorOutputId===object.id)||(!s.generatorGroup&&s.liveSource===key&&object.id===objects[0].id));const info=upsertLiveToolpath({source:existing?.liveSource||(object.id===objects[0].id?key:`${key}/output/${object.id}`),label:object.name,paths:object.paths,origin:'generator',deferRender:true}),source=sourceState.get(info.sourceId);source.generator=result.definition;source.generatorGroup=key;source.generatorOutputId=object.id;source.generationError=null;delete source.generatorRef;kept.add(source.id)}
+    for(const source of [...sourceState.values()])if(source.generatorGroup===key&&!kept.has(source.id))removeSource(source.id,false);
+    if(instanceState.has(previousSelection))selectedInstance=previousSelection;syncPrintLinks();renderAllUI();buildInstances();return kept.has(selectedId)?selectedId:[...kept][0];
+  },
+  invalidate(id,message){const source=sourceState.get(id);if(source?.generator)for(const sibling of sourceState.values())if(sibling.id===id||source.generatorGroup&&sibling.generatorGroup===source.generatorGroup)sibling.generationError=message},
   sourceExists:id=>sourceState.has(id),sources:()=>[...sourceState.values()],
   placement(sourceId){const selected=instanceState.get(selectedInstance);return selected?.source===sourceId?selected:[...instanceState.values()].find(instance=>instance.source===sourceId)||{x:0,y:0,rotation:0}},captureProject,restoreProject,
   preview:()=>({THREE,scene,camera,controls,canvas,viewport,dirty:()=>{previewDirty=true}}),

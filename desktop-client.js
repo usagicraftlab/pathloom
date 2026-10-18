@@ -1,3 +1,5 @@
+import {createBrepInbox} from './gh-brep-live.js';
+import {moveStepFaces} from './step-import.js';
 const statusLabel = document.getElementById('desktopStatus');
 const grasshopperLabel = document.getElementById('connectionStatus');
 const toast = document.getElementById('toast');
@@ -62,6 +64,10 @@ function deliverLiveToolpath(payload) {
   }
 }
 
+const brepInbox=createBrepInbox({ready:()=>!!window.PathloomCad?.upsertRhinoBrep,context:()=>window.PathloomCad?.liveContext?.(),convert:payload=>window.__TAURI__.core.invoke('import_live_step',{step:payload.step,name:payload.label||payload.source}),apply:(payload,shape)=>{window.PathloomCad.upsertRhinoBrep(payload,shape);setGrasshopperStatus(`Grasshopper · B-rep live · ${payload.label||payload.source}`)},error:(error,payload)=>notify(`Rhino B-rep · ${payload.source}: ${error.message||error}`,'error')});
+
+document.addEventListener('pathloom:rhino-bindings-restored',async()=>{try{for(const payload of await window.__TAURI__.core.invoke('grasshopper_brep_snapshots')||[])brepInbox.enqueue(payload)}catch(error){console.error('Unable to restore Rhino bindings',error)}});
+
 async function initializeGrasshopperEvents() {
   const listen = window.__TAURI__?.event?.listen;
   const invoke = window.__TAURI__?.core?.invoke;
@@ -82,6 +88,9 @@ async function initializeGrasshopperEvents() {
     const source = event.payload?.source || 'Grasshopper';
     setGrasshopperStatus(`Grasshopper · live · ${source}`);
   });
+
+  await listen('grasshopper-brep-update',event=>brepInbox.enqueue(event.payload));
+  try{for(const payload of await invoke('grasshopper_brep_snapshots')||[])brepInbox.enqueue(payload)}catch(error){console.error('Unable to restore live B-rep snapshots',error)}
 
   await listen('grasshopper-message-error', event => {
     console.error('Invalid Grasshopper message', event.payload);
@@ -204,35 +213,13 @@ document.addEventListener('pathloom:add-live-files', async () => {
   }
 });
 
-let importingStepBrep = false;
-document.addEventListener('pathloom:import-step-brep', async () => {
-  if (importingStepBrep) return;
-  importingStepBrep = true;
-  const button = document.getElementById('importStep');
-  button.disabled = true;
-  try {
-    const result = await window.__TAURI__.core.invoke('choose_and_inspect_step_brep');
-    if (!result) return;
-    if (!window.Pathloom?.addImportedBrepInspection) throw new Error('3D view is still loading');
-    window.Pathloom.addImportedBrepInspection(result);
-    const faceCount = (result.breps || []).reduce((sum, brep) => sum + (brep.faces?.length || 0), 0);
-    notify(`STEP imported as CAD B-rep · ${faceCount} faces`);
-  } catch (error) {
-    console.error('Native STEP B-rep import failed', error);
-    notify(`STEP import failed: ${error.message || error}`, 'error');
-  } finally {
-    importingStepBrep = false;
-    button.disabled = false;
-  }
-});
-
 let movingStepFaces = false;
 document.addEventListener('pathloom:move-step-faces', async event => {
   if (movingStepFaces) return;
   const detail = event.detail || {};
   movingStepFaces = true;
   try {
-    const result = await window.__TAURI__.core.invoke('move_step_brep_faces', {
+    const result = detail.brep ? await moveStepFaces({brep:detail.brep,...window.Pathloom.getImportedStep(detail.shapeId)},detail.faceIndices,[detail.dx,detail.dy,detail.dz||0]) : await window.__TAURI__.core.invoke('move_step_brep_faces', {
       assetId: detail.assetId,
       brepIndex: detail.brepIndex,
       faceIndices: detail.faceIndices,

@@ -1,6 +1,14 @@
-// Install the message handler before async dependencies finish loading.
-const kernel=import('./cad-kernel.js');
-self.onmessage=async event=>{
-  try{const {generateCad}=await kernel;self.postMessage({ok:true,result:generateCad(event.data)})}
-  catch(error){self.postMessage({ok:false,error:error.message})}
-};
+// Native requests are handled by the UI; the worker never invokes desktop IPC.
+const kernel=import('./cad-kernel.js'),cache=new Map();let definition,nativeRequests=0,preview=false;const digests=new Map(),geometry=new Map();
+async function run(){
+  try{const {generateCad}=await kernel;const runCode=definition.recipes?.some(r=>r.code!==undefined)||definition.programs?.length?await (await import('./cad-code-runtime.js')).initCodeRuntime():undefined;const result=generateCad(definition,{runCode,sliceBrep(brep,layerHeight,tolerance){const key=JSON.stringify([digests.get(brep.data)||brep.data,layerHeight,tolerance]);if(cache.has(key))return structuredClone(cache.get(key));throw {nativeSlice:true,key,brep:preview?undefined:brep,layerHeight,tolerance,preview}}});self.postMessage({ok:true,result:preview?{objects:result.objects,paths:result.paths,previewPoints:result.previewPoints,warnings:result.warnings}:result})}
+  catch(error){if(error.nativeSlice){if(++nativeRequests>32)self.postMessage({ok:false,error:'Too many native section requests in one generation'});else self.postMessage({nativeSlice:true,request:error})}else self.postMessage({ok:false,error:error.message})}
+}
+self.onmessage=async event=>{try{const data=event.data;if(data.nativeSliceResult){if(data.error){self.postMessage({ok:false,error:data.error});return}cache.set(data.key,data.paths);while(cache.size>4)cache.delete(cache.keys().next().value)}else{
+  preview=data.kind==='cad-preview';let incoming=preview?data.definition:data;
+  if(Array.isArray(incoming.inputs)){const ids=new Set();incoming={...incoming,inputs:incoming.inputs.map(input=>{if(input.type!=='surface')return input;ids.add(input.id);if(input._workerGeometryRef!==undefined){const payload=geometry.get(input._workerGeometryRef);if(!payload)throw new Error('Missing worker geometry');const full={...input,...payload};delete full._workerGeometryRef;return full}const payload={meshes:input.meshes};for(const key of ['brep','faces','kernel'])if(input[key]!==undefined)payload[key]=input[key];geometry.set(input.id,payload);return input})};for(const id of geometry.keys())if(!ids.has(id))geometry.delete(id);}
+  definition=preview?(await import('./cad-pipeline.js')).displayDefinition(incoming,data.stepId):incoming;nativeRequests=0;
+  const currentBodies=new Set((definition.inputs||[]).map(input=>input.brep?.data).filter(Boolean));for(const text of digests.keys())if(!currentBodies.has(text))digests.delete(text);
+  // Compact, collision-resistant keys keep B-rep strings out of caches and replies.
+  for(const input of definition.inputs||[]){const text=input.brep?.data;if(!text||digests.has(text)||!globalThis.crypto?.subtle)continue;const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));digests.set(text,Array.from(new Uint8Array(digest),v=>v.toString(16).padStart(2,'0')).join(''));}
+}void run()}catch(error){self.postMessage({ok:false,error:error.message})}};

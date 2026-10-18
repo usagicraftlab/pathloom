@@ -1,4 +1,6 @@
-import {numberParameters} from './cad-pipeline.js';
+import {validatePauseLayers} from './gcode-metadata.js';
+import {validateEditableShape} from './step-import.js';
+import {printOutputNodes,numberParameters} from './cad-pipeline.js';
 import {validateDefinition} from './cad-kernel.js';
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
 export const BASIC_FIELDS=['printWidth','printHeight','printSpeed','travelSpeed','nozzleTemperature','bedTemperature','fanSpeed'];
@@ -9,6 +11,7 @@ export function validateProject(input){
   let importedVertexCount=0;
   const shapeIds=new Set();
   for(const shape of project.importedShapes||[]){
+    if(shape.brep!==undefined)validateEditableShape(shape);
     if(!shape||typeof shape.id!=='string'||!shape.id||shapeIds.has(shape.id)||typeof shape.name!=='string'||typeof shape.visible!=='boolean'||shape.sliceLayerHeight!==undefined&&(!finite(shape.sliceLayerHeight)||shape.sliceLayerHeight<.05||shape.sliceLayerHeight>10)||shape.faces!==undefined&&(!Array.isArray(shape.faces)||shape.faces.length>200000||shape.faces.some((face,index)=>!face||face.index!==index||!finite(face.area)||face.area<0||typeof face.planar!=='boolean'||!Array.isArray(face.bounds)||face.bounds.length!==2||face.bounds.some(point=>!Array.isArray(point)||point.length!==3||!point.every(finite))))||!Array.isArray(shape.meshes)||!shape.meshes.length)throw new Error('Invalid imported shape');shapeIds.add(shape.id);
     if(shape.assetId!==undefined&&(!/^[a-zA-Z0-9-]{1,96}$/.test(shape.assetId)||!Number.isInteger(shape.brepIndex)||shape.brepIndex<0||!shape.faces?.length))throw new Error('Invalid editable CAD asset reference');
     for(const mesh of shape.meshes){
@@ -38,6 +41,11 @@ export function validateProject(input){
     if(source.paths.some(path=>!toolIds.has(String(path.tool))))throw new Error('Missing tool settings');
     if(source.generator)source.generator=validateDefinition(source.generator);
   }
+  for(const source of project.sources){
+    if(source.generatorRef!==undefined){const owner=project.sources.find(s=>s.id===source.generatorRef);if(!owner?.generator||owner.generatorRef!==undefined||source.generator||owner.id===source.id||!source.generatorGroup||owner.generatorGroup!==source.generatorGroup)throw new Error('Invalid shared generator reference');source.generator=owner.generator;delete source.generatorRef}
+    if(source.generatorGroup!==undefined&&(typeof source.generatorGroup!=='string'||!source.generatorGroup||source.generatorGroup.length>200||!source.generator||!printOutputNodes(source.generator).some(o=>o.id===source.generatorOutputId)))throw new Error('Invalid generator object');
+  }
+  const groups=new Map();for(const source of project.sources)if(source.generatorGroup){const owner=groups.get(source.generatorGroup);if(owner){if(JSON.stringify(owner)!==JSON.stringify(source.generator))throw new Error('Conflicting shared generators');source.generator=owner}else groups.set(source.generatorGroup,source.generator)}
   if(project.printLinks!==undefined){
     if(!project.printLinks||typeof project.printLinks!=='object'||Array.isArray(project.printLinks))throw new Error('Invalid print links');
     for(const[target,binding]of Object.entries(project.printLinks)){
@@ -49,7 +57,7 @@ export function validateProject(input){
   const instanceIds=new Set();
   for(const entry of project.instances){
     if(!Array.isArray(entry)||entry.length!==2||typeof entry[0]!=='string'||instanceIds.has(entry[0]))throw new Error('Invalid instance');instanceIds.add(entry[0]);
-    const instance=entry[1];if(!instance||!ids.has(instance.source)||![instance.x,instance.y,instance.rotation,instance.order].every(finite))throw new Error('Invalid placement');
+    const instance=entry[1];if(!instance||!ids.has(instance.source)||![instance.x,instance.y,instance.rotation,instance.order].every(finite))throw new Error('Invalid placement');validatePauseLayers(instance.pauseLayers);
   }
   if(!project.settings||!['Prusa MK4S','Prusa CoreOne'].includes(project.settings.printer))throw new Error('Invalid printer');
   for(const id of BASIC_FIELDS){const value=project.settings[id];if(!finite(value)||value<0||(['printWidth','printHeight','printSpeed','travelSpeed'].includes(id)&&value===0))throw new Error(`Invalid ${id}`)}
@@ -60,3 +68,6 @@ export function validateProject(input){
   if(project.cad?.mode!==undefined&&!['generate','parameters','output'].includes(project.cad.mode))throw new Error('Invalid workspace mode');
   return project;
 }
+
+// Serialize a shared processing graph once; object placements/settings remain independent.
+export function compactProjectGenerators(project){const owners=new Map();return {...project,sources:project.sources.map(source=>{if(!source.generatorGroup||!source.generator)return source;const owner=owners.get(source.generatorGroup);if(!owner){owners.set(source.generatorGroup,source.id);return source}const next={...source,generatorRef:owner};delete next.generator;return next})}}

@@ -51,9 +51,7 @@
         <div class="island-content" id="tab-objects">
           <div id="objectList"></div>
           <button id="addToolpath" class="add-object" title="Add toolpath files and automatically follow saved changes">＋ Add .toolpath</button>
-          <div class="cad-buttons"><button id="importStep" type="button">＋ Import STEP</button><input id="stepInput" type="file" accept=".step,.stp,model/step" multiple hidden></div>
           <div id="importedShapeList"></div>
-          <p class="hint">STEPは形状参照として表示できます。面編集はB-repカーネル接続後に対応します。</p>
           <p id="liveToolpathStatus" class="hint" role="status" aria-live="polite" hidden></p>
           <div class="objects-connection-status status"><span class="dot" aria-hidden="true"></span><span id="connectionStatus">Grasshopper disconnected</span></div>
           <input id="toolpathInput" type="file" accept=".toolpath,.json,application/json" multiple hidden>
@@ -153,7 +151,7 @@
         </aside>
       </div>
       <div id="viewport" class="viewport">
-        <canvas id="threeCanvas"></canvas><div class="geometry-visibility">              <label class="cad-checkbox"><input id="cadShowInputs" type="checkbox" checked>Show geometry inputs in 3Dview→</label></div>
+        <canvas id="threeCanvas"></canvas><div class="view-axis-buttons view-cube" role="group" aria-label="View direction"><svg id="viewCube" viewBox="0 0 100 100" aria-label="Orientation cube"></svg><button type="button" class="view-axis-button cube-arrow cube-arrow-top" data-view="top" aria-label="Top view" aria-pressed="false" title="上"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>上</span></button><button type="button" class="view-axis-button cube-arrow cube-arrow-bottom" data-view="bottom" aria-label="Bottom view" aria-pressed="false" title="下"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>下</span></button><button type="button" class="view-axis-button cube-arrow cube-arrow-front" data-view="front" aria-label="Front view" aria-pressed="false" title="前"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>前</span></button><button type="button" class="view-axis-button cube-arrow cube-arrow-back" data-view="back" aria-label="Back view" aria-pressed="false" title="後"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>後</span></button><button type="button" class="view-axis-button cube-arrow cube-arrow-left" data-view="left" aria-label="Left view" aria-pressed="false" title="左"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>左</span></button><button type="button" class="view-axis-button cube-arrow cube-arrow-right" data-view="right" aria-label="Right view" aria-pressed="false" title="右"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>右</span></button></div><div class="geometry-visibility">              <label class="cad-checkbox"><input id="cadShowInputs" type="checkbox" checked>Show geometry inputs in 3Dview→</label></div>
         <section class="print-estimate-overlay" aria-label="Print estimate">
           <div id="projectName" class="project-name">Untitled</div>
                         <p id="cadStatus" class="hint" role="status"></p>
@@ -166,7 +164,7 @@
         <div id="emptyState" class="empty-state" hidden><strong>Add a .toolpath file</strong><span>Pathloom reads path order, tool ID and XYZ points.</span></div>
         <div id="buildVolumeLabel" class="viewport-label" hidden>BUILD PLATE · 250 × 210 mm · MAX HEIGHT 220 mm</div>
         <div class="preview-object-control" aria-label="Preview object"><button id="previousObject" aria-label="Previous object">‹</button><span id="previewObjectName">No objects</span><button id="nextObject" aria-label="Next object">›</button></div>
-        <div class="layer-control"><span>LAYER</span><input id="layerSlider" type="range" min="1" max="1" value="1" step="1" orient="vertical" aria-label="Preview layer"><span id="layerValue">1 / 1</span></div>
+        <div class="layer-control"><span>LAYER</span><input id="layerSlider" type="range" min="1" max="1" value="1" step="1" orient="vertical" aria-label="Preview layer"><span id="layerValue">1 / 1</span><div id="layerPauseMarkers" aria-label="Print pauses"></div></div>
         <div class="path-control"><span>POINT</span><button id="previousPath" aria-label="Previous XYZ point">‹</button><input id="pathSlider" type="range" min="0" max="1" value="1" step="1" aria-label="XYZ point progress within selected layer"><button id="nextPath" aria-label="Next XYZ point">›</button><span id="pathValue">0 / 0</span></div>
         <div id="colorPopover" class="color-popover" hidden>
           <div class="popover-head"><strong>FILAMENT COLORS</strong><button id="closePalette">×</button></div>

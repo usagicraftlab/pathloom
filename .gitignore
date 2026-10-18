@@ -8,3 +8,5 @@ desktop-dist/
 src-tauri/target/
 __pycache__/
 *.py[cod]
+
+.pathloom-runtime/

@@ -59,8 +59,8 @@ export function validateSection(points){
   }
   if(Math.abs(area)<1e-5)throw new Error('Section has no enclosed area');
 }
-export function generateCad(input){
-  if(input?.version===2)return executePipeline(input,{sectionPoints,validateSection});
+export function generateCad(input,options={}){
+  if(input?.version===2)return executePipeline(input,{sectionPoints,validateSection,...options});
   const definition=validateDefinition(input),p=Object.fromEntries(definition.parameters.map(p=>[p.key,p.value]));
   const layers=Math.floor((p.height+1e-8)/p.layerHeight);
   if(layers<1)throw new Error('Height must be at least one layer');

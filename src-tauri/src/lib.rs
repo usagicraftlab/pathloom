@@ -1,3 +1,4 @@
+mod grasshopper_brep;
 mod codex_bridge;
 mod project_files;
 use std::sync::{Arc, Mutex};
@@ -28,6 +29,8 @@ struct RuntimeInfo {
 #[derive(Default)]
 struct GrasshopperState {
     connected_clients: usize,
+    brep_updates: std::collections::HashMap<String,Value>,
+    brep_revision: u64,
     last_source: Option<String>,
     last_update_ms: Option<u128>,
     last_error: Option<String>,
@@ -87,6 +90,72 @@ async fn read_live_toolpath(path: String) -> Result<String, String> {
     }).await.map_err(|error| error.to_string())?
 }
 
+fn run_editable_cad(app: &tauri::AppHandle, request: &Value) -> Result<Value, String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let cache = app.path().app_cache_dir().map_err(|error| error.to_string())?.join("native");
+    std::fs::create_dir_all(&cache).map_err(|error| error.to_string())?;
+    let script = cache.join("occt_brep_bridge.py");
+    let staged_script = cache.join(format!("occt-{}-{}.tmp", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_nanos()));
+    std::fs::write(&staged_script, include_bytes!("../../native/occt_brep_bridge.py")).map_err(|error| error.to_string())?;
+    std::fs::rename(&staged_script, &script).map_err(|error| error.to_string())?;
+    let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.pathloom-runtime/python").join(if cfg!(windows) { "Scripts/python.exe" } else { "bin/python" });
+    let python = std::env::var_os("PATHLOOM_BREP_PYTHON").unwrap_or_else(|| if local.is_file() { local.into_os_string() } else if cfg!(windows) { "python".into() } else { "python3".into() });
+    let mut child = Command::new(python).arg(script).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
+        .map_err(|error| format!("Unable to start the CAD runtime. Run the native setup script or set PATHLOOM_BREP_PYTHON: {error}"))?;
+    let payload = serde_json::to_vec(request).map_err(|error| error.to_string())?;
+    child.stdin.take().ok_or("CAD runtime stdin is unavailable")?.write_all(&payload).map_err(|error| error.to_string())?;
+    let output = child.wait_with_output().map_err(|error| error.to_string())?;
+    if output.stdout.len() > 256 * 1024 * 1024 { return Err("CAD response exceeds supported limits".into()); }
+    let result: Value = serde_json::from_slice(&output.stdout).map_err(|error| format!("Invalid CAD runtime response: {error}"))?;
+    if !output.status.success() || result.get("success").and_then(Value::as_bool) != Some(true) {
+        return Err(result.get("error").and_then(Value::as_str).unwrap_or("CAD operation failed").to_string());
+    }
+    result.get("shape").cloned().ok_or_else(|| "CAD shape was not returned".into())
+}
+
+#[tauri::command]
+async fn choose_editable_step(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog().file().set_title("Import editable STEP").add_filter("STEP model", &["step", "stp"])
+        .pick_file(move |file| { let _ = sender.send(file.map(|file| file.into_path().map_err(|error| error.to_string()))); });
+    let Some(path) = receiver.await.map_err(|error| error.to_string())? else { return Ok(None); };
+    let path = path?;
+    if !path.is_absolute() { return Err("Choose an absolute STEP path".into()); }
+    tauri::async_runtime::spawn_blocking(move || run_editable_cad(&app, &serde_json::json!({"action":"import","path":path})).map(Some)).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn slice_step_brep(app:tauri::AppHandle,brep:Value,layer_height:f64,tolerance:f64)->Result<Value,String>{
+    tauri::async_runtime::spawn_blocking(move||run_editable_cad(&app,&serde_json::json!({"action":"slice","brep":brep,"layerHeight":layer_height,"tolerance":tolerance}))).await.map_err(|error|error.to_string())?
+}
+
+#[tauri::command]
+async fn edit_step_faces(app: tauri::AppHandle, brep: Value, face_indices: Vec<usize>, offset: Vec<f64>, name: String, whole: Option<bool>) -> Result<Value,String> {
+    if offset.len()!=3 || offset.iter().any(|v|!v.is_finite()||v.abs()>1000.0) || (!whole.unwrap_or(false) && face_indices.is_empty()) || face_indices.len()>200000 || name.len()>1024 { return Err("Invalid CAD face movement".into()); }
+    tauri::async_runtime::spawn_blocking(move || run_editable_cad(&app, &serde_json::json!({"action":if whole.unwrap_or(false) {"translate"} else {"move"},"brep":brep,"faceIndices":face_indices,"offset":offset,"name":name}))).await.map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+async fn choose_step_file(app: tauri::AppHandle) -> Result<Option<Value>, String> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog().file().set_title("Import STEP").add_filter("STEP model", &["step", "stp"])
+        .pick_file(move |file| { let _ = sender.send(file.map(|file| file.into_path().map_err(|error| error.to_string()))); });
+    let Some(path) = receiver.await.map_err(|error| error.to_string())? else { return Ok(None); };
+    let path = path?;
+    if !path.is_absolute() || !matches!(path.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase().as_str(), "step" | "stp") {
+        return Err("Choose a .step or .stp file".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Read;
+        let file = std::fs::File::open(&path).map_err(|error| error.to_string())?;
+        let mut bytes = Vec::new();
+        file.take(100 * 1024 * 1024 + 1).read_to_end(&mut bytes).map_err(|error| error.to_string())?;
+        if bytes.len() > 100 * 1024 * 1024 { return Err("STEP file exceeds the 100 MB import limit".to_string()); }
+        Ok(Some(serde_json::json!({"name": path.file_name().unwrap_or_default().to_string_lossy(), "bytes": bytes})))
+    }).await.map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 async fn choose_and_inspect_step_brep(app: tauri::AppHandle) -> Result<Option<Value>, String> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -136,7 +205,7 @@ async fn choose_and_inspect_step_brep(app: tauri::AppHandle) -> Result<Option<Va
         }
         let mut value = value;
         if let Some(object) = value.as_object_mut() { object.insert("assetId".into(), Value::String(asset_id)); }
-        Ok(value)
+        Ok(Some(value))
     }).await.map_err(|error| error.to_string())?
 }
 
@@ -189,6 +258,14 @@ async fn move_step_brep_faces(
         Ok(value)
     }).await.map_err(|error| error.to_string())?
 }
+
+#[tauri::command]
+async fn import_live_step(app:tauri::AppHandle,step:String,name:String)->Result<Value,String>{
+    if step.len()>grasshopper_brep::MAX_STEP_BYTES||name.chars().count()>120||!step.trim_start().starts_with("ISO-10303-21;")||!step.trim_end().ends_with("END-ISO-10303-21;"){return Err("Invalid live STEP content".into())}
+    tauri::async_runtime::spawn_blocking(move||run_editable_cad(&app,&serde_json::json!({"action":"import","step":step,"name":name,"center":false}))).await.map_err(|error|error.to_string())?
+}
+#[tauri::command]
+fn grasshopper_brep_snapshots(state:State<'_,SharedGrasshopperState>)->Result<Vec<Value>,String>{Ok(state.lock().map_err(|error|error.to_string())?.brep_updates.values().cloned().collect())}
 
 #[tauri::command]
 fn runtime_info() -> RuntimeInfo {
@@ -307,7 +384,23 @@ async fn run_grasshopper_server(app: tauri::AppHandle, shared: SharedGrasshopper
             let (_write, mut read) = websocket.split();
             while let Some(message) = read.next().await {
                 match message {
-                    Ok(Message::Text(text)) => match validate_toolpath_message(&text) {
+                    Ok(Message::Text(text)) => {
+                        match grasshopper_brep::validate(&text){
+                            Ok(Some(mut payload))=>{
+                                let source=payload["source"].as_str().unwrap().to_string();
+                                let accepted=if let Ok(mut state)=shared.lock(){
+                                    let bytes:usize=state.brep_updates.iter().filter(|(key,_)|*key!=&source).map(|(_,value)|value.get("step").and_then(Value::as_str).map(str::len).unwrap_or(0)).sum();
+                                    if (!state.brep_updates.contains_key(&source)&&state.brep_updates.len()>=32)||bytes+payload.get("step").and_then(Value::as_str).map(str::len).unwrap_or(0)>64*1024*1024{false}else{
+                                        state.brep_revision+=1;payload["bridgeRevision"]=Value::from(state.brep_revision);state.brep_updates.insert(source.clone(),payload.clone());state.last_source=Some(source);state.last_update_ms=Some(now_ms());state.last_error=None;true
+                                    }
+                                }else{false};
+                                if accepted{let _=app.emit("grasshopper-brep-update",payload);}else{let _=app.emit("grasshopper-message-error","Live B-rep cache limit exceeded; reuse stable source IDs");}
+                                continue;
+                            },
+                            Err(error)=>{let _=app.emit("grasshopper-message-error",error);continue},
+                            Ok(None)=>{}
+                        }
+                        match validate_toolpath_message(&text) {
                         Ok((envelope, payload)) => {
                             if let Ok(mut state) = shared.lock() {
                                 state.last_source = Some(envelope.source.clone());
@@ -323,6 +416,7 @@ async fn run_grasshopper_server(app: tauri::AppHandle, shared: SharedGrasshopper
                             }
                             let _ = app.emit("grasshopper-message-error", error);
                         }
+                    }
                     },
                     Ok(Message::Close(_)) => break,
                     Ok(Message::Ping(_)) | Ok(Message::Pong(_)) | Ok(Message::Binary(_)) | Ok(Message::Frame(_)) => {}
@@ -398,7 +492,7 @@ pub fn run() {
             tauri::async_runtime::spawn(run_grasshopper_server(app_handle, shared));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![runtime_info, grasshopper_bridge_status, read_live_toolpath, choose_live_toolpath, choose_and_inspect_step_brep, move_step_brep_faces, project_files::save_pathloom_project, project_files::open_pathloom_project, project_files::cad_library, codex_bridge::codex_status, codex_bridge::codex_login, codex_bridge::codex_cancel, codex_bridge::codex_propose])
+        .invoke_handler(tauri::generate_handler![runtime_info, grasshopper_bridge_status, grasshopper_brep_snapshots, import_live_step, read_live_toolpath, choose_live_toolpath, choose_editable_step, slice_step_brep, edit_step_faces, choose_step_file, choose_and_inspect_step_brep, move_step_brep_faces, project_files::save_pathloom_project, project_files::open_pathloom_project, project_files::cad_library, codex_bridge::codex_status, codex_bridge::codex_login, codex_bridge::codex_cancel, codex_bridge::codex_propose])
         .run(tauri::generate_context!())
         .expect("error while running Pathloom");
 }

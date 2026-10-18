@@ -6,10 +6,11 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const host = '127.0.0.1';
 const port = 1420;
-const allowedRootFiles = new Set(['index.html', 'app.js', 'print-time.js', 'gcode-metadata.js', 'cad-kernel.js', 'cad-pipeline.js', 'cad-components.js', 'cad-library.js', 'cad-input-ui.js', 'cad-graph.js', 'cad-node-editor.js', 'cad-worker.js', 'cad-ui.js', 'cad-chat.js', 'pathloom-project.js', 'dxf-import.js', 'step-import.js', 'step-geometry.js', 'step-slice-worker.js', 'style.css', 'desktop-client.js']);
+const allowedRootFiles = new Set(['index.html', 'app.js', 'print-time.js', 'print-intro.js', 'gcode-metadata.js', 'cad-kernel.js', 'cad-pipeline.js', 'cad-components.js', 'cad-library.js', 'cad-input-ui.js', 'cad-graph.js', 'cad-node-editor.js', 'cad-worker.js', 'cad-ui.js', 'cad-gizmo.js', 'cad-face-selection.js', 'cad-chat.js', 'pathloom-project.js', 'dxf-import.js', 'step-import.js', 'gh-brep-live.js', 'cad-ai-context.js', 'cad-code-runtime.js', 'cad-worker-client.js', 'step-geometry.js', 'step-slice-worker.js', 'style.css', 'desktop-client.js']);
 const allowedDirs = ['samples', 'vendor'];
 const mime = {
   '.html': 'text/html; charset=utf-8',
+  '.wasm': 'application/wasm',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',

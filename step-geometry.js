@@ -22,7 +22,7 @@ function stitchSegments(segments,z,epsilon){
   for(const edge of edges)if(!edge.used)walk(edge,edge.a);
   return paths;
 }
-export function sliceMeshesToPaths(meshes,layerHeight){
+export function sliceMeshesToPaths(meshes,layerHeight,{preserveHeight=false}={}){
   if(!Number.isFinite(layerHeight)||layerHeight<.05||layerHeight>10)throw new Error('Layer height must be between 0.05 and 10 mm');
   let minZ=Infinity,maxZ=-Infinity,minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,triangleCount=0;
   for(const mesh of meshes){triangleCount+=mesh.indices.length/3;for(let i=0;i<mesh.positions.length;i+=3){minX=Math.min(minX,mesh.positions[i]);maxX=Math.max(maxX,mesh.positions[i]);minY=Math.min(minY,mesh.positions[i+1]);maxY=Math.max(maxY,mesh.positions[i+1]);minZ=Math.min(minZ,mesh.positions[i+2]);maxZ=Math.max(maxZ,mesh.positions[i+2])}}
@@ -35,7 +35,7 @@ export function sliceMeshesToPaths(meshes,layerHeight){
     for(let layer=from;layer<=to;layer++){const segment=intersectionsForTriangle(points,firstZ+layer*layerHeight);if(segment){byLayer[layer].push(segment);if(++segmentCount>500000)throw new Error('STEP slice exceeds 500,000 contour segments; use a coarser layer height or simpler mesh')}}
   }
   const paths=[],epsilon=Math.max(1e-6,Math.hypot(maxX-minX,maxY-minY)*1e-7);
-  for(let layer=0;layer<byLayer.length;layer++){const z=firstZ+layer*layerHeight;for(const points of stitchSegments(byLayer[layer],z-minZ,epsilon))paths.push({order:paths.length,tool:0,points})}
+  for(let layer=0;layer<byLayer.length;layer++){const z=firstZ+layer*layerHeight;for(const points of stitchSegments(byLayer[layer],preserveHeight?z:z-minZ,epsilon))paths.push({order:paths.length,tool:0,points})}
   if(!paths.length)throw new Error('No slice lines were found at the chosen layer height');
   if(paths.reduce((sum,path)=>sum+path.points.length,0)>1000000)throw new Error('STEP slice exceeds 1,000,000 output points');
   return paths;

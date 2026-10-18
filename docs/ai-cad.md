@@ -59,7 +59,7 @@ The Processing section composes versioned sections, stack/loft, twist/scale, tra
 
 Library items can store a complete generator or an individual operation with its referenced input snapshots. Names, descriptions, tags and kind filters support search. Saves create immutable revisions; reuse assigns fresh input IDs and reconnects the operation to the current output. Items support JSON import/export. Library references do not silently change when another revision is saved.
 
-Execution validates graph references/types/versions, budgets, closed planar paths, nondecreasing nonnegative Z, and intersections within a layer. These checks do not prove printer clearance or support. No executable code is evaluated.
+Execution validates graph references/types/versions, budgets, planar paths (open or closed), nondecreasing nonnegative Z, and intersections within a layer. These checks do not prove printer clearance or support. Code Components execute only in the isolated runtime described below.
 
 The expanded implementation passes 19 unit tests and browser checks with mocked native dialogs and AI responses, including multiple inputs, operation composition, library reuse, project restoration and print links. A real remote inference for the new catalog remains untested: automatic approval review rejected transmission of the test definition/catalog without explicit approval of the destination and content.
 
@@ -256,3 +256,213 @@ F fits the graph, Shift+F fits selected nodes, +/− zoom, and 0 resets zoom.
 Arrow keys move selected nodes by one unit (Shift: ten); with no selection they
 pan the canvas. Text fields retain their normal editing shortcuts. Default
 Processing is generated on startup without a parameter edit or AI request.
+
+### STEP Input and editable B-rep
+
+Add Component → STEP Input imports exact Open CASCADE B-rep in Desktop. The
+editable source, original B-rep, and face-edit history are embedded in the project;
+triangulation and triangle-to-face IDs are only a display/slicing cache. Double-click
+the node to replace its file. Click the STEP in 3D to select its entire object;
+⌘+Shift-click toggles individual faces. ⌘+Shift-drag adds every intersecting
+face in the rectangle, including occluded faces, across multiple STEP inputs. Selection displays an XYZ pivot. Drag an
+axis arrow for a live mesh preview; releasing commits one native CAD operation.
+Escape or pointer cancellation restores the original preview without an edit.
+Object selection translates the whole B-rep. Closed solids currently support
+planar-face push/pull along the face normal. Open B-reps keep shared boundaries: selected faces move, adjacent planar faces
+are rebuilt using the moved shared vertices and re-sewn. A planar cap with curved
+neighbors can stretch its connected component with an exact affine CAD transform,
+keeping the far boundary fixed. Unsupported curved selected faces, inner loops,
+non-planar neighboring polygons or collapsing transforms fail without detaching
+faces. Shared mesh boundary vertices also follow during the disposable preview.
+Failed operations keep the exact original shape. Graph undo/redo restores edits.
+
+New STEP imports are centered in XY and translated onto Z=0 in the native B-rep,
+not only in their display mesh. Later user transformations are preserved as-is.
+
+
+Run `npm run cad:setup` once for the local Python 3.12 / cadquery-ocp 7.8.1.1 runtime.
+It lives under ignored `.pathloom-runtime/`, separate from system Python. An
+installed runtime can also be selected with `PATHLOOM_BREP_PYTHON`. Distributed
+apps need that runtime provisioned; the CAD kernel is not embedded in the app
+bundle yet. NVIDIA USD BRep commands remain separate/optional; this Intel Mac
+uses OCCT B-rep directly, not NVIDIA USD. Browser-only import remains a clearly
+identified mesh reference and requires Desktop reimport for face editing.
+
+Connect Surface to Geometry → Slice STEP, then its Curve output to downstream
+components or Print output. Desktop slicing computes sections directly from the
+editable OCCT B-rep, joins CAD edges into wires, and samples curved edges with the
+Tolerance parameter (default 0.02 mm). Lines retain only their endpoints; collinear
+CAD edges are merged. Sections use the chosen layer interval, starting half a
+layer above the minimum Z. Native failures are reported without falling back to
+triangles. Legacy mesh-only inputs use approximate slicing with a visible warning.
+The graph preserves the current B-rep coordinates, including user Z translations. Mesh-only inputs from earlier projects remain
+readable. Standard Desktop import no longer depends on `occt_to_usd`.
+
+### Directional views
+
+The six bottom-right buttons show Top/Bottom/Front/Back/Left/Right with exact
+orthographic projection. Zooming/panning retains orthographic projection. A right
+rotation drag restores perspective while preserving framing. Free orbit permits
+views below the bed. Face range selection works with both camera projections.
+
+### Code Components
+
+Create new component and Edit with AI can now define a new algorithm as a
+versioned JavaScript Component. The AI receives `codeComponentFormat` alongside
+the built-in catalog. Proposals are checked for graph scope, schemas and pinned
+versions, then executed locally before application. A failed candidate is sent
+back for one bounded correction; a second failure leaves the original graph
+unchanged. Verification checks program execution and geometry, not print safety.
+
+Code Components use `definition.recipes` with `code` and `returns`, in place of
+internal `steps`. Instances still use `recipe:<id>` and a pinned `version`.
+They preserve ordinary Component groups, parameter links and Library snapshots.
+Code is saved inside the project and Library, so installed builds can use new
+algorithms without rebuilding the application.
+
+A code body receives `input`, `params`, and `cad`, and returns Curve arrays:
+
+```js
+return input.map(curve => ({
+  ...curve,
+  points: curve.points.map(([x, y, z = 0]) =>
+    [x, y + params.amplitude * Math.sin(x / 10), z])
+}));
+```
+
+For a Component with `accepts: "surface"`, `input` is `{type: "surface"}` and
+`cad.section(params.layerHeight, params.tolerance)` returns sections of its
+connected editable B-rep. That capability uses the existing native kernel; code
+cannot call arbitrary OCCT operations or change the application itself. The
+initial output types are Curve collections (`contours`, `layers`, `paths`, or
+`curve`), with number/point/list/boolean parameters.
+
+Double-click a code Component and open **Code · JavaScript** to inspect or edit
+its body. **Validate & apply** runs the full graph before installing a new pinned
+version; errors retain the current version. Other instances stay at their pinned
+versions. Right-click **Save Component…** chooses its Library group as usual.
+
+The bundled QuickJS WebAssembly interpreter has no file, network, DOM, desktop
+IPC, host module loader or shell bindings. Each run gets a fresh context, a 64 MB
+heap limit, a 750 ms interpreter deadline and a 256 KB stack limit. Output is
+bounded to 300,000 finite points and coordinates within ±10,000 mm. CAD requests
+are constrained to the connected B-rep's section API and handled outside the
+interpreter. Graph workers retain the 30-second end-to-end timeout. Saved code
+is revalidated and isolated on every run. Libraries/projects containing code
+never execute it in the application JavaScript realm.
+
+The vendored engine is built from quickjs-emscripten-core and the release-sync
+variant using `npm run code:build`; no network is needed at runtime. Upstream
+runtime controls: https://github.com/justjake/quickjs-emscripten .
+
+### Lightweight AI context and graph patches
+
+AI design requests now pass through `cad-ai-context.js`. Surface inputs retain
+IDs and metadata, but mesh arrays, editable B-rep (including original/history
+payloads), face maps and kernel fields stay in a local per-request vault. The AI
+receives opaque `geometryRef` tokens plus dimensions, bounds and geometry counts.
+Library candidates use the same treatment. Responses resolve only references
+issued for that request; fabricated CAD payloads and unknown references are
+rejected before normal graph validation. Applying a proposal checks the current
+project stamp, so a stale reply cannot overwrite newer geometry.
+
+The preferred response is a `pathloom-design-patch` (serialized in the existing
+`definitionJson` response field): changed inputs/steps use `upsert`/`remove`,
+recipes use versioned `upsert`, and output references are included only when
+changed. Upserts preserve existing metadata; unchanged geometry, historical
+recipes and editor layout remain local. Complete lightweight definitions remain
+readable for compatibility. Both response forms pass the same scope checks,
+version checks and isolated execution before application.
+
+Context packing targets 140 KB beneath the native 150 KB guard. If necessary,
+it removes optional history/Library suggestions, replaces large code bodies with
+local `codeRef` tokens (prioritizing the selected Component's body), and drops
+catalog descriptions. Validation retries use the same envelope and budget. If
+the remaining logical graph/request still exceeds the budget, the UI explicitly
+asks for a smaller edit instead of transmitting the full CAD data.
+
+Saved Components appear directly alongside built-ins in their saved category
+(e.g. Transform); there is no separate Library category in Add Component. New
+AI Components are instructed to select an existing semantic category.
+
+### Print output intro line
+
+Double-click Print output to enable **Intro line** and edit Gap (mm), Length
+(mm), and Direction (degrees). Defaults are disabled, 2.5 mm gap, 10 mm length,
+and 0°. Direction points outward from the first curve start: 0° is +X, 90° is
++Y in object coordinates. The line prints from its outer end toward the object,
+ending Gap millimetres before the start. The remaining gap is an ordinary travel
+move with no extrusion. Instance rotation rotates the intro with the object.
+
+Exactly one intro is inserted per object instance, before the first curve on
+its lowest printed layer, using the same Z, Tool, speed and extrusion settings.
+Other curves/layers are unchanged. It is generated after Tool assignment, so
+by-curve color sequences are not shifted. It participates in geometry validation,
+bed bounds, preview, time and filament estimates, project persistence, and
+G-code export. Upstream Component previews omit this output-only addition.
+Settings are stored in `definition.printOutput.intro` and may also be changed by
+an AI graph patch; scoped edits to another Component preserve these settings.
+
+### View cube and layer pauses
+
+The bottom-right orientation cube tracks the camera. Click a visible face or any
+of the six labeled arrows to switch to an orthographic Top/Bottom/Front/Back/Left/
+Right view. Rotation dragging restores perspective as before. The six arrows
+remain reachable even when the corresponding cube face is hidden.
+
+In Print/Output mode, select an object and a layer, then right-click the vertical
+layer slider to insert a pause **before** that layer starts. A pause marker appears
+beside the slider; click it to select its layer, or right-click it to remove the
+pause. The menu also removes all pauses for that object. Pause settings belong
+to each placed instance and persist in `.pathloom` as `pauseLayers` (1-based layer
+indices). Copies can have independent pauses. Layer indices remain fixed when
+geometry is regenerated; export rejects markers beyond the new layer count, and
+the menu can clear them. Pauses are emitted once per marked layer per instance,
+before any of its print paths (including the first-layer intro, when applicable).
+
+Prusa export inserts `;PAUSE_PRINT` and `M601`. User-controlled waiting time is not
+included in duration estimates. Firmware behavior follows Prusa's pause command:
+https://help.prusa3d.com/article/buddy-firmware-specific-g-code-commands_633112 .
+
+### Continuous parameter edits
+
+Parameter input updates and completed numeric generations retain their DOM controls; structural edits still rebuild the inspector. Visible input geometry is
+rebuilt only if its geometry, visibility, placement or selection changed;
+numeric edits do not recreate the imported STEP meshes. Redraw requests coalesce
+per animation frame. Interactive preview jobs are throttled to an 80 ms minimum
+interval, with one worker and only the latest pending values. Display graph
+validation/simplification runs in the worker. Unchanged CAD payloads transfer once
+per worker, then use worker-local references; preview replies omit definitions
+and CAD payloads.
+
+Full generation waits 800 ms after the last input, or 120 ms after releasing a
+parameter slider. Holding a slider postpones full generation. Starting final
+generation cancels its preview worker. Stale generation results remain rejected.
+Export retains the pending/error gate until the latest full geometry validates.
+
+Native sections use a shared, single-flight queue and content keys (SHA-256 when
+Web Crypto is available). Requests for identical sections share a result. Worker
+termination cancels its subscription and removes unstarted work with no remaining
+subscribers. A running native process finishes; it is not forcibly terminated.
+Interactive previews only reuse completed native sections rather than starting
+new expensive CAD work. On a section cache miss the existing preview remains
+visible until the final section is ready. Native results and worker-local geometry
+caches are bounded. The kernel and final path validation are unchanged.
+
+### Multiple print objects
+
+Add Component → Toolpath → Print output adds another printer node. A printer
+node’s context menu can duplicate or remove it; double-click opens Object name
+and that object’s intro-line settings. Connect Shape and Tool assignment
+independently for each object. Keep at least one Print output.
+
+All output nodes share one processing graph evaluated once. Each output becomes
+an object in Print Settings, with its own placement, instances, tool overrides
+and layer pauses. Editing a shared upstream parameter updates every output.
+Removing an output removes its object without changing remaining placements.
+
+The existing output/toolOutput/printOutput fields represent the primary object;
+printOutputs contains additional {id,name,source,toolSource?,intro?} objects.
+Generation returns objects and retains paths for primary-output compatibility.
+Projects store a shared generator graph once and use generatorRef for siblings,
+with generatorGroup and generatorOutputId retaining stable object identity.

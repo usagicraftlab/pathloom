@@ -51,3 +51,6 @@ export function usageComments(usage, diameter) {
   return [`; filament used [mm] = ${lengths.map(mm=>mm.toFixed(2)).join(', ')}`,
     `; filament used [cm3] = ${lengths.map(mm=>(mm*area/1000).toFixed(2)).join(', ')}`];
 }
+
+export function validatePauseLayers(layers,max=100000){if(layers===undefined)return[];if(!Array.isArray(layers)||layers.length>2000||new Set(layers).size!==layers.length||layers.some(layer=>!Number.isInteger(layer)||layer<1||layer>max))throw new Error('Invalid pause layers');return [...layers].sort((a,b)=>a-b)}
+export function pauseGcode(layer,layers){return (layers||[]).includes(layer)?[';PAUSE_PRINT',`M601 ; Pause before layer ${layer}`]:[]}
