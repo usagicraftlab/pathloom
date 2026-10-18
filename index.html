@@ -82,7 +82,6 @@
     <main class="workspace">
       <header class="topbar">
         <div class="top-actions">
-          <span id="projectName" class="project-name">Untitled</span>
           <button id="projectOpen" hidden class="settings-button" type="button">Open</button>
           <button id="projectSave" hidden class="settings-button" type="button">Save</button>
           <button id="projectSaveAs" hidden class="settings-button" type="button">Save as</button>
@@ -124,7 +123,6 @@
               <div id="cadInputList"></div>
               <div id="cadInputInspector" class="input-context cad-panel" role="dialog" aria-label="Input settings" hidden>
                 <label class="cad-checkbox"><input id="cadExposeInput" type="checkbox">Show in Parameters</label><label class="field-row"><span>Input name</span><input id="cadInputName" maxlength="120"></label>
-                <details class="cad-secondary"><summary>Organize</summary><label class="field-row"><span>Group</span><input id="cadInputGroup" maxlength="80"></label><button id="cadDeleteInput" type="button">Remove input</button><p id="cadInputUsage" class="hint"></p></details>
                 <div id="cadParameters"></div>
                 <details id="cadNumberRange" class="cad-secondary"><summary>Range &amp; unit</summary><label class="field-row"><span>Min</span><input id="cadNumbermin" type="number"></label><label class="field-row"><span>Max</span><input id="cadNumbermax" type="number"></label><label class="field-row"><span>Step</span><input id="cadNumberstep" type="number"></label><label class="field-row"><span>Unit</span><input id="cadNumberunit" maxlength="12"></label></details>
                 <div id="cadCurveSettings">
@@ -152,8 +150,9 @@
         </aside>
       </div>
       <div id="viewport" class="viewport">
-        <canvas id="threeCanvas"></canvas><div class="geometry-visibility">              <label class="cad-checkbox"><input id="cadShowInputs" type="checkbox" checked>Show geometry inputs</label></div>
+        <canvas id="threeCanvas"></canvas><div class="geometry-visibility">              <label class="cad-checkbox"><input id="cadShowInputs" type="checkbox" checked>Show geometry inputs in 3Dview→</label></div>
         <section class="print-estimate-overlay" aria-label="Print estimate">
+          <div id="projectName" class="project-name">Untitled</div>
                         <p id="cadStatus" class="hint" role="status"></p>
           <div id="printTimeEstimate">Print time in total: —</div>
           <div id="printTimeDetails"></div>

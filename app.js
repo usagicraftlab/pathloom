@@ -399,9 +399,12 @@ function renderPrintEstimate(){
     const start=renderGcodeTemplate(configuredStartGcode||defaultStartGcode,{}),matches=[...start.matchAll(/^\s*T(\d+)\b/gm)];
     const result=estimatePrintTime(instances,Number($('#travelSpeed').value),configuredBuildVolume.maxHeight,matches.length?matches.at(-1)[1]:null);
     const usage=estimateFilamentUsage(instances,Number($('#printWidth').value),Number($('#printHeight').value),configuredFilamentDiameter);
-    for(const[tool,mm]of [...usage].sort(([a],[b])=>a.localeCompare(b,undefined,{numeric:true}))){const row=document.createElement('div');row.textContent=`T${tool} · ${mm.toFixed(1)} mm`;filaments.appendChild(row)}
-    label.textContent=`Print time in total: ${formatPrintTime(result.totalSeconds)}`;
-    detail.textContent=`Print · ${formatPrintTime(result.printSeconds)}\nTravel · ${formatPrintTime(result.travelSeconds)}\nTool changes · ${formatPrintTime(result.toolChangeSeconds)}`;
+    for(const[tool,mm]of [...usage].sort(([a],[b])=>a.localeCompare(b,undefined,{numeric:true}))){const row=document.createElement('div');row.className='estimate-filament-row';for(const text of [`T${tool}`,'·',mm.toFixed(1),'mm']){const cell=document.createElement('span');cell.textContent=text;row.append(cell)}filaments.appendChild(row)}
+    filaments.style.setProperty('--filament-number-width',(Math.max(5,...[...usage.values()].map(mm=>mm.toFixed(1).length))+.5)+'ch');
+    const showHours=Math.ceil(result.totalSeconds)>=3600;
+    const timeRow=(title,seconds,separator='·')=>{const row=document.createElement('div');row.className='estimate-time-row';row.setAttribute('aria-label',`${title}: ${formatPrintTime(seconds)}`);const name=document.createElement('span'),dot=document.createElement('span'),value=document.createElement('span');name.textContent=title;dot.textContent=separator;value.className='estimate-time-value';value.style.gridTemplateColumns=`${showHours?Math.max(3,String(Math.floor(Math.ceil(result.totalSeconds)/3600)).length)+'ch 1ch ':''}3ch 1ch 3ch 1ch`;const total=Math.ceil(seconds),parts=[...(showHours?[[Math.floor(total/3600),'h']]:[]),[Math.floor(total%3600/60),'m'],[total%60,'s']];for(const[number,unit]of parts){const n=document.createElement('span'),u=document.createElement('span');n.textContent=number;u.textContent=unit;u.className='estimate-unit';value.append(n,u)}row.append(name,dot,value);return row};
+    label.replaceChildren(timeRow('Print time in total',result.totalSeconds,':'));
+    detail.replaceChildren(timeRow('Print',result.printSeconds),timeRow('Travel',result.travelSeconds),timeRow('Tool changes',result.toolChangeSeconds));
   }catch(error){label.textContent='Print time in total: —';detail.textContent=error.message}
 }
 

@@ -154,3 +154,103 @@ be saved independently. Reuse them from Add Component → Library → group.
 Unsaved custom components are pale purple, saved and built-in components white,
 and curve input nodes yellow. Project saving also retains unsaved custom recipes;
 Component saving makes them reusable in other projects.
+
+### Point inputs
+
+Add Component → Point adds an independent geometry input with editable X/Y/Z on
+the node. Its single output connects to Point parameter ports such as Circle
+center or Rotate pivot. Shared coordinates use the existing typed input reference
+format and persist with projects and saved Components. Disconnecting a Point wire
+retains its current coordinates as a literal parameter. Point inputs are exposed
+in the 3D view by default and support the existing drag interaction and Show
+geometry inputs toggle. Point parameter ports and geometry source ports coexist.
+
+### Floating graph and final Toolpath conversion
+
+The generation panel overlays the full-size 3D viewport. It uses the same white
+20% opacity / 5 px blur surface as other panels. Drag the right edge to resize;
+the focused resize handle also accepts Left/Right keys. Width is remembered on
+this device and clamped to the available window width.
+
+New projects keep shape geometry in `definition.output` (`layers` or prepared
+`paths`) and connect independent Tool rules through optional `definition.toolOutput`.
+Print output has separate Geometry and Tool information ports and performs final
+conversion. New graphs do not need a To Toolpath node. Existing saved
+stack/assign-tool/to-toolpath graphs remain readable with their previous output.
+Surface/Brep processing is not implemented; layers are sampled planar curves.
+
+Tool assignment (`tool-info`) is a standalone Component with a Tool-ID sequence
+(0–4) and By layer / By curve mode. By layer assigns the same Tool to all paths at
+a given Z, including bottom rings. By curve follows geometry input order. The
+rules are applied only at Print output; disconnecting its Tool input uses T0 for
+new geometry (legacy path attributes are preserved when present).
+
+Build Toolpath (`build-toolpath`) is optional and does actual path preparation:
+change seam position, reverse direction while preserving the seam, and optionally
+order curves by nearest start within each layer. It preserves planar closed paths
+and accepts stacked geometry or existing paths. Nearest ordering is bounded to
+2048 curves. Tool assignment is applied after this preparation.
+
+### Graph navigation and fixed-size parameter editing
+
+Right-drag pans the graph; a right-click without dragging opens the existing
+context menu. Left-drag blank canvas draws a selection rectangle. Shift adds to
+selection; dragging a selected node body moves the entire selection while
+preserving relative positions. Middle-drag also pans, and Escape clears selection.
+Selections are temporary; moved positions and the graph view persist normally.
+
+Double-click the Component body to open a separate parameter panel at normal UI scale. A single click selects it; drag anywhere except connection dots and interactive controls to move it. Keyboard Enter/Space on the heading also opens parameters.
+Opening details or editing parameters leaves node dimensions and port positions
+unchanged. Click outside, use its close button, or press Escape to dismiss it.
+
+### Typed port icons
+
+Ports use colored SVG silhouettes instead of persistent text labels: crosshair
+and dot for Point, multiple dots for Points, green Curve icons shared by editable, closed planar and stacked curves,
+and a terracotta printing path. Number/List/Boolean
+and generic geometry also have distinct icon definitions. Port names and types
+remain in hover tooltips and accessible labels. Existing wires and the temporary
+connection preview take their source port's type color, including while selected.
+
+### Search and create from blank canvas
+
+Double-click blank graph space to open the Component menu with its search field
+focused. Right-click blank space opens the same searchable menu. Search matches
+built-in names, operation IDs, descriptions, groups, Point/Curve inputs, and saved
+library names/descriptions. Matching categories expand automatically; Enter adds
+the first matching Component and Down focuses the first result. Create new
+component remains available beside Add Component even when nothing matches.
+Component action menus share the add menu's surface, typography, row padding and
+hover styling. Import is not part of the graph context menu.
+
+
+### Unified Curve geometry
+
+Curve is the public geometry type for editable curves, sampled closed profiles and
+curves at different heights. All use the same green port icon and `Shape (Curve)`
+format; counts are attributes, not distinct types. The legacy serialized
+`contours` / `layers` tags remain readable for dimension and compatibility handling.
+New projects connect `input:<id>` directly into Stack; Sections is no longer a
+required stage. Old Sections nodes are named Sample curve; Resample curve is an
+optional explicit operation and preserves open/closed state.
+
+Component details show count, closed/open state, XY-parallel planarity, and Z
+range. Stack requires closed geometry at XY/Z=0; loft inputs need matching sample
+counts. Printing requires closed planar curves with explicit Z coordinates.
+Boolean inputs must be coplanar; Offset processes each height separately. Move
+can lift a planar Curve in Z. These are geometric checks rather than user-facing
+type distinctions. Generated Curves can feed collection parameters using
+`step:<component-id>`; source references use `input:<input-id>` for editable Curves.
+The explicit prefixes avoid collisions between input and Component IDs.
+
+### Graph keyboard controls
+
+In Generate mode, ⌘/Ctrl+A selects all nodes, ⌘/Ctrl+Shift+A clears the
+selection, and Escape clears node/wire selection. Delete/Backspace removes the
+selected wire or Components; required inputs must be reconnected first, and at
+least one geometry Component must remain. ⌘/Ctrl+Z undoes a graph change and
+⌘/Ctrl+Shift+Z redoes it. ⌘/Ctrl+K or ⌘/Ctrl+F opens Component search.
+F fits the graph, Shift+F fits selected nodes, +/− zoom, and 0 resets zoom.
+Arrow keys move selected nodes by one unit (Shift: ten); with no selection they
+pan the canvas. Text fields retain their normal editing shortcuts. Default
+Processing is generated on startup without a parameter edit or AI request.

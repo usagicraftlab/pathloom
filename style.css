@@ -165,7 +165,7 @@ html,body,.workspace{background:var(--bg);color:var(--text)}
 .cad-chat-column .sidebar-island.collapsed{flex:0 0 auto}.cad-chat-column .sidebar-island.collapsed .island-content{display:none}
 .cad-chat-column .cad-chat-messages{flex:1;max-height:none;min-height:0}.cad-chat-column .cad-chat-messages:empty{display:block}
 .cad-chat-column #cadChatForm{margin-top:auto}.cad-workspace .cad-panel .field-row input,.cad-workspace .cad-panel .field-row select{width:118px}
-.path-control{left:20px}body:has(#cadPanel:not([hidden])) .path-control{left:530px}
+.path-control{left:20px}body[data-workspace-mode=generate] .path-control{left:530px}
 .parameter-link-menu{position:relative;font-size:10px}.parameter-link-menu>summary{cursor:pointer;list-style:none;color:#758491;text-align:center}.parameter-link-menu.has-link>summary{color:#227dc7}
 .parameter-link-menu[open]{z-index:25}.parameter-link-menu[open]>label{position:relative;display:flex;align-items:center;gap:5px;width:120px;margin:0;padding:6px;background:#f0f4f7;left:-105px;border:1px solid #ccd5dc;border-radius:4px}.parameter-link-menu input{width:auto}
 .print-link-icon{color:#227dc7;font-size:13px!important;padding:0 3px}.number-wrap:has(.print-link-icon:not([hidden])){border-color:#709bbb}.number-wrap input:disabled{opacity:.7;cursor:not-allowed}
@@ -209,7 +209,7 @@ html,body,.workspace{background:var(--bg);color:var(--text)}
 .island-chevron,.chevron{font-size:0!important;display:inline-block;width:12px;text-align:center;transform:none!important}.island-chevron::before,.chevron::before{content:'▾';font-size:11px}.collapsed .island-chevron::before,.object-card.collapsed>.object-header .chevron::before,.tool-toggle[aria-expanded=false] .chevron::before{content:'▸'}
 summary:not(.filament-menu>summary):not(#cadInputInspector summary){list-style:none}summary::-webkit-details-marker{display:none}
 summary:not(.filament-menu>summary):not(#cadInputInspector summary)::before{content:'▸';display:inline-block;font-size:11px;margin-right:6px}details[open]>summary:not(#cadInputInspector summary)::before,summary[aria-expanded=true]::before{content:'▾'}
-body:has(.cad-workspace:not([hidden])) .layer-control,body:has(.cad-workspace:not([hidden])) .path-control{display:none}
+body:not([data-workspace-mode=output]) .layer-control,body:not([data-workspace-mode=output]) .path-control{display:none}
 .operation-card[hidden]{display:none}
 .operation-heading>summary::before{content:'▸'!important}.operation-heading>summary[aria-expanded=true]::before{content:'▾'!important}
 .island-chevron::before,.chevron::before,summary:not(#cadInputInspector summary)::before{font-size:14px!important}
@@ -251,3 +251,73 @@ body[data-workspace-mode=generate] .viewport{position:absolute;left:calc(min(52v
 .component-save-dialog{width:min(340px,calc(100vw - 48px));border:1px solid #c8d0d9;border-radius:12px;padding:20px;color:#25313c;background:#fffffff2;box-shadow:0 18px 70px #20304030;font:12px inherit}
 .component-save-dialog::backdrop{background:#26344433;backdrop-filter:blur(5px)}
 .component-save-dialog form{display:grid;gap:14px}.component-save-dialog header{display:flex;justify-content:space-between;align-items:center}.component-save-dialog label{display:grid;gap:6px;font-size:11px}.component-save-dialog input:not([type=checkbox]){box-sizing:border-box;width:100%;padding:8px;border:1px solid #cad1d8;border-radius:6px;background:#fff;color:inherit}.component-save-dialog button{padding:8px;border:1px solid #cbd1d9;border-radius:6px;background:#fff;color:inherit;cursor:pointer}.component-save-dialog #componentRevisionRow{display:flex;align-items:center}.component-save-dialog #componentSaveError{color:#b34444;font-size:11px}
+.node-point-coordinates{display:flex;gap:6px;padding:0 10px 10px}.node-point-coordinates label{display:grid;gap:4px;min-width:0;flex:1;font-size:9px}.node-point-coordinates input{box-sizing:border-box;width:100%;min-width:0;background:#ffffffb3;border:1px solid #d6bd68;border-radius:4px;padding:5px;color:inherit;font-size:11px}
+/* Vertical graph: input dots above, output dots below, labels beside each dot. */
+.node-input-ports,.node-output-ports{position:relative;inset:auto;display:grid;grid-template-columns:repeat(var(--port-columns,1),minmax(0,1fr));gap:10px 4px;height:auto;padding:0 6px;pointer-events:auto}
+.node-port-row{position:relative;min-width:0;display:flex;justify-content:center;text-align:center;padding:9px 3px 5px;font-size:10px;line-height:1.4}
+.node-port-row.out{padding:5px 3px 9px}
+.node-port-label{min-width:0;overflow-wrap:anywhere;color:#42586a;pointer-events:none}.node-port-label small{display:block;font-size:9px;color:#7c8c99}
+.cad-panel .node-port-row button.node-port{position:absolute;left:50%;top:-8px;transform:translateX(-50%)}
+.cad-panel .node-port-row.out button.node-port{left:50%;right:auto;top:auto;bottom:-8px}
+/* Floating generation panel shares the other panels' white glass surface. */
+body[data-workspace-mode=generate] .viewport{position:absolute;inset:0;width:100%;height:100vh}
+body[data-workspace-mode=generate] .cad-chat-column{width:min(var(--node-panel-width,min(52vw,760px)),calc(100vw - 24px));position:relative;overflow:visible}
+body[data-workspace-mode=generate] .cad-chat-column>.sidebar-island{background:rgba(255,255,255,.2);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+.cad-chat-column #cadSteps{background:transparent}.node-viewport{background-color:transparent}
+.cad-width-handle{position:absolute;top:0;bottom:0;right:0;width:12px;z-index:30;cursor:ew-resize;touch-action:none;border-radius:8px;outline:none}
+.cad-width-handle::after{content:'';position:absolute;top:calc(50% - 24px);left:5px;width:2px;height:48px;background:#7896ac66;border-radius:2px}.cad-width-handle:hover::after,.cad-width-handle:focus-visible::after{background:#3879a6}
+.resizing-node-panel,.resizing-node-panel *{cursor:ew-resize!important;user-select:none!important}
+body[data-workspace-mode=generate] .geometry-visibility{left:auto;right:24px;bottom:18px}
+.node-marquee{position:absolute;z-index:10;border:1px solid #4388b6;background:#4388b622;pointer-events:none;box-sizing:border-box}.node-marquee[hidden]{display:none}
+.graph-node.node-selected{outline:2px solid #4388b6;outline-offset:3px}
+.component-details-panel.cad-panel{position:fixed;z-index:190;top:100px;left:320px;right:auto;bottom:auto;width:min(300px,calc(100vw - 24px));max-height:calc(100vh - 24px);padding:12px;overflow:auto;display:flex;gap:8px;border:1px solid #c4cfd8;border-radius:9px;background:#fffffff2;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);box-shadow:0 8px 32px #22334426;mask-image:none;-webkit-mask-image:none;scrollbar-gutter:auto}
+.component-details-panel[hidden]{display:none!important}.component-details-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}.component-details-heading strong{font-size:11px}.component-details-panel .operation-card{padding:0;overflow:visible;max-height:none}.component-details-panel .operation-card>summary{display:none}
+.graph-node,.graph-node .operation-heading,.graph-node .operation-heading>summary,.graph-node .node-port-row{cursor:grab}
+.graph-node:active,.graph-node .operation-heading:active{cursor:grabbing}
+.graph-node .operation-heading>summary::before{display:none!important}
+.graph-node input,.graph-node textarea{cursor:text}.graph-node input[type=checkbox],.graph-node button{cursor:pointer}
+/* Typed connection icons and matching wires. */
+.cad-panel .node-port-row button.node-port{width:26px;height:26px;min-width:26px;padding:3px;border:1px solid color-mix(in srgb,var(--port-color) 45%,white);border-radius:7px;background:color-mix(in srgb,var(--port-color) 10%,white);color:var(--port-color);top:-14px}
+.cad-panel .node-port-row.out button.node-port{top:auto;bottom:-14px}
+.node-port svg{display:block;width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.cad-panel .node-port-row button.node-port:hover,.cad-panel .node-port-row button.node-port:focus-visible{background:color-mix(in srgb,var(--port-color) 20%,white);border-color:var(--port-color);outline:3px solid color-mix(in srgb,var(--port-color) 20%,transparent)}
+.node-port-row{min-height:14px;padding:6px 3px}.node-port-row.out{padding:6px 3px}
+.node-wire,.pending-wire{stroke:var(--wire-color,#708398)}.node-wire:hover,.node-wire.selected,.node-viewport .node-wire:focus-visible{stroke:var(--wire-color,#708398);stroke-width:4;filter:drop-shadow(0 0 2px var(--wire-color,#708398))}
+.graph-node .print-output-heading{justify-content:center;gap:9px;padding:12px}.print-output-icon{width:30px;height:30px;flex:none;fill:none;stroke:#477c98;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+/* Translucent component surfaces; the checked stage has its own highlight. */
+.graph-node{background:rgba(255,255,255,.4);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
+.graph-node.component-saved{background:rgba(255,255,255,.4)}
+.graph-node.component-custom{background:rgba(238,229,250,.4)}
+.graph-node.geometry-node{background:rgba(255,243,196,.4)}
+.graph-node.final-node{background:rgba(237,245,248,.4)}
+.graph-node.operation-shell:has(.stage-toggle input:checked){background:rgba(164,207,239,.65);border-color:#4388b6;box-shadow:0 0 0 1px #4388b64d,0 4px 14px #4388b626}
+/* The app owns scrolling inside its panels; avoid WebView edge scrollbars. */
+html,body{overflow:hidden;overscroll-behavior:none}
+body .node-toolbar .geometry-visibility{position:static;inset:auto;margin-left:auto;z-index:auto;flex-shrink:0;font-size:9px}
+.node-toolbar .geometry-visibility .cad-checkbox{margin:0;gap:5px;white-space:nowrap;font-size:9px}
+.node-toolbar .geometry-visibility input{margin:0;width:12px;height:12px}
+/* Shared context-menu surface, typography and rows. */
+.operation-context{min-width:220px;max-width:min(320px,calc(100vw - 16px));max-height:min(420px,calc(100vh - 16px));overflow:auto;padding:8px;border:1px solid #ccd5dc;border-radius:9px;background:#fffffff2;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);box-shadow:0 8px 32px #22334426;color:var(--text);font:11px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.operation-context button,.operation-context:not(.add-node-menu)>button{display:block;width:100%;padding:8px;text-align:left;border:0;border-radius:5px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.operation-context button:hover,.operation-context button:focus-visible{background:#dde9f2}.operation-context button:disabled{opacity:.4;cursor:default}.operation-context [hidden]{display:none!important}
+.component-menu-search{box-sizing:border-box;width:100%;min-width:0;padding:8px 9px;margin-bottom:5px;border:1px solid #c7d1da;border-radius:6px;outline:none;background:#ffffff80;color:inherit;font:inherit}.component-menu-search:focus{border-color:#709db3}.component-search-empty{margin:8px 4px;color:var(--muted);font-size:10px}
+
+/* Print preview exposes both layer and path progress controls. */
+body[data-workspace-mode=output] .layer-control{display:flex;right:18px;top:260px;bottom:66px}
+body[data-workspace-mode=output] .path-control{display:grid;left:310px;right:64px;bottom:18px;width:auto;transform:none}
+.print-estimate-overlay{text-align:right;max-width:calc(100vw - 48px)}
+.print-estimate-overlay .project-name{display:block;max-width:min(360px,calc(100vw - 48px));margin:0 0 8px auto;padding:0;font:inherit;color:inherit;letter-spacing:inherit}
+.print-estimate-overlay #printTimeDetails,.print-estimate-overlay #filamentUsageDetails{padding:0}
+.topbar:not(:has(.top-actions> :not([hidden]))){display:none}
+/* Shared numeric columns keep time units and filament decimals aligned. */
+.print-estimate-overlay{font-variant-numeric:tabular-nums lining-nums}
+#printTimeDetails{white-space:normal}
+.estimate-time-row{display:grid;grid-template-columns:minmax(0,1fr) 1ch max-content;align-items:baseline;column-gap:6px}
+.estimate-time-value{display:grid;column-gap:3px;text-align:right;letter-spacing:.04em}
+.estimate-time-value .estimate-unit{text-align:left}
+.estimate-filament-row{display:grid;grid-template-columns:minmax(0,1fr) 1ch var(--filament-number-width,8ch) 2ch;align-items:baseline;column-gap:6px}
+.estimate-filament-row>span:nth-child(3){font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.estimate-filament-row>span:last-child{text-align:left;letter-spacing:0}
+/* Narrow cards suit the vertical graph; details remain a separate full-size panel. */
+.graph-node{width:115px}.graph-node .operation-heading{padding:8px 6px;gap:5px}.graph-node .operation-heading>summary{min-width:0}.graph-node .operation-heading>summary>span{overflow-wrap:anywhere;line-height:1.35}.graph-node .stage-toggle{flex-shrink:0}.node-point-coordinates{gap:3px;padding:0 6px 8px}.node-point-coordinates input{font-size:10px;padding:3px 1px;appearance:textfield}.node-point-coordinates input::-webkit-inner-spin-button{appearance:none}
+.graph-node .print-output-heading{padding:10px 6px;gap:5px;font-size:10px}.print-output-icon{width:24px;height:24px}
