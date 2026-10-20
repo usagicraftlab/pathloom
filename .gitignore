@@ -10,3 +10,7 @@ __pycache__/
 *.py[cod]
 
 .pathloom-runtime/
+
+work/
+test-results/
+playwright-report/

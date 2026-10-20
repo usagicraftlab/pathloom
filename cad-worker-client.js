@@ -4,16 +4,37 @@
 export function createNativeSliceQueue(run){
   const tasks=new Map(),cache=new Map();let running=false,points=0;
   const cost=result=>(result.paths||[]).reduce((n,path)=>n+path.points.length,0);
-  function pump(){if(running)return;const task=[...tasks.values()].find(t=>!t.started&&t.waiters.size);if(!task)return;running=true;task.started=true;
-    Promise.resolve().then(()=>run(task.request)).then(result=>{cache.set(task.key,result);points+=cost(result);while(cache.size>8||points>500000&&cache.size>1){const key=cache.keys().next().value;points-=cost(cache.get(key));cache.delete(key)}for(const waiter of task.waiters.values())waiter.resolve(result)}).catch(error=>{for(const waiter of task.waiters.values())waiter.reject(error)}).finally(()=>{tasks.delete(task.key);running=false;pump()});
+  function pump(){
+    if(running)return;
+    const task=[...tasks.values()].find(t=>!t.started&&t.waiters.size);if(!task)return;
+    running=true;task.started=true;
+    Promise.resolve().then(()=>run(task.request,{signal:task.controller.signal})).then(result=>{
+      if(task.controller.signal.aborted)return;
+      const size=cost(result);
+      if(size<=500000){cache.set(task.key,result);points+=size;while(cache.size>8||points>500000){const key=cache.keys().next().value;points-=cost(cache.get(key));cache.delete(key)}}
+      for(const waiter of task.waiters.values())waiter.resolve(result);
+    }).catch(error=>{for(const waiter of task.waiters.values())waiter.reject(error)}).finally(()=>{
+      if(tasks.get(task.key)===task)tasks.delete(task.key);running=false;pump();
+    });
   }
   return {request(owner,request){
     if(cache.has(request.key)){const result=cache.get(request.key);cache.delete(request.key);cache.set(request.key,result);return Promise.resolve(result)}
     if(request.preview)return Promise.reject(new Error('Preview awaiting exact section'));
-    return new Promise((resolve,reject)=>{let task=tasks.get(request.key);if(!task){task={key:request.key,request,waiters:new Map(),started:false};tasks.set(request.key,task)}task.waiters.set(owner,{resolve,reject});queueMicrotask(pump)})
-  },cancel(owner){for(const[key,task]of tasks){const waiter=task.waiters.get(owner);if(waiter){task.waiters.delete(owner);waiter.reject(new Error('Worker cancelled'))}if(!task.started&&!task.waiters.size)tasks.delete(key)}},stats:()=>({active:running?1:0,queued:[...tasks.values()].filter(t=>!t.started).length,cached:cache.size})};
+    return new Promise((resolve,reject)=>{let task=tasks.get(request.key);if(!task||task.controller.signal.aborted){task={key:request.key,request,waiters:new Map(),started:false,controller:new AbortController()};tasks.set(request.key,task)}
+      task.waiters.get(owner)?.reject(new Error('Worker request superseded'));
+      task.waiters.set(owner,{resolve,reject});queueMicrotask(pump);
+    });
+  },cancel(owner){for(const[key,task]of tasks){const waiter=task.waiters.get(owner);if(waiter){task.waiters.delete(owner);waiter.reject(new Error('Worker cancelled'))}if(!task.waiters.size){if(task.started)task.controller.abort();else tasks.delete(key)}}},stats:()=>({active:running?1:0,queued:[...tasks.values()].filter(t=>!t.started).length,cached:cache.size})};
 }
-const nativeSlices=createNativeSliceQueue(request=>{if(!window.__TAURI__?.core?.invoke)throw new Error('Exact B-rep slicing requires Pathloom Desktop');return window.__TAURI__.core.invoke('slice_step_brep',{brep:request.brep,layerHeight:request.layerHeight,tolerance:request.tolerance})});
+const nativeSlices=createNativeSliceQueue(async(request,{signal})=>{
+  const invoke=window.__TAURI__?.core?.invoke;if(!invoke)throw new Error('Exact B-rep slicing requires Pathloom Desktop');
+  if(signal.aborted)throw new Error('CAD operation cancelled');
+  const requestId=crypto.randomUUID();
+  const cancel=()=>{Promise.resolve(invoke('cancel_cad_request',{requestId})).catch(()=>{})};
+  signal.addEventListener('abort',cancel,{once:true});
+  try{return await invoke('slice_step_brep',{brep:request.brep,layerHeight:request.layerHeight,tolerance:request.tolerance,requestId})}
+  finally{signal.removeEventListener('abort',cancel)}
+});
 export function createCadWorker(){
   const job=new Worker('./cad-worker.js',{type:'module'}),owner=Symbol('worker'),terminate=job.terminate.bind(job);let alive=true;
   const post=job.postMessage.bind(job),geometry=new Map();

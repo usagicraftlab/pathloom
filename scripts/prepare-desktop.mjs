@@ -1,3 +1,4 @@
+import {frontendFiles,frontendDirectories} from './frontend-assets.mjs';
 import { cp, mkdir, rm, copyFile, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,11 +9,12 @@ const out = path.join(root, 'desktop-dist');
 await rm(out, { recursive: true, force: true });
 await mkdir(out, { recursive: true });
 
-for (const file of ['index.html', 'app.js', 'preview-helpers.js', 'print-time.js', 'print-intro.js', 'gcode-metadata.js', 'cad-kernel.js', 'cad-pipeline.js', 'cad-components.js', 'cad-library.js', 'cad-input-ui.js', 'cad-graph.js', 'cad-node-editor.js', 'cad-worker.js', 'cad-ui.js', 'cad-gizmo.js', 'cad-face-selection.js', 'cad-chat.js', 'pathloom-project.js', 'dxf-import.js', 'step-import.js', 'gh-brep-live.js', 'cad-ai-context.js', 'cad-code-runtime.js', 'cad-worker-client.js', 'step-geometry.js', 'step-slice-worker.js', 'style.css', 'desktop-client.js']) {
+for (const file of await frontendFiles()) {
+  await mkdir(path.dirname(path.join(out,file)),{recursive:true});
   await copyFile(path.join(root, file), path.join(out, file));
 }
 
-for (const dir of ['samples', 'vendor']) {
+for (const dir of frontendDirectories) {
   await cp(path.join(root, dir), path.join(out, dir), { recursive: true });
 }
 

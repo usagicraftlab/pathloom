@@ -1,10 +1,12 @@
+import {defaultStartGcode,defaultToolChangeGcode,defaultEndGcode,profileGcodeDefaults,normalizeStoredGcode} from './printer-profiles.js';
+import {normalizeToolpath,toolSlots,outputToolOptions,validatePrintSettings,printableBounds} from './toolpath-data.js';
 import {advancePreview,curveDirection} from './preview-helpers.js';
 import {initCadGizmo} from './cad-gizmo.js';
 import {moveStepFaces} from './step-import.js';
-let cadHiddenGroups=[],cadProposalGroup=null;
+let hiddenStageGroups=[],stagePreviewGroup=null;
 import {printOutputNodes,numberParameters,pipelineLayerHeight,migrateDefinition} from './cad-pipeline.js';
 import { initCad } from './cad-ui.js';
-import { BASIC_FIELDS, validateProject } from './pathloom-project.js';
+import { BASIC_FIELDS, LAYOUT_DEFAULTS, validateProject } from './pathloom-project.js';
 import { validatePauseLayers, pauseGcode, durationText, thumbnailBlock, encodeQoi, progressCommand, usageComments } from './gcode-metadata.js';
 import { estimatePrintTime, estimateFilamentUsage } from './print-time.js';
 
@@ -27,7 +29,8 @@ const selectedBrepFaces=new Map();
 const configuredBuildVolume={bedWidth:250,bedDepth:210,maxHeight:220};
 const renderedInstances=new Map();
 const previewGeometryCache=new Map();
-let previewDirty=true;
+let previewDirty=true,previewFrame=null;
+function requestPreviewRender(){previewDirty=true;if(renderer&&previewFrame===null)previewFrame=requestAnimationFrame(animate)}
 let inspectingLayerPaths=false,axisView=null,axisDirection=null,axisUp=null;
 async function initializePreview(){
   const modules=await Promise.all([
@@ -41,13 +44,13 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.setClearColor(0x0
 scene = new THREE.Scene(); scene.fog = new THREE.Fog(0xe9edf2,600,1000);
 camera = new THREE.PerspectiveCamera(36,1,.1,1200); camera.position.set(180,-320,340);
 camera.up.set(0,0,1);
-controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping=false; controls.mouseButtons.LEFT=null; controls.mouseButtons.MIDDLE=THREE.MOUSE.PAN; controls.mouseButtons.RIGHT=THREE.MOUSE.ROTATE; controls.addEventListener('change',()=>{previewDirty=true;if(axisView){const direction=camera.position.clone().sub(controls.target).normalize();if(direction.angleTo(axisDirection)>1e-5)restorePerspective();else{const distance=camera.position.distanceTo(controls.target);camera.position.copy(controls.target).addScaledVector(axisDirection,distance);camera.up.copy(axisUp);camera.lookAt(controls.target);camera.up.set(0,0,1)}}}); controls.target.set(0,0,16); controls.maxPolarAngle=Math.PI; controls.minDistance=90; controls.maxDistance=520;
+controls = new OrbitControls(camera,renderer.domElement); controls.enableDamping=false; controls.mouseButtons.LEFT=null; controls.mouseButtons.MIDDLE=THREE.MOUSE.PAN; controls.mouseButtons.RIGHT=THREE.MOUSE.ROTATE; controls.addEventListener('change',()=>{requestPreviewRender();if(axisView){const direction=camera.position.clone().sub(controls.target).normalize();if(direction.angleTo(axisDirection)>1e-5)restorePerspective();else{const distance=camera.position.distanceTo(controls.target);camera.position.copy(controls.target).addScaledVector(axisDirection,distance);camera.up.copy(axisUp);camera.lookAt(controls.target);camera.up.set(0,0,1)}}}); controls.target.set(0,0,16); controls.maxPolarAngle=Math.PI; controls.minDistance=90; controls.maxDistance=520;
 scene.add(new THREE.HemisphereLight(0xffffff,0x9aa5b1,1.65)); const keyLight=new THREE.DirectionalLight(0xffffff,1.35); keyLight.position.set(80,-120,180); scene.add(keyLight);
 updateBuildVolumePreview();
 toolpathGroup=new THREE.Group(); scene.add(toolpathGroup);
 importedShapeGroup=new THREE.Group();scene.add(importedShapeGroup);
 previewPointMarker=new THREE.Points(new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute([0,0,0],3)),new THREE.PointsMaterial({color:0xffffff,size:7,sizeAttenuation:false,depthTest:false}));previewPointMarker.renderOrder=10;previewPointMarker.visible=false;scene.add(previewPointMarker);
-  buildInstances();renderImportedShapes();resize();animate();window.PathloomCad?.refreshInputs?.();
+  buildInstances();renderImportedShapes();resize();requestPreviewRender();window.PathloomCad?.refreshInputs?.();
 }
 
 function renderImportedShapes(){
@@ -80,7 +83,7 @@ function renderImportedShapes(){
     });
     importedShapeGroup.add(group);
   }
-  importedGizmo?.refresh();previewDirty=true;
+  importedGizmo?.refresh();requestPreviewRender();
 }
 
 async function sliceStepShape(shape,layerHeight){
@@ -122,7 +125,7 @@ let facePickStart=null;
 canvas.addEventListener('pointerdown',event=>{facePickStart=event.button===0?[event.clientX,event.clientY]:null});
 canvas.addEventListener('pointerup',event=>{if(!facePickStart)return;const distance=Math.hypot(event.clientX-facePickStart[0],event.clientY-facePickStart[1]);facePickStart=null;if(distance<4)selectImportedFace(event)});
 
-importedGizmo=initCadGizmo({preview:()=>({THREE,scene,camera,controls,canvas,dirty:()=>{previewDirty=true}}),error:message=>showToast(message,'error'),selection(){const shape=importedShapes.find(s=>s.id===selectedImportedId&&s.visible!==false);if(!shape?.brep)return null;return{id:shape.id,data:shape.brep.data,faces:new Set(selectedBrepFaces.get(shape.id)||[]),objects:importedShapeGroup?.children.flatMap(g=>g.children.filter(n=>n.userData.shapeId===shape.id))||[]}},async commit(target,offset){const shape=importedShapes.find(s=>s.id===target.id);if(shape?.brep?.data!==target.data)throw new Error('CAD object changed; select it again');const result=await moveStepFaces(shape,[...target.faces],offset,!target.faces.size);if(shape.brep.data!==target.data)throw new Error('CAD object changed during edit');applyImportedBrepEdit(shape.id,result)}});
+importedGizmo=initCadGizmo({preview:()=>({THREE,scene,camera,controls,canvas,dirty:()=>{requestPreviewRender()}}),error:message=>showToast(message,'error'),selection(){const shape=importedShapes.find(s=>s.id===selectedImportedId&&s.visible!==false);if(!shape?.brep)return null;return{id:shape.id,data:shape.brep.data,faces:new Set(selectedBrepFaces.get(shape.id)||[]),objects:importedShapeGroup?.children.flatMap(g=>g.children.filter(n=>n.userData.shapeId===shape.id))||[]}},async commit(target,offset){const shape=importedShapes.find(s=>s.id===target.id);if(shape?.brep?.data!==target.data)throw new Error('CAD object changed; select it again');const result=await moveStepFaces(shape,[...target.faces],offset,!target.faces.size);if(shape.brep.data!==target.data)throw new Error('CAD object changed during edit');applyImportedBrepEdit(shape.id,result)}});
 document.addEventListener('pathloom:geometry-selection',event=>{if(event.detail.owner!=='imported'&&selectedImportedId){selectedImportedId=null;selectedBrepFaces.clear();renderImportedShapes()}});
 
 function updateBuildVolumePreview(){
@@ -144,7 +147,7 @@ function updateBuildVolumePreview(){
   scene.add(buildVolumeGroup);
   if(camera.isOrthographicCamera)restorePerspective();
   const size=Math.max(width,depth,height),aspect=camera.aspect||1,distance=size/Math.sin(camera.fov*Math.PI/360)/Math.min(1,aspect);
-  controls.target.set(0,0,height/2);camera.position.set(0,-distance*.8,height/2+distance*.6);controls.maxDistance=Math.max(520,distance*2);camera.far=Math.max(1200,distance*4);camera.updateProjectionMatrix();controls.update();previewDirty=true;
+  controls.target.set(0,0,height/2);camera.position.set(0,-distance*.8,height/2+distance*.6);controls.maxDistance=Math.max(520,distance*2);camera.far=Math.max(1200,distance*4);camera.updateProjectionMatrix();controls.update();requestPreviewRender();
 }
 function showToast(message,kind=''){const t=$('#toast');t.textContent=message;t.className=`toast ${kind}`;t.hidden=false;clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>t.hidden=true,2600)}
 function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
@@ -160,10 +163,13 @@ function toolOutputId(toolId,tool){return String(tool?.outputTool??toolId)}
 function physicalToolAppearance(outputId){for(const source of sourceState.values()){const exact=source.tools.get(String(outputId));if(exact)return exact}for(const source of sourceState.values())for(const[id,tool]of source.tools)if(toolOutputId(id,tool)===String(outputId))return tool;return null}
 function toolOutputAppearance(source,toolId){const tool=source?.tools.get(String(toolId)),outputId=toolOutputId(toolId,tool);return physicalToolAppearance(outputId)||tool}
 function toolPreviewColor(source,toolId){return toolOutputAppearance(source,toolId)?.color||'#fff'}
-function sanitizeToolpath(raw,filename='Untitled.toolpath'){if(!raw||!Array.isArray(raw.paths))throw new Error('Missing paths[]');const paths=raw.paths.map((path,index)=>{if(!Array.isArray(path.points)||path.points.length<2)throw new Error(`Path ${index} needs at least 2 points`);const points=path.points.map(p=>{if(!Array.isArray(p)||p.length<3||p.slice(0,3).some(v=>!Number.isFinite(Number(v))))throw new Error(`Invalid XYZ point in path ${index}`);return p.slice(0,3).map(Number)});return{order:Number.isFinite(Number(path.order))?Number(path.order):index,tool:String(path.tool??0),points}}).sort((a,b)=>a.order-b.order);const zValues=[...new Set(paths.map(p=>Number(p.points[0][2].toFixed(4))))].sort((a,b)=>a-b);paths.forEach(p=>{const z=Number(p.points[0][2].toFixed(4));p.layer=zValues.indexOf(z)+1});return{filename,paths,maxLayer:Math.max(1,zValues.length)}}
-function sourceXYCenter(source){let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;for(const path of source?.paths||[])for(const[x,y]of path.points){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y)}return Number.isFinite(minX)?[(minX+maxX)/2,(minY+maxY)/2]:[0,0]}
+function sanitizeToolpath(raw,filename='Untitled.toolpath',options){return normalizeToolpath(raw,filename,options)}
+const sourceMetrics=new WeakMap();
+function sourceBounds(source){const paths=source?.paths;if(!paths)return {center:[0,0],maxZ:0};if(sourceMetrics.has(paths))return sourceMetrics.get(paths);let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,maxZ=0;for(const path of paths)for(const[x,y,z]of path.points){minX=Math.min(minX,x);maxX=Math.max(maxX,x);minY=Math.min(minY,y);maxY=Math.max(maxY,y);maxZ=Math.max(maxZ,z)}const value={center:Number.isFinite(minX)?[(minX+maxX)/2,(minY+maxY)/2]:[0,0],maxZ};sourceMetrics.set(paths,value);return value}
+function sourceXYCenter(source){return sourceBounds(source).center}
+
 function addSource(toolpath,options={}){sourceCounter++;const id=options.id||`S${sourceCounter}`;const label=options.label||toolpath.filename.replace(/\.toolpath$|\.json$/i,'')||id;const tools=new Map();[...new Set(toolpath.paths.map(p=>p.tool))].forEach((toolId,index)=>{const appearance=sharedToolAppearance(toolId,index);tools.set(String(toolId),{...appearance,speedOverride:null,erate:1})});const source={id,label,filename:toolpath.filename,paths:toolpath.paths,maxLayer:toolpath.maxLayer,tools};sourceState.set(id,source);const[centerX,centerY]=sourceXYCenter(source);addInstance(id,`${id}-${nextInstanceNumber(id)}`,{x:-centerX,y:-centerY,rotation:0});autoArrange(false);if(!options.deferRender){renderAllUI();buildInstances()}return id}
-function upsertLiveToolpath(payload){if(!payload||!Array.isArray(payload.paths))throw new Error('Grasshopper payload needs paths[]');const liveSource=String(payload.source||'').trim();if(!liveSource)throw new Error('Grasshopper source is required');const label=String(payload.label||liveSource||'Grasshopper Live').trim()||'Grasshopper Live';const toolpath=sanitizeToolpath({paths:payload.paths},`${label}.toolpath`);let source=[...sourceState.values()].find(item=>item.liveSource===liveSource);if(!source){const sourceId=addSource(toolpath,{label,deferRender:payload.deferRender});source=sourceState.get(sourceId);source.liveSource=liveSource;showToast(`${label} connected from ${payload.origin||'Grasshopper'}`);return{sourceId,created:true}}const previousTools=source.tools;const nextTools=new Map();[...new Set(toolpath.paths.map(path=>String(path.tool)))].forEach((toolId,index)=>{const existing=previousTools.get(toolId);if(existing){nextTools.set(toolId,existing)}else{const appearance=sharedToolAppearance(toolId,index);nextTools.set(toolId,{...appearance,speedOverride:null,erate:1})}});source.label=label;source.filename=toolpath.filename;source.paths=toolpath.paths;source.maxLayer=toolpath.maxLayer;source.tools=nextTools;previewGeometryCache.delete(source.id);if(!payload.deferRender){renderAllUI();buildInstances()}return{sourceId:source.id,created:false}}
+function upsertLiveToolpath(payload){if(!payload||!Array.isArray(payload.paths))throw new Error('Grasshopper payload needs paths[]');const liveSource=String(payload.source||'').trim();if(!liveSource)throw new Error('Grasshopper source is required');const label=String(payload.label||liveSource||'Grasshopper Live').trim()||'Grasshopper Live';const toolpath=sanitizeToolpath({paths:payload.paths},`${label}.toolpath`,{allowEmpty:payload.origin==='generator'});let source=[...sourceState.values()].find(item=>item.liveSource===liveSource);if(!source){const sourceId=addSource(toolpath,{label,deferRender:payload.deferRender});source=sourceState.get(sourceId);source.liveSource=liveSource;showToast(`${label} connected from ${payload.origin||'Grasshopper'}`);return{sourceId,created:true}}const previousTools=source.tools;const nextTools=new Map();[...new Set(toolpath.paths.map(path=>String(path.tool)))].forEach((toolId,index)=>{const existing=previousTools.get(toolId);if(existing){nextTools.set(toolId,existing)}else{const appearance=sharedToolAppearance(toolId,index);nextTools.set(toolId,{...appearance,speedOverride:null,erate:1})}});source.label=label;source.filename=toolpath.filename;source.paths=toolpath.paths;source.maxLayer=toolpath.maxLayer;source.tools=nextTools;previewGeometryCache.delete(source.id);if(!payload.deferRender){renderAllUI();buildInstances()}return{sourceId:source.id,created:false}}
 function nextInstanceNumber(sourceId){let max=0;for(const[id,inst]of instanceState)if(inst.source===sourceId){const n=Number(id.split('-').pop());if(Number.isFinite(n))max=Math.max(max,n)}return max+1}
 function addInstance(sourceId,id=`${sourceId}-${nextInstanceNumber(sourceId)}`,transform={}){const maxOrder=Math.max(0,...[...instanceState.values()].map(v=>v.order||0));instanceState.set(id,{source:sourceId,x:transform.x??0,y:transform.y??0,rotation:transform.rotation??0,order:maxOrder+1});selectedInstance=id;return id}
 function removeSource(sourceId,notify=true){const removed=sourceState.get(sourceId);if(notify)document.dispatchEvent(new CustomEvent('pathloom:source-removed',{detail:{sourceId,liveSource:removed?.liveSource,generatorGroup:removed?.generatorGroup,generatorOutputId:removed?.generatorOutputId}}));sourceState.delete(sourceId);syncPrintLinks();for(const[id,inst]of[...instanceState])if(inst.source===sourceId)instanceState.delete(id);selectedInstance=[...instanceState.keys()][0]||null;normalizeOrder();renderAllUI();buildInstances()}
@@ -187,24 +193,29 @@ function createPathLineMaterial(color){
   });material.color=material.uniforms.lineColor.value;return material;
 }
 function createInstanceGroup(instanceId,data){
-  const source=sourceState.get(data.source),group=new THREE.Group();group.userData.instanceId=instanceId;
+  const source=sourceState.get(data.source),group=new THREE.Group();group.userData.instanceId=instanceId;group.userData.paths=source.paths;
   let cached=previewGeometryCache.get(data.source);
-  if(!cached){
+  if(!cached||cached.paths!==source.paths){
     const batches=new Map();
     source.paths.forEach((path,pathIndex)=>{
-      const key=JSON.stringify([path.tool,path.layer]);if(!batches.has(key))batches.set(key,{toolId:path.tool,layer:path.layer,positions:[],starts:[],ends:[],endpoints:[],sides:[],ranges:[]});
-      const batch=batches.get(key);
-      for(let i=1;i<path.points.length;i++)for(const[endpoint,side]of [[0,-1],[1,-1],[1,1],[0,-1],[1,1],[0,1]]){
-        batch.positions.push(...path.points[i-1+endpoint]);batch.starts.push(...path.points[i-1]);batch.ends.push(...path.points[i]);batch.endpoints.push(endpoint);batch.sides.push(side);
-      }
-      batch.ranges.push({pathIndex,end:batch.positions.length/3});
+      const key=JSON.stringify([path.tool,path.layer]);
+      if(!batches.has(key))batches.set(key,{toolId:path.tool,layer:path.layer,segments:0,paths:[],ranges:[]});
+      const batch=batches.get(key);batch.segments+=path.points.length-1;batch.paths.push({path,pathIndex});
     });
     for(const batch of batches.values()){
+      const count=batch.segments*6,positions=new Float32Array(count*3),starts=new Float32Array(count*3),ends=new Float32Array(count*3),endpoints=new Float32Array(count),sides=new Float32Array(count);
+      let vertex=0;
+      for(const {path,pathIndex}of batch.paths){
+        for(let i=1;i<path.points.length;i++)for(const[endpoint,side]of [[0,-1],[1,-1],[1,1],[0,-1],[1,1],[0,1]]){
+          const offset=vertex*3;positions.set(path.points[i-1+endpoint],offset);starts.set(path.points[i-1],offset);ends.set(path.points[i],offset);endpoints[vertex]=endpoint;sides[vertex]=side;vertex++;
+        }
+        batch.ranges.push({pathIndex,end:vertex});
+      }
       const geometry=new THREE.BufferGeometry();
-      for(const[name,values,size]of [['position',batch.positions,3],['segmentStart',batch.starts,3],['segmentEnd',batch.ends,3],['endpoint',batch.endpoints,1],['side',batch.sides,1]])geometry.setAttribute(name,new THREE.Float32BufferAttribute(values,size));
-      batch.geometry=geometry;for(const key of ['positions','starts','ends','endpoints','sides'])delete batch[key];
+      for(const[name,values,size]of [['position',positions,3],['segmentStart',starts,3],['segmentEnd',ends,3],['endpoint',endpoints,1],['side',sides,1]])geometry.setAttribute(name,new THREE.BufferAttribute(values,size));
+      batch.geometry=geometry;delete batch.paths;
     }
-    cached={batches};previewGeometryCache.set(data.source,cached);
+    cached={batches,paths:source.paths};previewGeometryCache.set(data.source,cached);
   }
   for(const batch of cached.batches.values()){
     const geometry=new THREE.BufferGeometry();for(const[name,attribute]of Object.entries(batch.geometry.attributes))geometry.setAttribute(name,attribute);
@@ -213,7 +224,16 @@ function createInstanceGroup(instanceId,data){
   }
   group.position.set(data.x,data.y,0);group.rotation.z=THREE.MathUtils.degToRad(data.rotation);return group;
 }
-function buildInstances(){schedulePrintEstimate();requestAnimationFrame(()=>window.PathloomCad?.refreshInputs?.());updateLayerRange();$('#emptyState').hidden=sourceState.size>0||importedShapes.length>0;if(!toolpathGroup)return;toolpathGroup.traverse(child=>{if(child.isMesh||child.isLine){child.geometry.dispose();child.material.dispose()}});toolpathGroup.clear();renderedInstances.clear();for(const id of previewGeometryCache.keys())if(!sourceState.has(id))previewGeometryCache.delete(id);for(const[id,data]of instanceState){if(!sourceState.has(data.source))continue;const group=createInstanceGroup(id,data);toolpathGroup.add(group);renderedInstances.set(id,group)}refreshVisibility()}
+function disposeInstance(group){group.traverse(child=>{if(child.isMesh||child.isLine){child.geometry.dispose();child.material.dispose()}});group.removeFromParent()}
+function buildInstances(){
+  schedulePrintEstimate();requestAnimationFrame(()=>window.PathloomCad?.refreshInputs?.());updateLayerRange();$('#emptyState').hidden=sourceState.size>0||importedShapes.length>0;
+  if(!toolpathGroup)return;
+  for(const[id,group]of renderedInstances){const instance=instanceState.get(id),source=sourceState.get(instance?.source);if(!source||group.userData.paths!==source.paths){disposeInstance(group);renderedInstances.delete(id)}}
+  for(const id of previewGeometryCache.keys())if(!sourceState.has(id)){for(const batch of previewGeometryCache.get(id).batches.values())batch.geometry.dispose();previewGeometryCache.delete(id)}
+  for(const[id,data]of instanceState){if(!sourceState.has(data.source))continue;let group=renderedInstances.get(id);if(!group){group=createInstanceGroup(id,data);toolpathGroup.add(group);renderedInstances.set(id,group)}group.position.set(data.x,data.y,0);group.rotation.z=THREE.MathUtils.degToRad(data.rotation)}
+  refreshVisibility();
+}
+
 function previewInstances(){return [...instanceState.entries()].filter(([,data])=>sourceState.has(data.source)).sort((a,b)=>a[1].order-b[1].order)}
 let curveEndpointGroup=null,endpointTexture=null;
 function updateCurveEndpoints(){
@@ -267,16 +287,15 @@ document.addEventListener('pointerdown',event=>{if(!layerPauseMenu.contains(even
 function stepPreviewLayer(direction){const slider=$('#layerSlider');if(slider.disabled)return;const next=Math.max(Number(slider.min),Math.min(Number(slider.max),Number(slider.value)+direction));if(next===Number(slider.value))return;slider.value=next;$('#layerValue').textContent=`${next} / ${slider.max}`;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false;refreshVisibility()}
 function stepLayerPoint(direction){const slider=$('#pathSlider');if(slider.disabled||window.PathloomCad?.isProcessing?.())return;const source=sourceState.get(instanceState.get(previewInstance)?.source);if(!source)return;const counts=Array.from({length:source.maxLayer},()=>0);for(const path of source.paths)counts[path.layer-1]+=path.points.length;const next=advancePreview(Number($('#layerSlider').value),Number(slider.value),direction,counts);$('#layerSlider').value=next.layer;slider.max=counts[next.layer-1];slider.value=next.point;$('#layerValue').textContent=`${next.layer} / ${$('#layerSlider').max}`;inspectingLayerPaths=true;refreshVisibility()}
 function applyCadPreviewVisibility(){
-  for(const[id,group]of renderedInstances){const source=sourceState.get(instanceState.get(id)?.source);if(source?.generationError&&source.generationError!=='Recalculating…')group.visible=false}
-  for(const group of cadHiddenGroups)group.visible=false;
+  for(const group of hiddenStageGroups)group.visible=false;
   const cad=window.PathloomCad?.snapshot?.();
-  if(cadProposalGroup&&cad?.sourceId)for(const[id,group]of renderedInstances)if(instanceState.get(id)?.source===cad.sourceId){group.visible=false;if(!cadHiddenGroups.includes(group))cadHiddenGroups.push(group)}
+  if(stagePreviewGroup&&cad?.sourceId)for(const[id,group]of renderedInstances)if(instanceState.get(id)?.source===cad.sourceId){group.visible=false;if(!hiddenStageGroups.includes(group))hiddenStageGroups.push(group)}
 }
 function refreshVisibility(){
   renderLayerPauses();
   const processing=window.PathloomCad?.isProcessing?.();if(processing){$('#layerSlider').value=$('#layerSlider').max;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false;$('#layerValue').textContent=`${$('#layerSlider').max} / ${$('#layerSlider').max}`}
-  previewDirty=true;
-  if(previewInstance==='ALL'){if(previewPointMarker)previewPointMarker.visible=false;$('#pathValue').textContent='ALL';for(const[id,group]of renderedInstances){group.visible=true;const source=sourceState.get(instanceState.get(id)?.source);for(const line of group.children){line.visible=true;line.geometry.setDrawRange(0,Infinity);line.material.color.set(toolPreviewColor(source,line.userData.toolId));line.material.uniforms.lineOpacity.value=1}}applyCadPreviewVisibility();updatePrintOrderMarkers();updateCurveEndpoints();return}
+  requestPreviewRender();
+  if(previewInstance==='ALL'){if(previewPointMarker)previewPointMarker.visible=false;$('#pathValue').textContent='ALL';for(const[id,group]of renderedInstances){const source=sourceState.get(instanceState.get(id)?.source);group.visible=true;for(const line of group.children){line.visible=true;line.geometry.setDrawRange(0,Infinity);line.material.color.set(toolPreviewColor(source,line.userData.toolId));line.material.uniforms.lineOpacity.value=source?.generationError ? .35 : 1}}applyCadPreviewVisibility();updatePrintOrderMarkers();updateCurveEndpoints();return}
   const layer=Number($('#layerSlider').value);
   const data=instanceState.get(previewInstance),source=sourceState.get(data?.source);
   const eligible=source?source.paths.map((path,index)=>({path,index})).filter(item=>item.path.layer===layer):[];
@@ -287,7 +306,7 @@ function refreshVisibility(){
   $('#pathValue').textContent=`${complete} / ${totalPoints}`;$('#previousPath').disabled=!source||complete===0&&layer<=1;$('#nextPath').disabled=!source||complete===totalPoints&&layer>=source.maxLayer;
   if(previewPointMarker){previewPointMarker.visible=inspectingLayerPaths&&!!currentPoint;if(previewPointMarker.visible){const point=transformedPoints({points:[currentPoint]},data)[0],attribute=previewPointMarker.geometry.getAttribute('position');attribute.setXYZ(0,...point);attribute.needsUpdate=true;previewPointMarker.geometry.computeBoundingSphere()}}
   for(const[id,group]of renderedInstances){
-    group.visible=true;const selected=id===previewInstance,groupSource=sourceState.get(instanceState.get(id)?.source);
+    const selected=id===previewInstance,groupSource=sourceState.get(instanceState.get(id)?.source);group.visible=true;
     if(!selected){for(const line of group.children){line.visible=true;line.geometry.setDrawRange(0,Infinity);line.material.color.set(toolPreviewColor(groupSource,line.userData.toolId));line.material.uniforms.lineOpacity.value=.06}continue}
     for(const line of group.children){
       let end=0;
@@ -300,14 +319,14 @@ function refreshVisibility(){
       }
       line.visible=end>0;line.geometry.setDrawRange(0,end);
       line.material.color.set(toolPreviewColor(source,line.userData.toolId));
-      line.material.uniforms.lineOpacity.value=1;
+      line.material.uniforms.lineOpacity.value=source?.generationError ? .35 : 1;
       if(inspectingLayerPaths&&line.userData.layer<layer)line.material.color.set('#7F8790');
     }
   }
   updatePrintOrderMarkers();
 applyCadPreviewVisibility();updateCurveEndpoints();
 }
-function objectToolSlots(tools){const numeric=[...tools.keys()].filter(id=>/^\d+$/.test(id)).map(Number),max=Math.max(-1,...numeric);const slots=[];for(let id=0;id<=max;id++)slots.push([String(id),tools.get(String(id))]);for(const[id,tool]of tools)if(!/^\d+$/.test(id))slots.push([id,tool]);return slots}
+const objectToolSlots=toolSlots;
 let pendingSourceRemoval=null;
 function requestSourceRemoval(source){pendingSourceRemoval=source.id;$('#removeObjectMessage').textContent=`Delete “${source.label}” and all its instances?`;$('#removeObjectDialog').showModal()}
 function renderObjectUI(){
@@ -319,7 +338,7 @@ function renderObjectUI(){
     host.appendChild(card);const toolsHost=card.querySelector('.tools-host');
     for(const[toolId,tool]of source.tools){
       const appearance=toolOutputAppearance(source,toolId),outputId=toolOutputId(toolId,tool),expanded=expandedTools.has(`${source.id}:${toolId}`),row=document.createElement('div');row.className=`tool-row${expanded?' expanded':''}`;row.dataset.source=source.id;row.dataset.tool=toolId;
-      const highestOutput=Math.max(4,Number.isInteger(Number(outputId))?Number(outputId):0),outputOptions=Array.from({length:highestOutput+1},(_,id)=>`<option value="${id}"${String(id)===outputId?' selected':''}>T${id}</option>`).join('');
+      const outputOptions=outputToolOptions(outputId).map(id=>`<option value="${escapeHtml(id)}"${id===outputId?' selected':''}>T${escapeHtml(id)}</option>`).join('');
       const toolAssignment=outputId===String(toolId)?`T${escapeHtml(toolId)}`:`<s>T${escapeHtml(toolId)}</s><span class="tool-arrow">→</span>T${escapeHtml(outputId)}`;
       row.innerHTML=`<button class="tool-toggle" aria-label="Toggle T${escapeHtml(toolId)} settings" aria-expanded="${expanded}"><span class="chevron">⌄</span></button><button class="color-chip" style="--tool-color:${appearance?.color||tool.color}" aria-label="Change assigned filament color"></button><button class="tool-label"><span class="tool-assignment">${toolAssignment}</span><span class="tool-name">${escapeHtml(appearance?.name||tool.name)}</span></button><div class="tool-detail"><label><span>Output tool</span><select class="tool-output">${outputOptions}</select><em></em></label><label><span>Print speed</span><input class="tool-speed" type="number" min="1" value="${tool.speedOverride??''}" placeholder="${Number($('#printSpeed').value)||35}"><em>mm/s</em></label><label><span>E-rate</span><input class="tool-erate" type="number" step="1" min="0" value="${Math.round(tool.erate*100)}"><em>%</em></label></div>`;
       toolsHost.appendChild(row);
@@ -357,129 +376,6 @@ function markPaletteSelection(){if(!activeTool)return;const tool=physicalToolApp
 function applyPaletteEntry(entry){if(!activeTool)return;let updated=false;for(const source of sourceState.values())for(const[id,tool]of source.tools){if(id!==activeTool.toolId&&toolOutputId(id,tool)!==activeTool.toolId)continue;tool.color=entry.hex;tool.name=entry.name;tool.filamentId=entry.filamentId||null;updated=true}if(!updated)return;renderObjectUI();refreshVisibility();markPaletteSelection()}
 function openPalette(chip){const popover=$('#colorPopover'),chipRect=chip.getBoundingClientRect(),viewRect=viewport.getBoundingClientRect();popover.hidden=false;popover.style.left='18px';popover.style.top=`${Math.max(14,Math.min(viewRect.height-300,chipRect.top-viewRect.top))}px`;renderPalette()}
 let settingsReturnFocus=null;const PROFILE_KEY='pathloom.printerProfiles.v1';let configuredFilamentDiameter=1.75,configuredStartGcode='',configuredToolChangeGcode='',configuredEndGcode='';const profileFields=[['profileDiameter','filamentDiameter'],['profileBedWidth','bedWidth'],['profileBedDepth','bedDepth'],['profileMaxHeight','maxHeight']];const profileDefaults=[1.75,250,210,220];
-const defaultStartGcode=`G90 ; use absolute coordinates
-M83 ; extruder relative mode
-M140 S{bed_temperature} ; set bed temp
-M104 S{nozzle_temperature} ; set extruder temp
-M190 S{bed_temperature} ; wait for bed temp
-M109 S{nozzle_temperature} ; wait for extruder temp
-M106 S{fan_speed_255} ; set fan to {fan_speed_percent}%`;
-const defaultEndGcode=`G1 Z{print_max_z_plus_10} F{travel_feedrate} ; move print head up
-G1 X0 Y{bed_depth} F{travel_feedrate} ; park
-M104 S0 ; turn off temperature
-M140 S0 ; turn off heatbed
-M107 ; turn off fan
-M84 ; disable motors`;
-const defaultToolChangeGcode=`T{to_tool}`;
-const referenceToolChangeGcode=`; Prepare for tool change T{from_tool} -> T{to_tool}
-G92 E0
-G1 E-15.0000 F6000
-G1 E12.0000 F600
-G1 E-15.0000 F6000
-G1 E8.0000 F600
-G1 E-15.0000 F6000
-G1 E-24.0000 F1200
-G1 E-7 F600
-G1 E-35.0000 F300
-M142 S36 ; heatbreak temperature
-T{to_tool}
-M900 K0.05
-M572 S0.036
-G92 E0
-G1 E6.4 F3000 ; after tool change load
-G1 E{tool_change_load} F900 ; after tool change load`;
-const referenceStartGcode=`M555 X{print_min_x} Y{print_min_y} W{print_area_width} H{print_area_height}
-G90 ; use absolute coordinates
-M83 ; extruder relative mode
-M104 S170 ; preheat extruder
-M140 S{bed_temperature} ; set bed temp
-M109 S170 ; wait for preheat
-G28 W ; home all without mesh bed level
-G0 Z40 F1000
-G1 E-2 F2400 ; retraction
-M84 E ; turn off E motor
-
-; Nozzle wiper
-G0 X210 Y-14 Z1.5 F3000
-G0 X168 Y-16 Z0.5 F3000
-G0 X168 Y-14 Z0.5 F3000
-G0 X210 Y-16 Z0.5 F3000
-G0 X168 Y-14 Z0.5 F3000
-G0 X168 Y-16 Z0.5 F3000
-G0 X210 Y-14 Z0.5 F3000
-G0 X210 Y-14 Z0.5 F3000
-G0 X168 Y-16 Z0.5 F3000
-G0 X168 Y-14 Z0.5 F3000
-G0 X210 Y-18 Z0.5 F3000
-G0 X168 Y-16 Z0.5 F3000
-G0 X168 Y-16 Z0.5 F3000
-G0 X210 Y-14 Z1.5 F3000
-G29 P9 X208 Y-2.5 W32 H4
-
-; Nozzle wiper after probing
-G0 X210 Y-14 Z1.5 F3000
-G0 X168 Y-16 Z0.5 F3000
-G0 X168 Y-14 Z0.5 F3000
-G0 X210 Y-16 Z0.5 F3000
-G0 X168 Y-14 Z0.5 F3000
-G0 X168 Y-16 Z0.5 F3000
-G0 X210 Y-14 Z0.5 F3000
-G0 X210 Y-14 Z0.5 F3000
-G0 X168 Y-16 Z0.5 F3000
-G0 X168 Y-14 Z0.5 F3000
-G0 X210 Y-18 Z0.5 F3000
-G0 X168 Y-16 Z0.5 F3000
-G0 X168 Y-16 Z0.5 F3000
-G0 X210 Y-14 Z1.5 F3000
-
-; Mesh bed leveling
-M84 E
-G29 P1
-G29 P1 X150 Y0 W100 H20 C
-G29 P3.2
-G29 P3.13
-G29 A
-
-; Prepare and purge
-M104 S{nozzle_temperature}
-G0 X249 Y-2.5 Z15 F4800
-M109 S{nozzle_temperature}
-M190 S{bed_temperature}
-T0
-G1 E20 F1000
-G92 E0
-G0 E5 X235 Z0.2 F500
-G0 X145 E36 F500
-G0 X135 E4 F500
-G0 X125 E4 F650
-G0 X122 Z0.05 F8000
-G0 X119 Z0.2 F8000
-G92 E0
-M221 S100
-M907 E430
-G21
-G90
-M83
-M900 K0.05
-M900 K30
-M106 S{fan_speed_255} ; set fan to {fan_speed_percent}%`;
-const referenceEndGcode=`G1 Z{print_max_z_plus_10} F{travel_feedrate} ; move print head up
-G1 X0 Y{bed_depth} F{travel_feedrate} ; park
-G1 E6 F2000
-G1 E-35 F2000
-M702 C ; unload filament
-G4 ; wait
-M221 S100 ; reset flow
-M900 K0 ; reset LA
-M907 E538 ; reset extruder motor current
-M104 S0 ; turn off temperature
-M140 S0 ; turn off heatbed
-M107 ; turn off fan
-M84 ; disable motors
-M73 P100 R0
-M73 Q100 S0`;
-function profileGcodeDefaults(name){return name==='Prusa MK4S'?{startGcode:referenceStartGcode,toolChangeGcode:referenceToolChangeGcode,endGcode:referenceEndGcode}:{startGcode:defaultStartGcode,toolChangeGcode:defaultToolChangeGcode,endGcode:defaultEndGcode}}
-function normalizeStoredGcode(code){return String(code||'').replace(/^M555 X63 Y42 W123 H125$/m,'M555 X{print_min_x} Y{print_min_y} W{print_area_width} H{print_area_height}').replace(/^M106 S125(?:\s*;.*)?$/m,'M106 S{fan_speed_255} ; set fan to {fan_speed_percent}%')}
 function readPrinterProfiles(){try{const value=JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}');return value&&typeof value==='object'&&!Array.isArray(value)?value:{}}catch{return{}}}
 function selectSettingsTab(tab){for(const key of ['printer','connection','filament']){const name=key==='connection'?'connection':key;$('#'+name+'Settings').hidden=key!==tab;$('#'+name+'SettingsTab').setAttribute('aria-selected',String(key===tab))}if(tab==='connection')document.dispatchEvent(new Event('pathloom:open-printer-settings-tab'))}
 function loadPrinterProfile(){const name=$('#profilePrinter').value,saved=readPrinterProfiles()[name],defaults=profileGcodeDefaults(name);profileFields.forEach(([field,basic],i)=>{$(`#${field}`).value=Number(saved?.[basic])>0?Number(saved[basic]):profileDefaults[i]});$('#profileStartGcode').value=normalizeStoredGcode(typeof saved?.startGcode==='string'?saved.startGcode:defaults.startGcode);$('#profileToolChangeGcode').value=normalizeStoredGcode(typeof saved?.toolChangeGcode==='string'?saved.toolChangeGcode:defaults.toolChangeGcode);$('#profileEndGcode').value=normalizeStoredGcode(typeof saved?.endGcode==='string'?saved.endGcode:defaults.endGcode)}
@@ -496,7 +392,8 @@ async function importFiles(files){for(const file of files){try{const parsed=sani
 async function loadUkigaraSample(){try{const response=await fetch('./samples/ukigara-clock.toolpath');if(!response.ok)throw new Error(`HTTP ${response.status}`);addSource(sanitizeToolpath(await response.json(),'Ukigara Clock.toolpath'));showToast('Ukigara Clock sample loaded')}catch(err){showToast(`Unable to load sample: ${err.message}`,'error')}}
 function transformedPoints(path,instance){const a=(instance.rotation||0)*Math.PI/180,cos=Math.cos(a),sin=Math.sin(a);return path.points.map(([x,y,z])=>[x*cos-y*sin+instance.x,x*sin+y*cos+instance.y,z])}
 function printerPoints(path,instance){return transformedPoints(path,instance).map(([x,y,z])=>[x+configuredBuildVolume.bedWidth/2,y+configuredBuildVolume.bedDepth/2,z])}
-function sourceMaxZ(source){let maximum=0;for(const path of source?.paths||[])for(const point of path.points)maximum=Math.max(maximum,point[2]);return maximum}
+function sourceMaxZ(source){return sourceBounds(source).maxZ}
+const gcodeComment=value=>String(value).replace(/[\x00-\x1f\x7f]/g,' ');
 function renderGcodeTemplate(template,values){return String(template||'').replace(/\{([a-z0-9_]+)\}/gi,(match,key)=>Object.hasOwn(values,key)?String(values[key]):match).trim()}
 function formatPrintTime(seconds){const total=Math.ceil(seconds),hours=Math.floor(total/3600),minutes=Math.floor(total%3600/60),remaining=total%60;return hours?`${hours}h ${minutes}m ${remaining}s`:`${minutes}m ${remaining}s`}
 let printEstimateFrame=null;
@@ -506,8 +403,8 @@ function renderPrintEstimate(){
   filaments.replaceChildren();
   if(!instanceState.size){label.textContent='Print time in total: —';detail.textContent='Add a toolpath to estimate print time.';return}
   try{
-    const ordered=[...instanceState.values()].sort((a,b)=>a.order-b.order);
-    const instances=ordered.map((instance,index)=>({previousMaxZ:index?sourceMaxZ(sourceState.get(ordered[index-1].source)):0,paths:sourceState.get(instance.source).paths.map(path=>{const tool=sourceState.get(instance.source).tools.get(path.tool);return{points:printerPoints(path,instance),tool:toolOutputId(path.tool,tool),speed:toolEffectiveSpeed(tool),erate:tool?.erate??1}})}));
+    const ordered=[...instanceState.values()].filter(instance=>sourceState.get(instance.source)?.paths.length).sort((a,b)=>a.order-b.order);
+    const instances=ordered.map((instance,index)=>({previousMaxZ:index?sourceMaxZ(sourceState.get(ordered[index-1].source)):0,paths:sourceState.get(instance.source).paths.map(path=>{const tool=sourceState.get(instance.source).tools.get(path.tool);return{points:path.points,placement:instance,tool:toolOutputId(path.tool,tool),speed:toolEffectiveSpeed(tool),erate:tool?.erate??1}})}));
     const start=renderGcodeTemplate(configuredStartGcode||defaultStartGcode,{}),matches=[...start.matchAll(/^\s*T(\d+)\b/gm)];
     const result=estimatePrintTime(instances,Number($('#travelSpeed').value),configuredBuildVolume.maxHeight,matches.length?matches.at(-1)[1]:null);
     const usage=estimateFilamentUsage(instances,Number($('#printWidth').value),Number($('#printHeight').value),configuredFilamentDiameter);
@@ -575,25 +472,25 @@ function generateGcode(){
   for(const source of sourceState.values())if(source.generator){const layerHeight=pipelineLayerHeight(source.generator,source.generatorOutputId);if(Number.isFinite(layerHeight)&&layerHeight>0&&Math.abs(layerHeight-Number($('#printHeight').value))>1e-6)throw new Error(`Set Print height to ${layerHeight} mm to match ${source.label}`)}
   const width=Number($('#printWidth').value),height=Number($('#printHeight').value),filamentD=configuredFilamentDiameter,travel=Number($('#travelSpeed').value),nozzleTemperature=Number($('#nozzleTemperature').value),bedTemperature=Number($('#bedTemperature').value),fanSpeed=Number($('#fanSpeed').value);
   if(![width,height,filamentD,travel].every(value=>Number.isFinite(value)&&value>0)||![nozzleTemperature,bedTemperature].every(value=>Number.isFinite(value)&&value>=0)||!Number.isFinite(fanSpeed)||fanSpeed<0||fanSpeed>100)throw new Error('Check Basic Settings');
-  const orderedInstances=[...instanceState.entries()].sort((a,b)=>a[1].order-b[1].order),filamentArea=Math.PI*Math.pow(filamentD/2,2),ePerMmBase=width*height/filamentArea;
-  let printMinX=Infinity,printMaxX=-Infinity,printMinY=Infinity,printMaxY=-Infinity,printMaxZ=0;
-  for(const[,instance]of orderedInstances){const source=sourceState.get(instance.source);for(const path of source.paths)for(const[x,y,z]of printerPoints(path,instance)){printMinX=Math.min(printMinX,x);printMaxX=Math.max(printMaxX,x);printMinY=Math.min(printMinY,y);printMaxY=Math.max(printMaxY,y);printMaxZ=Math.max(printMaxZ,z)}}
+  const orderedInstances=[...instanceState.entries()].filter(([,instance])=>sourceState.get(instance.source)?.paths.length).sort((a,b)=>a[1].order-b[1].order),filamentArea=Math.PI*Math.pow(filamentD/2,2),ePerMmBase=width*height/filamentArea;
+  validatePrintSettings(Object.fromEntries(BASIC_FIELDS.map(id=>[id,Number($('#'+id).value)])));
+  const {minX:printMinX,maxX:printMaxX,minY:printMinY,maxY:printMaxY,maxZ:printMaxZ}=printableBounds(orderedInstances,sourceState,configuredBuildVolume);
   const areaMinX=Math.max(0,Math.floor(printMinX)),areaMinY=Math.max(0,Math.floor(printMinY)),areaMaxX=Math.min(configuredBuildVolume.bedWidth,Math.ceil(printMaxX)),areaMaxY=Math.min(configuredBuildVolume.bedDepth,Math.ceil(printMaxY));
   if(printMinX<0||printMinY<0||printMaxX>configuredBuildVolume.bedWidth||printMaxY>configuredBuildVolume.bedDepth||printMaxZ>configuredBuildVolume.maxHeight)throw new Error('Objects extend outside the configured build volume');
   const templateValues={bed_temperature:bedTemperature,nozzle_temperature:nozzleTemperature,fan_speed_percent:fanSpeed,fan_speed_255:Math.round(fanSpeed*255/100),travel_speed:travel,travel_feedrate:Math.round(travel*60),bed_width:configuredBuildVolume.bedWidth,bed_depth:configuredBuildVolume.bedDepth,max_height:configuredBuildVolume.maxHeight,print_min_x:areaMinX,print_min_y:areaMinY,print_max_x:areaMaxX,print_max_y:areaMaxY,print_area_width:Math.max(1,areaMaxX-areaMinX),print_area_height:Math.max(1,areaMaxY-areaMinY),print_max_z:Number(printMaxZ.toFixed(3)),print_max_z_plus_10:Number(Math.min(configuredBuildVolume.maxHeight,printMaxZ+10).toFixed(3))};
   const startCode=renderGcodeTemplate(configuredStartGcode||defaultStartGcode,templateValues),endCode=renderGcodeTemplate(configuredEndGcode||defaultEndGcode,templateValues),lines=['; Generated by Pathloom',`; width=${width.toFixed(2)} height=${height.toFixed(2)} filament=${filamentD.toFixed(2)}`,'; Start G-code',startCode];
   const toolMatches=[...startCode.matchAll(/^\s*T(\d+)\b/gm)];let currentTool=toolMatches.length?toolMatches.at(-1)[1]:null,toolChangeCount=0;
-  const estimateInstances=orderedInstances.map(([,instance],index)=>({previousMaxZ:index?sourceMaxZ(sourceState.get(orderedInstances[index-1][1].source)):0,paths:sourceState.get(instance.source).paths.map(path=>{const tool=sourceState.get(instance.source).tools.get(path.tool);return{points:printerPoints(path,instance),tool:toolOutputId(path.tool,tool),speed:Math.round(toolEffectiveSpeed(tool)*60)/60,erate:tool?.erate??1}})}));
+  const estimateInstances=orderedInstances.map(([,instance],index)=>({previousMaxZ:index?sourceMaxZ(sourceState.get(orderedInstances[index-1][1].source)):0,paths:sourceState.get(instance.source).paths.map(path=>{const tool=sourceState.get(instance.source).tools.get(path.tool);return{points:path.points,placement:instance,tool:toolOutputId(path.tool,tool),speed:Math.round(toolEffectiveSpeed(tool)*60)/60,erate:tool?.erate??1}})}));
   if(estimateInstances.some(instance=>instance.paths.some(path=>!/^\d+$/.test(path.tool))))throw new Error('Prusa output requires numeric tool IDs');
   const estimate=estimatePrintTime(estimateInstances,travel,configuredBuildVolume.maxHeight,currentTool),usage=estimateFilamentUsage(estimateInstances,width,height,filamentD);
   lines.splice(1,0,exportThumbnails(),`; estimated printing time (normal mode) = ${durationText(estimate.totalSeconds)}`,...usageComments(usage,filamentD),`; printer_model = ${$('#printerSelect').value==='Prusa CoreOne'?'COREONE':'MK4S'}`,`; layer_height = ${height}`,`; filament_diameter = ${filamentD}`,`; extrusion_width = ${width}`);
   lines.push(progressCommand(0,estimate.totalSeconds));
   let elapsed=0,previousPoint=null;
   for(const[instanceIndex,[instanceId,instance]]of orderedInstances.entries()){
-    const source=sourceState.get(instance.source);validatePauseLayers(instance.pauseLayers,source.maxLayer);lines.push(`\n; INSTANCE ${instanceDisplayName(instanceId,instance)}`);
+    const source=sourceState.get(instance.source);validatePauseLayers(instance.pauseLayers,source.maxLayer);lines.push(`\n; INSTANCE ${gcodeComment(instanceDisplayName(instanceId,instance))}`);
     if(instanceIndex>0){
       const[previousId,previousInstance]=orderedInstances[instanceIndex-1],previousSource=sourceState.get(previousInstance.source),previousMaxZ=sourceMaxZ(previousSource),nextStart=printerPoints(source.paths[0],instance)[0],safeZ=Math.min(configuredBuildVolume.maxHeight,previousMaxZ+10),travelFeedrate=Math.round(travel*60);
-      lines.push(`; Move safely from ${instanceDisplayName(previousId,previousInstance)} to ${instanceDisplayName(instanceId,instance)}`,`G1 Z${safeZ.toFixed(3)} F${travelFeedrate} ; raise 10 mm`,`G1 X${nextStart[0].toFixed(3)} Y${nextStart[1].toFixed(3)} F${travelFeedrate} ; move to next object`,`G1 Z${nextStart[2].toFixed(3)} F${travelFeedrate} ; lower to start Z`);
+      lines.push(`; Move safely from ${gcodeComment(instanceDisplayName(previousId,previousInstance))} to ${gcodeComment(instanceDisplayName(instanceId,instance))}`,`G1 Z${safeZ.toFixed(3)} F${travelFeedrate} ; raise 10 mm`,`G1 X${nextStart[0].toFixed(3)} Y${nextStart[1].toFixed(3)} F${travelFeedrate} ; move to next object`,`G1 Z${nextStart[2].toFixed(3)} F${travelFeedrate} ; lower to start Z`);
     }
     let previousLayerZ=null;const emittedPauses=new Set();
     source.paths.forEach((path,pathIndex)=>{
@@ -623,7 +520,7 @@ function generateGcode(){
 window.Pathloom={viewState:()=>({projection:camera?.isOrthographicCamera?'orthographic':'perspective',axis:axisView,position:camera?.position.toArray(),target:controls?.target.toArray()}),getImportedStep:id=>structuredClone(importedShapes.find(shape=>shape.id===id)),addImportedStep:shape=>{importedShapes.push(shape);renderImportedShapes()},generateGcode,upsertLiveToolpath,loadUkigaraSample,addImportedBrepInspection,applyImportedBrepEdit};
 function downloadText(name,text){const blob=new Blob([text],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500)}
 function restorePerspective(){
-  if(!camera?.isOrthographicCamera)return;const previous=camera,height=(previous.top-previous.bottom)/previous.zoom,distance=height/(2*Math.tan(Math.PI/10));camera=new THREE.PerspectiveCamera(36,viewport.clientWidth/viewport.clientHeight,.1,previous.far);camera.up.set(0,0,1);camera.position.copy(controls.target).add(previous.position.clone().sub(controls.target).normalize().multiplyScalar(distance));camera.quaternion.copy(previous.quaternion);controls.object=camera;axisView=null;axisDirection=null;document.querySelectorAll('.view-axis-button').forEach(button=>button.setAttribute('aria-pressed','false'));previewDirty=true;document.dispatchEvent(new Event('pathloom:camera-changed'));
+  if(!camera?.isOrthographicCamera)return;const previous=camera,height=(previous.top-previous.bottom)/previous.zoom,distance=height/(2*Math.tan(Math.PI/10));camera=new THREE.PerspectiveCamera(36,viewport.clientWidth/viewport.clientHeight,.1,previous.far);camera.up.set(0,0,1);camera.position.copy(controls.target).add(previous.position.clone().sub(controls.target).normalize().multiplyScalar(distance));camera.quaternion.copy(previous.quaternion);controls.object=camera;axisView=null;axisDirection=null;document.querySelectorAll('.view-axis-button').forEach(button=>button.setAttribute('aria-pressed','false'));requestPreviewRender();document.dispatchEvent(new Event('pathloom:camera-changed'));
 }
 function updateViewCube(){
   const host=$('#viewCube');if(!host||!THREE||!camera)return;
@@ -637,15 +534,17 @@ function updateViewCube(){
 }
 function setAxisView(name){
   if(!THREE||!camera||!controls)return;const directions={top:[0,0,1],bottom:[0,0,-1],front:[0,-1,0],back:[0,1,0],left:[-1,0,0],right:[1,0,0]};const direction=directions[name];if(!direction)return;const distance=camera.position.distanceTo(controls.target),height=camera.isOrthographicCamera?(camera.top-camera.bottom)/camera.zoom:2*distance*Math.tan(Math.PI/10),aspect=viewport.clientWidth/viewport.clientHeight;
-  camera=new THREE.OrthographicCamera(-height*aspect/2,height*aspect/2,height/2,-height/2,.1,Math.max(1200,distance*4));camera.position.copy(controls.target).add(new THREE.Vector3(...direction).multiplyScalar(distance));axisDirection=new THREE.Vector3(...direction);axisUp=new THREE.Vector3(...(name==='top'?[0,1,0]:name==='bottom'?[0,-1,0]:[0,0,1]));camera.up.copy(axisUp);camera.lookAt(controls.target);camera.up.set(0,0,1);camera.updateMatrixWorld(true);controls.object=camera;axisView=name;document.querySelectorAll('.view-axis-button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.view===name)));previewDirty=true;document.dispatchEvent(new Event('pathloom:camera-changed'));
+  camera=new THREE.OrthographicCamera(-height*aspect/2,height*aspect/2,height/2,-height/2,.1,Math.max(1200,distance*4));camera.position.copy(controls.target).add(new THREE.Vector3(...direction).multiplyScalar(distance));axisDirection=new THREE.Vector3(...direction);axisUp=new THREE.Vector3(...(name==='top'?[0,1,0]:name==='bottom'?[0,-1,0]:[0,0,1]));camera.up.copy(axisUp);camera.lookAt(controls.target);camera.up.set(0,0,1);camera.updateMatrixWorld(true);controls.object=camera;axisView=name;document.querySelectorAll('.view-axis-button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.view===name)));requestPreviewRender();document.dispatchEvent(new Event('pathloom:camera-changed'));
 }
 let axisRotationStart=null;
 canvas.addEventListener('pointerdown',event=>{axisRotationStart=event.button===2&&axisView&&controls?.enabled?[event.clientX,event.clientY]:null},true);
 canvas.addEventListener('pointermove',event=>{if(axisRotationStart&&axisView&&Math.hypot(event.clientX-axisRotationStart[0],event.clientY-axisRotationStart[1])>3)restorePerspective()},true);
 canvas.addEventListener('pointerup',()=>{axisRotationStart=null},true);canvas.addEventListener('pointercancel',()=>{axisRotationStart=null},true);
 document.querySelector('.view-cube').addEventListener('click',event=>{const target=event.target.closest('[data-view]');if(target)setAxisView(target.dataset.view)});document.querySelector('.view-cube').addEventListener('keydown',event=>{if(!['Enter',' '].includes(event.key)||event.target.tagName==='BUTTON')return;const target=event.target.closest('[data-view]');if(target){event.preventDefault();setAxisView(target.dataset.view)}});
-function resize(){if(!renderer)return;const w=viewport.clientWidth,h=viewport.clientHeight;renderer.setSize(w,h,false);toolpathGroup?.traverse(child=>child.material?.uniforms?.resolution?.value.set(w,h));if(camera.isOrthographicCamera){const half=(camera.top-camera.bottom)/2;camera.left=-half*w/h;camera.right=half*w/h}else camera.aspect=w/h;camera.updateProjectionMatrix();previewDirty=true}
-new ResizeObserver(resize).observe(viewport);function animate(){if(!camera.isOrthographicCamera)controls.update();const plate=buildVolumeGroup?.children.find(node=>node.userData.buildPlate);if(plate&&plate.visible!==(camera.position.z>=0)){plate.visible=camera.position.z>=0;previewDirty=true}if(previewDirty){renderer.render(scene,camera);updatePrintOrderMarkers();updateViewCube();previewDirty=false}requestAnimationFrame(animate)}
+function resize(){if(!renderer)return;const w=viewport.clientWidth,h=viewport.clientHeight;renderer.setSize(w,h,false);toolpathGroup?.traverse(child=>child.material?.uniforms?.resolution?.value.set(w,h));if(camera.isOrthographicCamera){const half=(camera.top-camera.bottom)/2;camera.left=-half*w/h;camera.right=half*w/h}else camera.aspect=w/h;camera.updateProjectionMatrix();requestPreviewRender()}
+new ResizeObserver(resize).observe(viewport);function animate(){previewFrame=null;if(!camera||!renderer)return;if(!camera.isOrthographicCamera)controls.update();const plate=buildVolumeGroup?.children.find(node=>node.userData.buildPlate);if(plate&&plate.visible!==(camera.position.z>=0)){plate.visible=camera.position.z>=0;requestPreviewRender()}if(previewDirty){renderer.render(scene,camera);updatePrintOrderMarkers();updateViewCube();previewDirty=false}}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)requestPreviewRender()});
+canvas.addEventListener('webglcontextrestored',requestPreviewRender);
 document.querySelectorAll('.island-header').forEach(header=>header.addEventListener('click',()=>{if(header.disabled)return;const island=header.closest('.sidebar-island'),collapsed=island.classList.toggle('collapsed');header.setAttribute('aria-expanded',String(!collapsed));if(island.id==='layoutIsland'&&!collapsed)showAllObjects();else updatePrintOrderMarkers()}));
 document.querySelectorAll('.basic-panel input[type="number"]').forEach(input=>input.addEventListener('wheel',event=>{if(!event.deltaY)return;event.preventDefault();if(event.deltaY<0)input.stepUp();else input.stepDown();input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}))},{passive:false}));
 function formatBasicDecimal(input){const value=Number(input.value);if(Number.isFinite(value))input.value=value.toFixed(2)}
@@ -655,16 +554,17 @@ $('#layerSlider').addEventListener('input',e=>{$('#layerValue').textContent=`${e
 ['gridColumns','gridRows','gridSpacingX','gridSpacingY','gridRowOffset','gridRotation'].forEach(id=>$(`#${id}`).addEventListener('input',()=>autoArrange(true)));$('#gridPattern').addEventListener('change',()=>autoArrange(true));
 $('#autoArrangeEnabled').addEventListener('change',e=>{$('#arrangeGridSettings').disabled=!e.target.checked;if(e.target.checked)autoArrange(true)});
 $('#showPrintOrder').addEventListener('change',updatePrintOrderMarkers);
-$('#showCurveEndpoints').addEventListener('change',()=>{updateCurveEndpoints();previewDirty=true});
+$('#showCurveEndpoints').addEventListener('change',()=>{updateCurveEndpoints();requestPreviewRender()});
 async function executeOutput(send){
   const buttons=[$('#executeOutputBtn'),$('#sendToPrinterBtn')];if(buttons.some(button=>button.disabled))return;for(const button of buttons)button.disabled=true;
   try{
+    $('#outputErrorDetails').hidden=true;
     const project=$('#projectName').textContent.trim(),base=project&&project!=='Untitled'?project.replace(/\.pathloom$/i,''):'pathloom-output',filename=base.replace(/[\x00-\x1f<>:"/\\|?*]/g,'-').slice(0,120)+'.gcode';
     if(send){if(!window.PathloomPrinter)throw new Error('Printer sending requires Pathloom Desktop.');await window.PathloomPrinter.send({filename,generate:generateGcode});return}
     const gcode=generateGcode();
     if(window.__TAURI__?.core?.invoke){const path=await window.__TAURI__.core.invoke('save_gcode_file',{content:gcode,filename});if(path)showToast('G-code saved')}
     else{downloadText(filename,gcode);showToast('G-code generated')}
-  }catch(err){showToast(err.message||String(err),'error')}finally{for(const button of buttons)button.disabled=false}
+  }catch(err){const details=$('#outputErrorDetails');details.hidden=false;details.open=true;details.querySelector('pre').textContent=err.message||String(err);showToast('出力できませんでした。詳細を確認してください。','error')}finally{for(const button of buttons)button.disabled=false}
 }
 $('#executeOutputBtn').addEventListener('click',()=>executeOutput(false));
 $('#sendToPrinterBtn').addEventListener('click',()=>executeOutput(true));
@@ -708,33 +608,38 @@ function captureProject(){
   return {format:'pathloom',version:1,printLinks:structuredClone(printLinks),sources:[...sourceState.values()].map(source=>{const owner=source.generatorGroup&&[...sourceState.values()].find(s=>s.generatorGroup===source.generatorGroup&&s.generator);return {...source,tools:[...source.tools],liveSource:source.generator?source.liveSource:undefined,...(owner&&owner.id!==source.id?{generator:undefined,generatorRef:owner.id}:{generatorRef:undefined})}}),instances:[...instanceState],importedShapes:importedShapes.map(({id,name,visible,sliceLayerHeight,assetId,brepIndex,brep,kernel,faces,meshes})=>({id,name,visible,sliceLayerHeight,assetId,brepIndex,brep:brep?structuredClone(brep):undefined,kernel,faces:faces?structuredClone(faces):undefined,meshes:structuredClone(meshes)})),
     settings:{printer:$('#printerSelect').value,...Object.fromEntries(BASIC_FIELDS.map(id=>[id,Number($('#'+id).value)]))},
     profile:{filamentDiameter:configuredFilamentDiameter,...configuredBuildVolume,startGcode:configuredStartGcode,toolChangeGcode:configuredToolChangeGcode,endGcode:configuredEndGcode},
-    view:{layer:Number($('#layerSlider').value),showInputs:!$('#cadShowInputs')||$('#cadShowInputs').checked,camera:camera?.position.toArray(),target:controls?.target.toArray(),showPrintOrder:$('#showPrintOrder').checked,showCurveEndpoints:$('#showCurveEndpoints').checked},
+    layout:Object.fromEntries(Object.entries(LAYOUT_DEFAULTS).map(([id,value])=>[id,typeof value==='boolean'?$('#'+id).checked:typeof value==='number'?Number($('#'+id).value):$('#'+id).value])),
+    view:{selectedInstance,previewInstance,projection:camera?.isOrthographicCamera?'orthographic':'perspective',axis:axisView,zoom:camera?.zoom||1,...(camera?.isOrthographicCamera?{orthoHeight:camera.top-camera.bottom}:{}),layer:Number($('#layerSlider').value),showInputs:!$('#cadShowInputs')||$('#cadShowInputs').checked,camera:camera?.position.toArray(),target:controls?.target.toArray(),showPrintOrder:$('#showPrintOrder').checked,showCurveEndpoints:$('#showCurveEndpoints').checked},
     cad:window.PathloomCad?.snapshot?.()||null};
 }
 function restoreProject(raw){
   const project=validateProject(raw);
-  const sources=project.sources.map(source=>({...source,...sanitizeToolpath({paths:source.paths},source.filename),tools:new Map(source.tools)}));
+  const sources=project.sources.map(source=>({...source,...sanitizeToolpath({paths:source.paths},source.filename,{allowEmpty:true}),tools:new Map(source.tools)}));
   document.dispatchEvent(new Event('pathloom:stop-live-files'));
   sourceState.clear();instanceState.clear();previewGeometryCache.clear();selectedBrepFaces.clear();importedShapes=project.importedShapes||[];
   for(const key of Object.keys(printLinks))delete printLinks[key];Object.assign(printLinks,project.printLinks||{});
   for(const source of sources)sourceState.set(source.id,source);
   for(const[id,instance]of project.instances)instanceState.set(id,instance);
-  sourceCounter=Math.max(0,...sources.map(s=>Number(s.id.replace(/^S/,''))||0));selectedInstance=project.instances[0]?.[0]||null;previewInstance=null;
+  sourceCounter=Math.max(0,...sources.map(s=>Number(s.id.replace(/^S/,''))||0));selectedInstance=project.view.selectedInstance||project.instances[0]?.[0]||null;previewInstance=project.view.previewInstance||null;
   $('#printerSelect').value=project.settings.printer;
   for(const id of BASIC_FIELDS)$('#'+id).value=project.settings[id];
   configuredFilamentDiameter=project.profile.filamentDiameter;Object.assign(configuredBuildVolume,{bedWidth:project.profile.bedWidth,bedDepth:project.profile.bedDepth,maxHeight:project.profile.maxHeight});
   configuredStartGcode=project.profile.startGcode;configuredToolChangeGcode=project.profile.toolChangeGcode;configuredEndGcode=project.profile.endGcode;
+  for(const[id,value]of Object.entries(project.layout||LAYOUT_DEFAULTS)){if(typeof value==='boolean')$('#'+id).checked=value;else $('#'+id).value=value}
+  $('#arrangeGridSettings').disabled=!$('#autoArrangeEnabled').checked;$('#rowOffsetField').hidden=$('#gridPattern').value!=='staggered';
   $('#showPrintOrder').checked=project.view.showPrintOrder!==false;$('#showCurveEndpoints').checked=project.view.showCurveEndpoints===true;
   syncPrintLinks();updateBuildVolumePreview();renderAllUI();buildInstances();renderImportedShapes();
   $('#layerSlider').value=Math.min(Number($('#layerSlider').max),project.view.layer);
   const vector=value=>Array.isArray(value)&&value.length===3&&value.every(Number.isFinite);
+  if(project.view.projection!=='orthographic'&&camera?.isOrthographicCamera)restorePerspective();
   if(camera&&vector(project.view.camera))camera.position.fromArray(project.view.camera);
   if(controls&&vector(project.view.target)){controls.target.fromArray(project.view.target);controls.update()}
-  refreshVisibility();return project;
+  if(project.view.projection==='orthographic'&&project.view.axis){setAxisView(project.view.axis);if(project.view.orthoHeight){const half=project.view.orthoHeight/2,aspect=viewport.clientWidth/viewport.clientHeight;camera.top=half;camera.bottom=-half;camera.left=-half*aspect;camera.right=half*aspect}camera.zoom=project.view.zoom||1;camera.updateProjectionMatrix()}
+  refreshVisibility();requestPreviewRender();return project;
 }
 
 
-function clearCadProposal(){for(const group of cadHiddenGroups)group.visible=true;cadHiddenGroups=[];if(!cadProposalGroup)return;scene?.remove(cadProposalGroup);cadProposalGroup.traverse(node=>{node.geometry?.dispose();node.material?.dispose()});cadProposalGroup=null;previewDirty=true}
+function clearStagePreview(){for(const group of hiddenStageGroups)group.visible=true;hiddenStageGroups=[];if(!stagePreviewGroup)return;scene?.remove(stagePreviewGroup);stagePreviewGroup.traverse(node=>{node.geometry?.dispose();node.material?.dispose()});stagePreviewGroup=null;requestPreviewRender()}
 initCad({
   setComponentMetadata(id,stepId,metadata){const step=sourceState.get(id)?.generator?.steps.find(s=>s.id===stepId);if(step)Object.assign(step,structuredClone(metadata))},
   setEditorState(id,editor){const source=sourceState.get(id);if(source?.generator)source.generator.editor=structuredClone(editor)},
@@ -755,10 +660,10 @@ initCad({
     const instanceId=hit?.object.parent.userData.instanceId,instance=instanceState.get(instanceId);
     if(!instance)return null;selectedInstance=instanceId;return instance.source;
   },
-  clearProposal:clearCadProposal,
-  previewProposal(result,exclusive=false){
-    clearCadProposal();if(!THREE||!scene)throw new Error('Wait for the 3D view');
-    cadProposalGroup=new THREE.Group();
+  clearStagePreview:clearStagePreview,
+  previewStage(result,exclusive=false){
+    clearStagePreview();if(!THREE||!scene)throw new Error('Wait for the 3D view');
+    stagePreviewGroup=new THREE.Group();
     const current=sourceState.get(window.PathloomCad?.snapshot()?.sourceId),multiple=result.objects?.length>1;
     const objects=multiple?result.objects:[{paths:result.paths}];
     for(const object of objects){
@@ -768,11 +673,11 @@ initCad({
         for(const path of object.paths){const key=String(path.tool);if(!grouped.has(key))grouped.set(key,[]);const positions=grouped.get(key);for(let i=1;i<path.points.length;i++)positions.push(...path.points[i-1],...path.points[i])}
         for(const[tool,positions]of grouped){const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));group.add(new THREE.LineSegments(geometry,new THREE.LineBasicMaterial({color:source?.tools.has(tool)?toolPreviewColor(source,tool):sharedToolAppearance(tool,Number(tool)||0).color})))}
         if(result.previewPoints?.length){const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(result.previewPoints.flat(),3));group.add(new THREE.Points(geometry,new THREE.PointsMaterial({color:0xff553d,size:7,sizeAttenuation:false,depthTest:false})))}
-        group.position.set(instance.x,instance.y,0);group.rotation.z=instance.rotation*Math.PI/180;cadProposalGroup.add(group);
+        group.position.set(instance.x,instance.y,0);group.rotation.z=instance.rotation*Math.PI/180;stagePreviewGroup.add(group);
       }
     }
-    if(exclusive&&current)for(const group of toolpathGroup.children){const source=sourceState.get(instanceState.get(group.userData.instanceId)?.source);if(source?.id===current.id||multiple&&current.generatorGroup&&source?.generatorGroup===current.generatorGroup){group.visible=false;cadHiddenGroups.push(group)}}
-    scene.add(cadProposalGroup);previewDirty=true;
+    if(exclusive&&current)for(const group of toolpathGroup.children){const source=sourceState.get(instanceState.get(group.userData.instanceId)?.source);if(source?.id===current.id||multiple&&current.generatorGroup&&source?.generatorGroup===current.generatorGroup){group.visible=false;hiddenStageGroups.push(group)}}
+    scene.add(stagePreviewGroup);requestPreviewRender();
   },
   apply(result,key,selectedId){
     const previousSelection=selectedInstance,objects=result.objects||[{id:'main',name:result.definition.name,paths:result.paths}],kept=new Set();
@@ -780,9 +685,9 @@ initCad({
     for(const source of [...sourceState.values()])if(source.generatorGroup===key&&!kept.has(source.id))removeSource(source.id,false);
     if(instanceState.has(previousSelection))selectedInstance=previousSelection;syncPrintLinks();renderAllUI();buildInstances();return kept.has(selectedId)?selectedId:[...kept][0];
   },
-  invalidate(id,message){const source=sourceState.get(id);if(source?.generator){const affected=new Set();for(const sibling of sourceState.values())if(sibling.id===id||source.generatorGroup&&sibling.generatorGroup===source.generatorGroup){sibling.generationError=message;affected.add(sibling.id)}if(message!=='Recalculating…'){clearCadProposal();for(const[instanceId,group]of renderedInstances)if(affected.has(instanceState.get(instanceId)?.source))group.visible=false;previewDirty=true}}},
+  invalidate(id,message){const source=sourceState.get(id);if(source?.generator){for(const sibling of sourceState.values())if(sibling.id===id||source.generatorGroup&&sibling.generatorGroup===source.generatorGroup){sibling.generationError=message}if(message!=='Recalculating…')clearStagePreview();refreshVisibility();requestPreviewRender()}},
   sourceExists:id=>sourceState.has(id),sources:()=>[...sourceState.values()],
   placement(sourceId){const selected=instanceState.get(selectedInstance);return selected?.source===sourceId?selected:[...instanceState.values()].find(instance=>instance.source===sourceId)||{x:0,y:0,rotation:0}},captureProject,restoreProject,
-  preview:()=>({THREE,scene,camera,controls,canvas,viewport,dirty:()=>{previewDirty=true}}),
+  preview:()=>({THREE,scene,camera,controls,canvas,viewport,dirty:()=>{requestPreviewRender()}}),
   toast:showToast
 });

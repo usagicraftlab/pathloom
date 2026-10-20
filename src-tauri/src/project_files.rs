@@ -3,7 +3,11 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 
 fn gcode_save_path(mut path: std::path::PathBuf) -> std::path::PathBuf {
-    if !path.extension().and_then(|v| v.to_str()).is_some_and(|v| v.eq_ignore_ascii_case("gcode")) {
+    if !path
+        .extension()
+        .and_then(|v| v.to_str())
+        .is_some_and(|v| v.eq_ignore_ascii_case("gcode"))
+    {
         let mut filename = path.file_name().unwrap_or_default().to_os_string();
         filename.push(".gcode");
         path.set_file_name(filename);
@@ -11,26 +15,52 @@ fn gcode_save_path(mut path: std::path::PathBuf) -> std::path::PathBuf {
     path
 }
 
-fn write_gcode(path: &std::path::Path, content: &str) -> Result<(), String> {
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();
-    let temporary = path.with_extension(format!("gcode.{}.{}.tmp", std::process::id(), stamp));
-    let result = std::fs::write(&temporary, content).and_then(|_| std::fs::rename(&temporary, path));
-    if result.is_err() { let _ = std::fs::remove_file(&temporary); }
+fn write_atomic(path: &std::path::Path, content: &str) -> Result<(), String> {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let temporary = path.with_extension(format!(
+        "{}.{}.{}.tmp",
+        path.extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("pathloom"),
+        std::process::id(),
+        stamp
+    ));
+    let result =
+        std::fs::write(&temporary, content).and_then(|_| std::fs::rename(&temporary, path));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
     result.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn save_gcode_file(app: AppHandle, content: String, filename: String) -> Result<Option<String>, String> {
+pub async fn save_gcode_file(
+    app: AppHandle,
+    content: String,
+    filename: String,
+) -> Result<Option<String>, String> {
     let (sender, receiver) = tokio::sync::oneshot::channel();
-    app.dialog().file().set_title("Save G-code").set_file_name(filename)
+    app.dialog()
+        .file()
+        .set_title("Save G-code")
+        .set_file_name(filename)
         .add_filter("G-code", &["gcode"])
-        .save_file(move |file| { let _ = sender.send(file); });
-    let Some(file) = receiver.await.map_err(|e| e.to_string())? else { return Ok(None); };
+        .save_file(move |file| {
+            let _ = sender.send(file);
+        });
+    let Some(file) = receiver.await.map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
     let path = gcode_save_path(file.into_path().map_err(|e| e.to_string())?);
     tauri::async_runtime::spawn_blocking(move || {
-        write_gcode(&path, &content)?;
+        write_atomic(&path, &content)?;
         Ok(Some(path.to_string_lossy().into_owned()))
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -39,13 +69,21 @@ pub async fn save_pathloom_project(
     content: String,
     current_path: Option<String>,
 ) -> Result<Option<String>, String> {
+    if content.len() > 200_000_000 {
+        return Err("Project exceeds 200 MB; reduce embedded geometry before saving".into());
+    }
     let parsed: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
     if parsed["format"] != "pathloom" || parsed["version"] != 1 {
         return Err("Invalid project format".into());
     }
     let path = if let Some(path) = current_path {
         let path = std::path::PathBuf::from(path);
-        if !path.is_absolute() || path.extension().and_then(|p| p.to_str()) != Some("pathloom") {
+        if !path.is_absolute()
+            || !path
+                .extension()
+                .and_then(|p| p.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("pathloom"))
+        {
             return Err("Invalid project path".into());
         }
         path
@@ -63,21 +101,17 @@ pub async fn save_pathloom_project(
             return Ok(None);
         };
         let mut path = file.into_path().map_err(|e| e.to_string())?;
-        if path.extension().and_then(|p| p.to_str()) != Some("pathloom") {
+        if !path
+            .extension()
+            .and_then(|p| p.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("pathloom"))
+        {
             path.set_extension("pathloom");
         }
         path
     };
     tauri::async_runtime::spawn_blocking(move || {
-        // Write next to the destination, then atomically replace it.
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| e.to_string())?
-            .as_nanos();
-        let temporary =
-            path.with_extension(format!("pathloom.{}.{}.tmp", std::process::id(), stamp));
-        std::fs::write(&temporary, content).map_err(|e| e.to_string())?;
-        std::fs::rename(&temporary, &path).map_err(|e| e.to_string())?;
+        write_atomic(&path, &content)?;
         Ok(Some(path.to_string_lossy().into_owned()))
     })
     .await
@@ -121,6 +155,9 @@ pub async fn cad_library(app: AppHandle, content: Option<String>) -> Result<Stri
             if content.len() > 5_000_000 {
                 return Err("Library is too large".into());
             }
+            if content.len() > 200_000_000 {
+                return Err("Component library exceeds 200 MB".into());
+            }
             let parsed: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
             if !parsed.is_array() {
                 return Err("Invalid library".into());
@@ -145,15 +182,22 @@ mod gcode_tests {
     use super::*;
     #[test]
     fn export_extension_preserves_names_and_accepts_uppercase() {
-        assert_eq!(gcode_save_path("/tmp/part.v2".into()), std::path::PathBuf::from("/tmp/part.v2.gcode"));
-        assert_eq!(gcode_save_path("/tmp/part.GCODE".into()), std::path::PathBuf::from("/tmp/part.GCODE"));
+        assert_eq!(
+            gcode_save_path("/tmp/part.v2".into()),
+            std::path::PathBuf::from("/tmp/part.v2.gcode")
+        );
+        assert_eq!(
+            gcode_save_path("/tmp/part.GCODE".into()),
+            std::path::PathBuf::from("/tmp/part.GCODE")
+        );
     }
     #[test]
     fn export_writes_exact_content_and_replaces_existing_file() {
-        let path = std::env::temp_dir().join(format!("pathloom-save-test-{}.gcode", std::process::id()));
-        write_gcode(&path, "old").unwrap();
+        let path =
+            std::env::temp_dir().join(format!("pathloom-save-test-{}.gcode", std::process::id()));
+        write_atomic(&path, "old").unwrap();
         let content = "; thumbnail begin\nG1 X1 Y2 E0.3\nM601\n";
-        write_gcode(&path, content).unwrap();
+        write_atomic(&path, content).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
         std::fs::remove_file(path).unwrap();
     }

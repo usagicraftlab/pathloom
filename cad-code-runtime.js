@@ -1,6 +1,20 @@
 import {createEngine} from './vendor/quickjs/runtime.js';
 let engine;
 export async function initCodeRuntime(){engine??=await createEngine();return runComponentCode}
+const checkedCode=new Set();
+export function validateComponentSyntax(code){
+  if(!engine)throw new Error('Code runtime is not initialized');
+  if(checkedCode.has(code))return;
+  const runtime=engine.newRuntime();runtime.setMemoryLimit(8*1024*1024);runtime.setMaxStackSize(256*1024);
+  const deadline=Date.now()+250;runtime.setInterruptHandler(()=>Date.now()>deadline);
+  const context=runtime.newContext();
+  try{
+    // Compile the function without executing user code or requiring live inputs.
+    const result=context.evalCode(`(function(input,params,cad){"use strict";\n${code}\n})`,'component.js');
+    if(result.error){const error=context.dump(result.error);result.error.dispose();throw new Error(`Component syntax: ${error.message||error}`)}
+    result.value.dispose();checkedCode.add(code);if(checkedCode.size>128)checkedCode.delete(checkedCode.values().next().value);
+  }finally{context.dispose();runtime.dispose()}
+}
 export function runComponentCode(code,input,params,{sliceBrep,brep,timeLimit=750,returns='curve'}={}){
   if(!engine)throw new Error('Code runtime is not initialized');
   const runtime=engine.newRuntime();runtime.setMemoryLimit(64*1024*1024);runtime.setMaxStackSize(256*1024);

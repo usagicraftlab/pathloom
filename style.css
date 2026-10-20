@@ -354,3 +354,40 @@ body[data-workspace-mode=output] .layer-control{top:22px;bottom:192px}body[data-
 .connection-address{grid-column:1/-1}.connection-actions{display:flex;align-items:center;gap:8px;margin-top:14px}.connection-actions button{padding:8px 12px;font-size:11px}.connection-status{min-height:1.5em;font-size:11px;line-height:1.6;overflow-wrap:anywhere;color:var(--muted)}.connection-status.is-error{color:#a4423f}
 .printer-send-dialog{width:min(420px,calc(100vw - 48px));font-size:12px;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}.printer-send-dialog .library-head{align-items:center;padding-bottom:10px}.printer-send-dialog .library-head h2{font-size:12px;margin:0;font-weight:600}.printer-send-dialog .modal-close{border:0;padding:0 4px;font-size:20px;background:transparent}.printer-send-dialog progress{width:100%;height:8px;accent-color:#477c98}.printer-send-dialog .hint{margin:0;overflow-wrap:anywhere}.printer-send-dialog .connection-status:empty{display:none}.printer-transfer-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.printer-transfer-actions button{font-size:11px;min-height:36px;white-space:nowrap}.printer-send-cancel{justify-self:end;font-size:11px}.printer-send-dialog button:disabled{opacity:.45;cursor:wait}
 #printerConnectionForm [hidden],#printerSendDialog [hidden]{display:none!important}
+/* Canvas-local AI authoring. The card stays readable at every graph zoom. */
+.ai-component-card{position:absolute;width:320px;z-index:80;transform-origin:top left;border:1px solid #c9d9d5;border-radius:16px;background:rgba(255,255,255,.97);box-shadow:0 12px 38px #233b4d26;padding:14px;color:#243b46;font-size:13px;cursor:default}
+.ai-component-card[hidden]{display:none!important}
+.ai-component-card header,.ai-component-card footer{display:flex;align-items:center;gap:8px}
+.ai-component-card header{justify-content:space-between;margin-bottom:10px}
+.ai-component-card header button{border:0;background:transparent;padding:2px 6px;font-size:20px}
+.ai-component-card textarea{display:block;width:100%;min-height:100px;resize:vertical;border:1px solid #d3dedf;border-radius:9px;background:#f8faf9;padding:10px;line-height:1.6;font:inherit;box-sizing:border-box}
+.ai-component-card textarea:focus{outline:2px solid #80b9a5;outline-offset:2px}
+.ai-component-card footer{justify-content:flex-end;margin-top:12px}
+.ai-component-card button{font:inherit;padding:7px 10px;border:1px solid #d3dedf;border-radius:8px;background:white;cursor:pointer}
+.ai-component-card button.primary{background:#285f50;color:white;border-color:#285f50}
+.ai-component-card button:disabled{opacity:.55;cursor:wait}
+.ai-card-settings{margin-right:auto}
+.ai-card-status{display:flex;align-items:center;gap:8px;min-height:24px;margin-top:12px;font-weight:600;line-height:1.5}
+.ai-card-elapsed{margin-left:auto;color:#657b82;font-size:11px;font-variant-numeric:tabular-nums}
+.ai-card-hint{font-size:12px;line-height:1.65;color:#62747d;margin:5px 0 0}
+.ai-card-spinner{display:none;width:14px;height:14px;border:2px solid #d5e8df;border-top-color:#28634f;border-radius:50%;flex-shrink:0;animation:ai-spin .8s linear infinite}
+.ai-component-card[aria-busy=true] .ai-card-spinner{display:block}
+.ai-component-card[data-phase=error]{border-color:#d3907e}
+.ai-component-card[data-phase=error] .ai-card-status{color:#a3432e}
+.ai-component-card[data-phase=done]{border-color:#62a589;background:#f3fcf6}
+.ai-card-error{margin-top:10px;border-radius:8px;background:#fff2ee;padding:9px}
+.ai-card-error pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 ui-monospace,monospace;max-height:140px;overflow:auto;margin-bottom:0}
+.ai-settings-dialog{width:min(460px,calc(100vw - 40px));padding:24px;border:1px solid #cdd8d6;border-radius:18px;color:#253e45;background:#fcfefd;box-shadow:0 24px 90px #172d3540}
+.ai-settings-dialog::backdrop{background:#172d354d;backdrop-filter:blur(3px)}
+.ai-settings-dialog header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.ai-settings-dialog header button{border:0;background:transparent;font-size:24px;cursor:pointer}
+.ai-settings-dialog h2{font-size:15px}.ai-settings-dialog .hint{white-space:pre-wrap;line-height:1.6}
+.ai-settings-dialog .field-row{display:flex;align-items:center;gap:16px;margin:18px 0}
+.ai-settings-dialog select{flex:1;max-width:100%;padding:8px}
+.component-born{animation:component-born .65s cubic-bezier(.2,.8,.2,1)}
+@keyframes ai-spin{to{transform:rotate(360deg)}}
+@keyframes component-born{0%{opacity:0;translate:0 12px;scale:.86;box-shadow:0 0 0 10px #80c8a750}60%{scale:1.04}100%{opacity:1;translate:0 0;scale:1}}
+@media(prefers-reduced-motion:reduce){.component-born{animation:none}.ai-card-spinner{animation-duration:2s}}
+.generation-error-details{max-width:360px;pointer-events:auto;margin-top:8px;padding:8px;border:1px solid #dfb0a2;border-radius:8px;background:#fff6f2;color:#923e2d;font-size:12px}
+.generation-error-details pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto;font:11px/1.6 ui-monospace,monospace}
+#cadStatus[data-state=error]{color:#a3432e;white-space:normal;max-width:360px;line-height:1.6}

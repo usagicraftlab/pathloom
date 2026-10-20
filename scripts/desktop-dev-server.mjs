@@ -1,13 +1,15 @@
+import {frontendFiles,frontendDirectories} from './frontend-assets.mjs';
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.resolve(projectRoot,process.env.PATHLOOM_FRONTEND_DIR||'.');
 const host = '127.0.0.1';
 const port = 1420;
-const allowedRootFiles = new Set(['index.html', 'app.js', 'preview-helpers.js', 'print-time.js', 'print-intro.js', 'gcode-metadata.js', 'cad-kernel.js', 'cad-pipeline.js', 'cad-components.js', 'cad-library.js', 'cad-input-ui.js', 'cad-graph.js', 'cad-node-editor.js', 'cad-worker.js', 'cad-ui.js', 'cad-gizmo.js', 'cad-face-selection.js', 'cad-chat.js', 'pathloom-project.js', 'dxf-import.js', 'step-import.js', 'gh-brep-live.js', 'cad-ai-context.js', 'cad-code-runtime.js', 'cad-worker-client.js', 'step-geometry.js', 'step-slice-worker.js', 'style.css', 'desktop-client.js']);
-const allowedDirs = ['samples', 'vendor'];
+const allowedRootFiles = new Set(await frontendFiles());
+const allowedDirs = frontendDirectories;
 const mime = {
   '.html': 'text/html; charset=utf-8',
   '.wasm': 'application/wasm',
@@ -25,7 +27,10 @@ const mime = {
 function resolveAllowed(urlPath) {
   const clean = decodeURIComponent(urlPath === '/' ? '/index.html' : urlPath).replace(/^\/+/, '');
   if (allowedRootFiles.has(clean)) return path.join(root, clean);
-  if (allowedDirs.some(dir => clean === dir || clean.startsWith(`${dir}/`))) return path.join(root, clean);
+  if (allowedDirs.some(dir => clean.startsWith(`${dir}/`))) {
+    const resolved=path.resolve(root,clean);
+    if (allowedDirs.some(dir=>resolved.startsWith(path.join(root,dir)+path.sep))) return resolved;
+  }
   return null;
 }
 
@@ -38,8 +43,9 @@ function transformDesktopModule(filePath, body) {
 }
 
 http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${host}:${port}`);
-  const filePath = resolveAllowed(url.pathname);
+  let filePath;
+  try{const url = new URL(req.url, `http://${host}:${port}`);filePath = resolveAllowed(url.pathname)}
+  catch{res.writeHead(400,{'Content-Type':'text/plain; charset=utf-8'});res.end('Invalid URL');return}
   if (!filePath) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     return res.end('Not found');

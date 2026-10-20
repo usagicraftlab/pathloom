@@ -11,13 +11,14 @@
     "mac:dev": "tauri dev",
     "mac:build": "tauri build --bundles app,dmg",
     "mac:dmg": "tauri build --bundles dmg",
-    "legacy:bridge": "node bridge-server.mjs",
     "cad:setup": "node scripts/setup-cad-runtime.mjs",
-    "test:cad-native": ".pathloom-runtime/python/bin/python -m unittest discover -s native -p test_occt_brep_bridge.py",
-    "code:build": "node scripts/build-code-runtime.mjs"
+    "test:cad-native": ".pathloom-runtime/python/bin/python -B -m unittest discover -s native -p 'test*.py'",
+    "code:build": "node scripts/build-code-runtime.mjs",
+    "test:browser": "npm run desktop:prepare && playwright test"
   },
   "devDependencies": {
     "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
+    "@playwright/test": "^1.64.1",
     "@tauri-apps/cli": "^2.0.0",
     "esbuild": "^0.28.2",
     "quickjs-emscripten-core": "^0.32.0"

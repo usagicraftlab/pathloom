@@ -1,9 +1,11 @@
+import {BASIC_FIELDS,validatePrintSettings,validateToolSettings} from './toolpath-data.js';
+export {BASIC_FIELDS} from './toolpath-data.js';
 import {validatePauseLayers} from './gcode-metadata.js';
 import {validateEditableShape} from './step-import.js';
 import {printOutputNodes,numberParameters} from './cad-pipeline.js';
 import {validateDefinition} from './cad-kernel.js';
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
-export const BASIC_FIELDS=['printWidth','printHeight','printSpeed','travelSpeed','nozzleTemperature','bedTemperature','fanSpeed'];
+export const LAYOUT_DEFAULTS={autoArrangeEnabled:true,gridColumns:3,gridRows:2,gridSpacingX:66,gridSpacingY:66,gridPattern:'rectangular',gridRowOffset:50,gridRotation:0};
 export function validateProject(input){
   if(!input||input.format!=='pathloom'||input.version!==1)throw new Error('Unsupported .pathloom project');
   const project=structuredClone(input);
@@ -25,7 +27,7 @@ export function validateProject(input){
   const ids=new Set();let pointCount=0;
   for(const source of project.sources){
     if(typeof source.id!=='string'||!source.id||ids.has(source.id)||typeof source.filename!=='string'||typeof source.label!=='string')throw new Error('Invalid source identity');ids.add(source.id);
-    if(!Array.isArray(source.paths)||!Array.isArray(source.tools))throw new Error('Invalid source paths/settings');
+    if(!Array.isArray(source.paths)||!Array.isArray(source.tools)||source.tools.length>256)throw new Error('Invalid source paths/settings');
     for(const path of source.paths){
       if(!finite(path.order)||!['string','number'].includes(typeof path.tool)||!Array.isArray(path.points)||path.points.length<2)throw new Error('Invalid project path');
       pointCount+=path.points.length;
@@ -36,7 +38,7 @@ export function validateProject(input){
     for(const entry of source.tools){
       if(!Array.isArray(entry)||entry.length!==2||typeof entry[0]!=='string'||toolIds.has(entry[0]))throw new Error('Invalid tool settings');toolIds.add(entry[0]);
       const tool=entry[1];
-      if(!tool||!/^#[0-9a-f]{6}$/i.test(tool.color)||typeof tool.name!=='string'||!finite(tool.erate)||tool.erate<0||(tool.speedOverride!==null&&(!finite(tool.speedOverride)||tool.speedOverride<=0)))throw new Error('Invalid tool values');
+      validateToolSettings(tool);
     }
     if(source.paths.some(path=>!toolIds.has(String(path.tool))))throw new Error('Missing tool settings');
     if(source.generator)source.generator=validateDefinition(source.generator);
@@ -60,10 +62,17 @@ export function validateProject(input){
     const instance=entry[1];if(!instance||!ids.has(instance.source)||![instance.x,instance.y,instance.rotation,instance.order].every(finite))throw new Error('Invalid placement');validatePauseLayers(instance.pauseLayers);
   }
   if(!project.settings||!['Prusa MK4S','Prusa CoreOne'].includes(project.settings.printer))throw new Error('Invalid printer');
-  for(const id of BASIC_FIELDS){const value=project.settings[id];if(!finite(value)||value<0||(['printWidth','printHeight','printSpeed','travelSpeed'].includes(id)&&value===0))throw new Error(`Invalid ${id}`)}
+  validatePrintSettings(project.settings);
   const profile=project.profile;
   if(!profile||!['filamentDiameter','bedWidth','bedDepth','maxHeight'].every(key=>finite(profile[key])&&profile[key]>0)||!['startGcode','toolChangeGcode','endGcode'].every(key=>typeof profile[key]==='string'))throw new Error('Invalid printer profile');
   if(!project.view||!finite(project.view.layer)||typeof project.view.showInputs!=='boolean')throw new Error('Invalid view settings');
+  for(const key of ['selectedInstance','previewInstance'])if(project.view[key]!=null&&!(key==='previewInstance'&&project.view[key]==='ALL')&&!instanceIds.has(project.view[key]))throw new Error('Invalid saved object selection');
+  if(project.view.projection!==undefined&&!['perspective','orthographic'].includes(project.view.projection))throw new Error('Invalid saved camera projection');
+  if(project.view.axis!=null&&!['top','bottom','front','back','left','right'].includes(project.view.axis))throw new Error('Invalid saved camera direction');
+  for(const key of ['zoom','orthoHeight'])if(project.view[key]!==undefined&&(!finite(project.view[key])||project.view[key]<=0))throw new Error('Invalid saved camera scale');
+  if(project.layout!==undefined){const layout=project.layout;
+    if(!layout||typeof layout.autoArrangeEnabled!=='boolean'||!['rectangular','staggered','diamond'].includes(layout.gridPattern)||!['gridColumns','gridRows'].every(key=>Number.isInteger(layout[key])&&layout[key]>0)||!['gridSpacingX','gridSpacingY'].every(key=>finite(layout[key])&&layout[key]>=0)||!finite(layout.gridRowOffset)||Math.abs(layout.gridRowOffset)>100||!finite(layout.gridRotation)||Math.abs(layout.gridRotation)>180)throw new Error('Invalid layout settings');
+  }
   if(project.cad?.previewStepId!=null){const source=project.sources.find(source=>source.id===project.cad.sourceId);if(typeof project.cad.previewStepId!=='string'||!source?.generator?.steps?.some(step=>step.id===project.cad.previewStepId))throw new Error('Invalid processing preview stage')}
   if(project.cad?.mode!==undefined&&!['generate','parameters','output'].includes(project.cad.mode))throw new Error('Invalid workspace mode');
   return project;

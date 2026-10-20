@@ -1,4 +1,16 @@
-const distance = (a, b) => Math.hypot(...a.map((value, index) => value - b[index]));
+const distance = (a, b) => Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]);
+// Paths are immutable snapshots. Rotation/translation preserve extrusion length.
+const lengths = new WeakMap();
+export function pathLength(points) {
+  if(lengths.has(points))return lengths.get(points);
+  let length=0;for(let i=1;i<points.length;i++)length+=distance(points[i-1],points[i]);
+  lengths.set(points,length);return length;
+}
+function endpoint(point,placement){
+  if(!placement)return point;
+  const a=placement.rotation*Math.PI/180,c=Math.cos(a),s=Math.sin(a);
+  return [point[0]*c-point[1]*s+placement.x,point[0]*s+point[1]*c+placement.y,point[2]];
+}
 
 // Instances and paths must already be in the same order as G-code output.
 export function estimatePrintTime(instances, travelSpeed, maxHeight, initialTool = null) {
@@ -10,7 +22,7 @@ export function estimatePrintTime(instances, travelSpeed, maxHeight, initialTool
     for (const path of instance.paths) {
       if (!path.points.length) continue;
       if (!(Number.isFinite(path.speed) && path.speed > 0)) throw new Error('Check print speed');
-      const start = path.points[0];
+      const start = endpoint(path.points[0],path.placement);
       if (previous) {
         // G-code travels in Z first, then XY. Between objects it lifts 10 mm.
         const travelZ = first ? Math.min(maxHeight, instance.previousMaxZ + 10) : start[2];
@@ -21,12 +33,8 @@ export function estimatePrintTime(instances, travelSpeed, maxHeight, initialTool
       const tool = String(path.tool);
       if (currentTool !== null && currentTool !== tool) toolChanges++;
       currentTool = tool;
-      for (let index = 1; index < path.points.length; index++) {
-        const length = distance(path.points[index - 1], path.points[index]);
-        printDistance += length;
-        printSeconds += length / path.speed;
-      }
-      previous = path.points.at(-1);
+      const length=pathLength(path.points);printDistance+=length;printSeconds+=length/path.speed;
+      previous = endpoint(path.points.at(-1),path.placement);
       first = false;
     }
   }
@@ -46,10 +54,7 @@ export function estimateFilamentUsage(instances, width, height, diameter) {
     for (const path of instance.paths) {
       const multiplier = path.erate ?? 1;
       if (!Number.isFinite(multiplier) || multiplier < 0) throw new Error('Check E-rate');
-      let length = 0;
-      for (let index = 1; index < path.points.length; index++) {
-        length += distance(path.points[index - 1], path.points[index]);
-      }
+      const length = pathLength(path.points);
       const tool = String(path.tool);
       usage.set(tool, (usage.get(tool) ?? 0) + length * extrusionPerMm * multiplier);
     }

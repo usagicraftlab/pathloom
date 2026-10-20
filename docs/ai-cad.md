@@ -1,5 +1,10 @@
 # AI CAD implementation stages
 
+> Historical implementation log. Earlier descriptions of the chat composer,
+> Apply/Discard, missing native slicing, and NVIDIA requirements are superseded
+> by later stages and the current [README](../README.md). The canvas-local AI
+> workflow and maintenance results are in [maintenance-progress.md](maintenance-progress.md).
+
 Based on the supplied `pathloom_ai_cad_design.docx`. The first requested generator is a section stacked with progressive rotation and scaling.
 
 ## Implemented first prototype (stage B)

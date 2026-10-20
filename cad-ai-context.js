@@ -26,11 +26,17 @@ function applyPatch(base,patch){
 }
 export function createDesignEnvelope(raw,{maxBytes=140000}={}){
   const assets=new Map(),codes=new Map(),codeTokens=new Map();let assetIndex=0;
-  function packGraph(graph){const copy=clone(graph);delete copy.editor;for(const input of copy.inputs||[])if(input.type==='surface'){
-    const token=`geometry-${assetIndex++}`;assets.set(token,clone(input));input.geometryRef=token;input.geometrySummary=summary(input);for(const key of CAD_FIELDS)delete input[key];
-  }return copy}
+  function packGraph(graph){
+    const copy=clone({...graph,inputs:[]});delete copy.editor;
+    copy.inputs=(graph.inputs||[]).map(input=>{
+      if(input.type!=='surface')return clone(input);
+      const token=`geometry-${assetIndex++}`,metadata={...input};
+      assets.set(token,clone(input));for(const key of CAD_FIELDS)delete metadata[key];
+      return {...clone(metadata),geometryRef:token,geometrySummary:summary(input)};
+    });return copy;
+  }
   const context=clone({...raw,definition:null,library:[]});context.definition=packGraph(raw.definition);
-  context.library=(raw.library||[]).map(entry=>{const copy=clone(entry);if(copy.definition)copy.definition=packGraph(copy.definition);else if(copy.inputs){const packed=packGraph({inputs:copy.inputs});copy.inputs=packed.inputs}return copy});
+  context.library=(raw.library||[]).map(entry=>{const copy=clone({...entry,definition:undefined,inputs:undefined});if(entry.definition)copy.definition=packGraph(entry.definition);else if(entry.inputs)copy.inputs=packGraph({inputs:entry.inputs}).inputs;return copy});
   context.patchFormat=DESIGN_PATCH_FORMAT;
   const baseline=clone(context.definition);
   function codeRef(recipe){if(!codeTokens.has(recipe.code)){const token=`code-${codes.size}`;codes.set(token,recipe.code);codeTokens.set(recipe.code,token)}return codeTokens.get(recipe.code)}
