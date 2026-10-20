@@ -65,6 +65,15 @@ Repeated placement/profile work and idle polling improved. Initial import did
 not improve in this final sample; do not claim a universal speedup. Loading still
 includes validation and buffer construction and needs real-model profiling.
 
+## Publication and CI status
+
+Implementation commit `1fc9523` was pushed to
+`codex/canvas-ai-performance`. Working changes were committed; no PR was created.
+The session could not read push-triggered Actions status: GitHub REST and CLI
+returned HTTP 403; the connected commit-workflow tool exposes PR runs only and
+returned no runs. Therefore remote CI success, including full macOS compilation,
+is **unconfirmed**. Check the branch in GitHub Actions before merging.
+
 ## Remaining / restart here
 
 1. Add a separately designed draft save/recovery path: current Save rejects
