@@ -1,0 +1,7 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {advancePreview,curveDirection} from '../preview-helpers.js';
+test('right crosses from a finished layer to the next start and keeps advancing',()=>{assert.deepEqual(advancePreview(1,4,1,[4,6]),{layer:2,point:0});assert.deepEqual(advancePreview(2,0,1,[4,6]),{layer:2,point:1});let state={layer:1,point:0};for(let i=0;i<30;i++)state=advancePreview(state.layer,state.point,1,[4,6,2]);assert.deepEqual(state,{layer:3,point:2})});
+test('left retraces boundaries, Shift steps cross layers, and ends clamp',()=>{assert.deepEqual(advancePreview(2,0,-1,[4,6]),{layer:1,point:4});assert.deepEqual(advancePreview(1,3,10,[4,6,8]),{layer:3,point:1});assert.deepEqual(advancePreview(1,0,-10,[4,6]),{layer:1,point:0});assert.deepEqual(advancePreview(2,6,10,[4,6]),{layer:2,point:6})});
+test('empty layers are traversable without looping and different layer sizes remain valid',()=>{assert.deepEqual(advancePreview(1,0,3,[0,0,2]),{layer:3,point:1});assert.deepEqual(advancePreview(1,0,1,[]),{layer:1,point:0})});
+test('start direction uses first nonzero 3D vector without modifying Curve data',()=>{const points=[[0,0,0],[0,0,0],[0,0,10]],before=structuredClone(points);assert.deepEqual(curveDirection(points),{start:[0,0,0],direction:[0,0,1],length:6});assert.deepEqual(points,before);assert.equal(curveDirection([[1,1,1],[1,1,1]]),null)});

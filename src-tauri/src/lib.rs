@@ -1,6 +1,7 @@
 mod grasshopper_brep;
 mod codex_bridge;
 mod project_files;
+mod printer;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -492,7 +493,7 @@ pub fn run() {
             tauri::async_runtime::spawn(run_grasshopper_server(app_handle, shared));
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![runtime_info, grasshopper_bridge_status, grasshopper_brep_snapshots, import_live_step, read_live_toolpath, choose_live_toolpath, choose_editable_step, slice_step_brep, edit_step_faces, choose_step_file, choose_and_inspect_step_brep, move_step_brep_faces, project_files::save_pathloom_project, project_files::open_pathloom_project, project_files::cad_library, codex_bridge::codex_status, codex_bridge::codex_login, codex_bridge::codex_cancel, codex_bridge::codex_propose])
+        .invoke_handler(tauri::generate_handler![runtime_info, printer::printer_connection_get, printer::printer_connection_save, printer::printer_connection_test, printer::printer_upload_gcode, grasshopper_bridge_status, grasshopper_brep_snapshots, import_live_step, read_live_toolpath, choose_live_toolpath, choose_editable_step, slice_step_brep, edit_step_faces, choose_step_file, choose_and_inspect_step_brep, move_step_brep_faces, project_files::save_gcode_file, project_files::save_pathloom_project, project_files::open_pathloom_project, project_files::cad_library, codex_bridge::codex_status, codex_bridge::codex_login, codex_bridge::codex_cancel, codex_bridge::codex_propose])
         .run(tauri::generate_context!())
         .expect("error while running Pathloom");
 }

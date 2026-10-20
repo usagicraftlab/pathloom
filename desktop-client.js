@@ -138,9 +138,6 @@ async function initializeDesktopRuntime() {
   }
 }
 
-document.addEventListener('pathloom:send-to-printer', () => {
-  notify('Printer connection is being migrated into Pathloom Desktop.');
-});
 
 initializeDesktopRuntime();
 
@@ -242,3 +239,35 @@ window.addEventListener('pagehide', () => {
 });
 
 document.addEventListener('pathloom:stop-live-files',()=>{for(const source of [...liveFileSessions.keys()])stopLiveFile(source)});
+
+// Printer settings never include a returned plaintext credential.
+{
+  const el=id=>document.getElementById(id),form=el('printerConnectionForm'),dialog=el('printerSendDialog');
+  let baseline=null,loading=false,uploading=false,generate=null,finish=null,uploadId=null;
+  const invoke=(command,args={})=>{if(!window.__TAURI__?.core?.invoke)return Promise.reject(new Error('Printer connection requires Pathloom Desktop.'));return window.__TAURI__.core.invoke(command,args)};
+  const message=e=>e?.message||String(e||'Printer connection failed');
+  function status(id,text,bad=false){el(id).textContent=text;el(id).classList.toggle('is-error',bad)}
+  function fields(){return{baseUrl:el('printerAddress').value.trim(),authMode:el('printerAuthMode').value,username:el('printerUsername').value.trim(),storage:el('printerStorage').value.trim()}}
+  function auth(){const key=el('printerAuthMode').value==='apiKey';el('printerUsernameRow').hidden=key;el('printerUsername').required=!key;el('printerSecretLabel').textContent=key?'API key':'Password';const f=fields(),same=baseline&&['baseUrl','authMode','username'].every(k=>f[k]===baseline[k]);el('printerSecret').placeholder=same&&baseline.hasCredentials?'Saved · leave blank to keep':'Enter authentication details'}
+  function setFields(meta){baseline=meta;for(const[id,key]of [['printerAddress','baseUrl'],['printerAuthMode','authMode'],['printerUsername','username'],['printerStorage','storage']])el(id).value=meta[key];el('printerSecret').value='';auth()}
+  function busy(on){loading=on;for(const field of form.querySelectorAll('input,select,button'))field.disabled=on}
+  async function load(){if(loading)return;busy(true);status('printerConnectionStatus','Loading…');try{setFields(await invoke('printer_connection_get'));status('printerConnectionStatus',baseline.hasCredentials?'Connection saved':'Enter authentication details to connect.')}catch(e){status('printerConnectionStatus',message(e),true)}finally{busy(false)}}
+  document.addEventListener('pathloom:open-printer-settings-tab',load);
+  for(const id of ['printerAddress','printerAuthMode','printerUsername'])el(id).addEventListener('input',auth);
+  form.addEventListener('submit',async event=>{event.preventDefault();if(loading||!form.reportValidity())return;const settings=fields(),secret=el('printerSecret').value||null;busy(true);status('printerConnectionStatus','Saving…');try{setFields(await invoke('printer_connection_save',{settings,secret}));status('printerConnectionStatus','Connection saved')}catch(e){status('printerConnectionStatus',message(e),true)}finally{busy(false)}});
+  el('testPrinterConnection').addEventListener('click',async()=>{if(loading||!form.reportValidity())return;const settings=fields(),secret=el('printerSecret').value||null;busy(true);status('printerConnectionStatus','Connecting…');try{const result=await invoke('printer_connection_test',{settings,secret});el('printerStorageOptions').replaceChildren();for(const storage of result.storages||[]){const option=document.createElement('option');option.value=storage.path.replace(/^\/+|\/+$/g,'');option.label=storage.name||storage.type;el('printerStorageOptions').append(option)}status('printerConnectionStatus',`Connected · ${result.state} · ${result.storage}`)}catch(e){status('printerConnectionStatus',message(e),true)}finally{busy(false)}});
+  const end=()=>{generate=null;uploadId=null;finish?.();finish=null};
+  dialog.addEventListener('close',end);dialog.addEventListener('cancel',event=>{if(uploading)event.preventDefault()});
+  for(const id of ['closePrinterSend','cancelPrinterSend'])el(id).addEventListener('click',()=>{if(!uploading)dialog.close()});
+  el('printerSendForm').addEventListener('submit',async event=>{
+    event.preventDefault();if(uploading||!generate||!event.target.reportValidity())return;
+    uploading=true;for(const field of dialog.querySelectorAll('input,select,button'))field.disabled=true;el('printerSendProgress').hidden=false;el('printerSendProgress').value=0;status('printerSendStatus','Preparing G-code…');
+    try{const content=generate(),printAfterUpload=event.submitter?.value==='print';uploadId=crypto.randomUUID();status('printerSendStatus','Connecting to printer…');
+      const result=await invoke('printer_upload_gcode',{content,filename:el('printerSendFilename').value.trim(),printAfterUpload,uploadId});el('printerSendProgress').value=100;status('printerSendStatus',result.printAfterUpload?'File transferred · print start requested':'File transferred');notify(result.printAfterUpload?'File transferred · print start requested':'G-code transferred');
+      uploading=false;dialog.close();
+    }catch(e){status('printerSendStatus',message(e),true)}finally{uploading=false;for(const field of dialog.querySelectorAll('input,select,button'))field.disabled=false}
+  });
+  window.__TAURI__?.event?.listen('printer-upload-progress',event=>{const p=event.payload;if(!uploading||p.uploadId!==uploadId)return;const percent=Math.min(100,Math.floor(p.sent*100/Math.max(1,p.total)));el('printerSendProgress').value=percent;status('printerSendStatus',percent===100?'Waiting for printer response…':`Transferring · ${percent}%`)}).then(unlisten=>window.addEventListener('pagehide',unlisten,{once:true})).catch(()=>{});
+  let opening=false;
+  window.PathloomPrinter={async send(options){if(opening||dialog.open)return;opening=true;try{const meta=await invoke('printer_connection_get');if(!meta.hasCredentials){document.dispatchEvent(new Event('pathloom:open-printer-settings'));notify('Set up Printer Connection first.');return}generate=options.generate;el('printerSendFilename').value=options.filename;el('printerSendAddress').textContent=`${meta.baseUrl} · ${meta.storage}`;el('printerSendProgress').hidden=true;status('printerSendStatus','');dialog.showModal();await new Promise(resolve=>finish=resolve)}catch(e){notify(message(e),'error')}finally{opening=false}}};
+}

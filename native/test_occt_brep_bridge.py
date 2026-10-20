@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from occt_brep_bridge import process, read_brep
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeCylinder, BRepPrimAPI_MakeCone
 from OCP.STEPControl import STEPControl_Writer, STEPControl_AsIs
 from OCP.BRepGProp import BRepGProp
 from OCP.GProp import GProp_GProps
@@ -26,6 +26,23 @@ class EditableBrepTests(unittest.TestCase):
             self.assertEqual(len(path['points']),5)
             self.assertEqual(path['points'][0],path['points'][-1])
             self.assertTrue(all(p[2]==path['points'][0][2] for p in path['points']))
+
+    def test_slice_samples_center_and_prints_at_layer_top(self):
+        from occt_brep_bridge import inspect_shape
+        cone=inspect_shape(BRepPrimAPI_MakeCone(10,5,3).Shape(),self.root,'tapered')
+        result=process(dict(action='slice',brep=cone['brep'],layerHeight=.6,tolerance=.002))
+        self.assertEqual(len(result['paths']),5)
+        for layer,path in enumerate(result['paths']):
+            self.assertTrue(all(abs(p[2]-(layer+1)*.6)<1e-8 for p in path['points']))
+            radius=10-(layer+.5)
+            self.assertTrue(all(abs((p[0]**2+p[1]**2)**.5-radius)<.002 for p in path['points']))
+
+    def test_point_bottom_is_avoided_by_center_sampling(self):
+        from occt_brep_bridge import inspect_shape
+        cone=inspect_shape(BRepPrimAPI_MakeCone(0,5,3).Shape(),self.root,'pointed')
+        path=process(dict(action='slice',brep=cone['brep'],layerHeight=.6,tolerance=.001))['paths'][0]
+        self.assertTrue(all(abs(p[2]-.6)<1e-8 for p in path['points']))
+        self.assertTrue(all(abs((p[0]**2+p[1]**2)**.5-5*.3/3)<1e-5 for p in path['points']))
 
     def test_exact_cylinder_sections_follow_radius(self):
         from occt_brep_bridge import inspect_shape

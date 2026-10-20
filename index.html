@@ -30,8 +30,10 @@
       <button type="button" role="tab" id="modeOutput" data-workspace-mode="output" aria-selected="false" tabindex="-1" aria-controls="outputPanel" aria-label="出力設定" title="出力設定"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8V3h10v5M7 17H4V9h16v8h-3M7 14h10v7H7zM17 11h1"/></svg></button>
     </nav>
     <aside class="sidebar" id="outputPanel" aria-label="Output settings">
-      <div class="output-actions">          <button id="executeOutputBtn" class="primary">Generate G-code</button>
-          <select id="outputAction" class="output-command" aria-label="Choose output command" title="Generate G-code"><option value="generate">Generate G-code</option><option value="send">Send to Printer</option></select></div>
+      <div class="output-actions">
+        <button id="executeOutputBtn" class="primary" title="Choose a name and location to save G-code">Generate G-code</button>
+        <button id="sendToPrinterBtn" class="primary" title="Send generated G-code to the selected printer">Send to Printer</button>
+      </div>
       <section class="panel sidebar-island basic-panel">
         <button class="island-header" aria-expanded="true"><span class="island-chevron">⌄</span><span>Basic Settings</span></button>
         <div class="island-content basic-content">
@@ -49,11 +51,11 @@
       <section class="panel sidebar-island" id="objectsIsland">
         <button class="island-header" aria-expanded="true"><span class="island-chevron">⌄</span><span>Objects</span></button>
         <div class="island-content" id="tab-objects">
+          <label class="print-order-toggle"><input id="showCurveEndpoints" type="checkbox"><span>Show curve endpoints &amp; direction</span></label>
           <div id="objectList"></div>
           <button id="addToolpath" class="add-object" title="Add toolpath files and automatically follow saved changes">＋ Add .toolpath</button>
           <div id="importedShapeList"></div>
           <p id="liveToolpathStatus" class="hint" role="status" aria-live="polite" hidden></p>
-          <div class="objects-connection-status status"><span class="dot" aria-hidden="true"></span><span id="connectionStatus">Grasshopper disconnected</span></div>
           <input id="toolpathInput" type="file" accept=".toolpath,.json,application/json" multiple hidden>
         </div>
       </section>
@@ -151,7 +153,7 @@
         </aside>
       </div>
       <div id="viewport" class="viewport">
-        <canvas id="threeCanvas"></canvas><div class="view-axis-buttons view-cube" role="group" aria-label="View direction"><svg id="viewCube" viewBox="0 0 100 100" aria-label="Orientation cube"></svg><button type="button" class="view-axis-button cube-arrow cube-arrow-top" data-view="top" aria-label="Top view" aria-pressed="false" title="上"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>上</span></button><button type="button" class="view-axis-button cube-arrow cube-arrow-bottom" data-view="bottom" aria-label="Bottom view" aria-pressed="false" title="下"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>下</span></button><button type="button" class="view-axis-button cube-arrow cube-arrow-front" data-view="front" aria-label="Front view" aria-pressed="false" title="前"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>前</span></button><button type="button" class="view-axis-button cube-arrow cube-arrow-back" data-view="back" aria-label="Back view" aria-pressed="false" title="後"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>後</span></button><button type="button" class="view-axis-button cube-arrow cube-arrow-left" data-view="left" aria-label="Left view" aria-pressed="false" title="左"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>左</span></button><button type="button" class="view-axis-button cube-arrow cube-arrow-right" data-view="right" aria-label="Right view" aria-pressed="false" title="右"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-5 5 5-5 5 5"/></svg><span>右</span></button></div><div class="geometry-visibility">              <label class="cad-checkbox"><input id="cadShowInputs" type="checkbox" checked>Show geometry inputs in 3Dview→</label></div>
+        <canvas id="threeCanvas"></canvas><div class="view-axis-buttons view-cube" role="group" aria-label="View direction"><svg id="viewCube" viewBox="0 0 100 100" aria-label="Orientation cube"></svg></div><div class="geometry-visibility">              <label class="cad-checkbox"><input id="cadShowInputs" type="checkbox" checked>Show geometry inputs in 3Dview→</label></div>
         <section class="print-estimate-overlay" aria-label="Print estimate">
           <div id="projectName" class="project-name">Untitled</div>
                         <p id="cadStatus" class="hint" role="status"></p>
@@ -177,6 +179,20 @@
     </main>
   </div>
 
+  <dialog id="printerSendDialog" class="printer-send-dialog component-save-dialog" aria-labelledby="printerSendTitle">
+    <form id="printerSendForm">
+      <div class="library-head"><h2 id="printerSendTitle">Send to Printer</h2><button id="closePrinterSend" type="button" class="modal-close" aria-label="Close printer send">×</button></div>
+      <p id="printerSendAddress" class="hint"></p>
+      <div class="form-grid">
+        <label class="connection-address"><span>Filename</span><input id="printerSendFilename" required maxlength="240" autocomplete="off"></label>
+      </div>
+      <progress id="printerSendProgress" max="100" value="0" hidden aria-label="Transfer progress"></progress>
+      <p id="printerSendStatus" class="connection-status" role="status"></p>
+      <div class="printer-transfer-actions"><button id="confirmPrinterSend" type="submit" name="action" value="upload">Transfer only</button><button id="transferAndPrint" type="submit" name="action" value="print">Transfer and print</button></div>
+      <button id="cancelPrinterSend" type="button" class="settings-button printer-send-cancel">Cancel</button>
+    </form>
+  </dialog>
+
   <dialog id="removeObjectDialog" class="remove-object-dialog" aria-labelledby="removeObjectTitle" aria-describedby="removeObjectMessage">
     <h2 id="removeObjectTitle">Delete object?</h2>
     <p id="removeObjectMessage"></p>
@@ -191,6 +207,7 @@
       </div>
       <div class="settings-tabs" role="tablist" aria-label="Settings">
         <button id="printerSettingsTab" role="tab" aria-controls="printerSettings" aria-selected="true">Printer Profiles</button>
+        <button id="connectionSettingsTab" role="tab" aria-controls="connectionSettings" aria-selected="false">Printer Connection</button>
         <button id="filamentSettingsTab" role="tab" aria-controls="filamentSettings" aria-selected="false">Filaments</button>
       </div>
       <section id="printerSettings" role="tabpanel" aria-labelledby="printerSettingsTab">
@@ -207,6 +224,20 @@
           </div>
           <p class="hint">Prusa exports include QOI/PNG thumbnails, estimated time, progress, layer markers and filament usage. Available variables include {from_tool}, {to_tool}, {tool_change_index}, {tool_change_load}, {start_x}, {start_y}, {layer_z}, temperatures, fan speed, print area and travel values.</p>
           <button class="primary save-filament" type="submit">Save printer profile</button>
+        </form>
+      </section>
+      <section id="connectionSettings" role="tabpanel" aria-labelledby="connectionSettingsTab" hidden>
+        <form id="printerConnectionForm">
+          <div class="form-grid">
+            <label class="connection-address"><span>Printer address</span><input id="printerAddress" placeholder="http://192.168.11.5" autocomplete="off" required></label>
+            <label><span>Authentication</span><select id="printerAuthMode"><option value="digest">Username &amp; password</option><option value="apiKey">API key</option></select></label>
+            <label><span>Storage</span><input id="printerStorage" value="usb" list="printerStorageOptions" required><datalist id="printerStorageOptions"><option value="usb"><option value="local"></datalist></label>
+            <label id="printerUsernameRow"><span>Username</span><input id="printerUsername" value="maker" autocomplete="off"></label>
+            <label><span id="printerSecretLabel">Password</span><input id="printerSecret" type="password" autocomplete="new-password" aria-describedby="printerSecretHint"></label>
+          </div>
+          <p id="printerSecretHint" class="hint">Authentication details are stored in the system credential store.</p>
+          <div class="connection-actions"><button id="savePrinterConnection" class="primary" type="submit">Save connection</button><button id="testPrinterConnection" class="settings-button" type="button">Test connection</button></div>
+          <p id="printerConnectionStatus" class="connection-status" role="status"></p>
         </form>
       </section>
       <section id="filamentSettings" role="tabpanel" aria-labelledby="filamentSettingsTab" hidden>

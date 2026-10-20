@@ -6,7 +6,7 @@ export {COMPONENT_GROUPS};
 export const isCurveType=type=>['curve','contours','layers','paths'].includes(type);
 export const publicDataType=type=>['curve','contours','layers'].includes(type)?'Curve':type==='paths'?'Toolpaths':type;
 export function acceptsGeometryType(accepts,type){return ['curve','geometry','layered','contours','layers'].includes(accepts)?isCurveType(type):accepts===type}
-export function geometrySourceType(definition,id){if(id?.startsWith('input:'))return definition.inputs?.find(input=>`input:${input.id}`===id)?.type==='curve'?'contours':definition.inputs?.find(input=>`input:${input.id}`===id)?.type==='surface'?'surface':null;return operationSpec(definition,definition.steps?.find(step=>step.id===id))?.returns}
+export function geometrySourceType(definition,id){if(id?.startsWith('input:'))return definition.inputs?.find(input=>`input:${input.id}`===id)?.type==='curve'?'contours':definition.inputs?.find(input=>`input:${input.id}`===id)?.type==='surface'?'surface':definition.inputs?.find(input=>`input:${input.id}`===id)?.type==='point'?'points':definition.inputs?.find(input=>`input:${input.id}`===id)?.type||null;return operationSpec(definition,definition.steps?.find(step=>step.id===id))?.returns}
 
 // Typed input registry and versioned, data-only processing graph.
 export const OPERATIONS = {
@@ -31,7 +31,7 @@ export const OPERATIONS = {
 // Reusable data-only recipes expand to the same checked primitive graph.
 export const RECIPE_FORMAT={operation:'recipe:<id>',version:'pinned recipe version',definition:{id:'custom-bottom',version:1,label:'Reusable bottom',accepts:'paths',params:{layers:'number',spacing:'number'},defaults:{layers:2,spacing:.6},steps:[{id:'fill',operation:'bottom',version:1,source:'$input',params:{layers:{parameter:'layers'},spacing:{parameter:'spacing'}}}],output:'fill'},rules:['recipes are embedded in definition.recipes','at most 16 recipes, 16 internal steps and 24 parameters each','composite recipes contain native operations; alternatively use code with a returns type for isolated JavaScript','internal source $input is the incoming geometry','params reference outer recipe parameters with {parameter: name}','every declared parameter must be used with its declared type','change version when changing a recipe; preserve old definitions']};
 export function operationSpec(definition,step,seen=new Set()){
-  const operation=typeof step==='string'?step:step?.operation;if(OPERATIONS[operation]){const spec=OPERATIONS[operation];if(spec.returns==='same'&&typeof step!=='string'){if(seen.has(step.id))return {...spec,returns:'unknown'};seen.add(step.id);const source=(definition.steps||[]).find(s=>s.id===step.source);return {...spec,returns:source?operationSpec(definition,source,seen)?.returns:step.source?.startsWith('input:')&&definition.inputs?.some(input=>`input:${input.id}`===step.source&&input.type==='curve')?'contours':'unknown'}}return spec}
+  const operation=typeof step==='string'?step:step?.operation;if(OPERATIONS[operation]){const spec=OPERATIONS[operation];if(spec.returns==='same'&&typeof step!=='string'){if(seen.has(step.id))return {...spec,returns:'unknown'};seen.add(step.id);const source=(definition.steps||[]).find(s=>s.id===step.source);return {...spec,returns:source?operationSpec(definition,source,seen)?.returns:step.source?.startsWith('input:')&&definition.inputs?.some(input=>`input:${input.id}`===step.source&&input.type==='curve')?'contours':step.pendingInputs?'curve':'unknown'}}return spec}
   const recipes=(definition?.recipes||[]).filter(r=>operation===`recipe:${r.id}`&&(typeof step==='string'||r.version===step.version)).sort((a,b)=>b.version-a.version);
   const program=(definition?.programs||[]).find(r=>operation===`program:${r.id}`&&r.version===step.version);if(program)return{...program,recipe:false};
   const recipe=recipes[0];return recipe?{...recipe,returns:recipeReturnType(recipe),recipe:true}:null;
@@ -42,12 +42,16 @@ function checkedRecipes(raw){
   const identities=new Set();
   for(const recipe of d.recipes){
     const identity=`${recipe.id}:${recipe.version}`;
-    if(!idValid(recipe.id)||identities.has(identity)||!Number.isInteger(recipe.version)||recipe.version<1||typeof recipe.label!=='string'||!recipe.label.trim()||recipe.label.length>120||(!['curve','paths','contours','layers','surface'].includes(recipe.accepts)&&!(recipe.code!==undefined&&recipe.accepts===null))||!recipe.params||typeof recipe.params!=='object'||Array.isArray(recipe.params)||Object.keys(recipe.params).length>24||!recipe.defaults||typeof recipe.defaults!=='object'||(recipe.code===undefined&&(!Array.isArray(recipe.steps)||!recipe.steps.length||recipe.steps.length>16)))throw new Error('Invalid custom recipe definition');identities.add(identity);
+    if(!idValid(recipe.id)||identities.has(identity)||!Number.isInteger(recipe.version)||recipe.version<1||typeof recipe.label!=='string'||!recipe.label.trim()||recipe.label.length>120||(!['curve','paths','contours','layers','surface'].includes(recipe.accepts)&&!(recipe.code!==undefined&&[null,'points','number','list','boolean','tool-info'].includes(recipe.accepts)))||!recipe.params||typeof recipe.params!=='object'||Array.isArray(recipe.params)||Object.keys(recipe.params).length>24||!recipe.defaults||typeof recipe.defaults!=='object'||(recipe.code===undefined&&(!Array.isArray(recipe.steps)||!recipe.steps.length||recipe.steps.length>16)))throw new Error('Invalid custom recipe definition');identities.add(identity);
     const results=new Map([['$input',recipe.accepts]]),used=new Set();
-    for(const[key,type]of Object.entries(recipe.params))if(!idValid(key)||!['number','point','list','boolean'].includes(type)||!Object.hasOwn(recipe.defaults,key))throw new Error('Invalid recipe parameter schema');
+    for(const[key,type]of Object.entries(recipe.params))if(!idValid(key)||!['number','point','list','boolean',...(recipe.code!==undefined?['curves']:[])].includes(type)||!Object.hasOwn(recipe.defaults,key))throw new Error('Invalid recipe parameter schema');
     if(recipe.code!==undefined){
-      if(typeof recipe.code!=='string'||!recipe.code.trim()||recipe.code.length>64000||!['curve','contours','layers','paths'].includes(recipe.returns)||recipe.steps?.length)throw new Error('Invalid code Component definition');
-      for(const[key,type]of Object.entries(recipe.params))if(!validLiteral(type,recipe.defaults[key]))throw new Error('Invalid code Component default');
+      const componentLabel=`Code Component "${recipe.label}"`;
+      if(typeof recipe.code!=='string'||!recipe.code.trim())throw new Error(`${componentLabel}: code must be a nonempty JavaScript function body`);
+      if(recipe.code.length>64000)throw new Error(`${componentLabel}: code exceeds the 64,000 character limit`);
+      if(!['curve','contours','layers','paths','points','number','list','boolean','tool-info'].includes(recipe.returns))throw new Error(`${componentLabel}: unsupported output type "${recipe.returns}"; use curve, points, number, list, boolean or tool-info`);
+      if(recipe.steps?.length)throw new Error(`${componentLabel}: code and internal steps cannot be combined; remove steps from the code Component`);
+      for(const[key,type]of Object.entries(recipe.params))if(!(type==='curves'?Array.isArray(recipe.defaults[key])&&recipe.defaults[key].every(id=>typeof id==='string'):validLiteral(type,recipe.defaults[key])))throw new Error('Invalid code Component default');
       continue;
     }
     for(const step of recipe.steps){const spec=OPERATIONS[step.operation];if(!spec||!idValid(step.id)||results.has(step.id)||step.version!==1||!step.params||typeof step.params!=='object'||Object.keys(step.params).some(key=>!Object.hasOwn(spec.params,key)))throw new Error('Recipes can only contain supported native operations');
@@ -62,7 +66,7 @@ function checkedRecipes(raw){
   }
   return d;
 }
-function validLiteral(type,value){return type==='number'?finite(value):type==='boolean'?typeof value==='boolean':type==='point'?Array.isArray(value)&&value.length===3&&value.every(finite):type==='list'?Array.isArray(value)&&value.length>0&&value.length<=256&&value.every(finite):false}
+function validLiteral(type,value){return type==='curves'?Array.isArray(value)&&value.length<=16&&value.every(id=>typeof id==='string'):type==='number'?finite(value):type==='boolean'?typeof value==='boolean':type==='point'?Array.isArray(value)&&value.length===3&&value.every(finite):type==='list'?Array.isArray(value)&&value.length>0&&value.length<=256&&value.every(finite):false}
 export function expandRecipes(raw,{aliases}={}){
   const d=checkedRecipes(raw),mapping=new Map(),expanded=[],usedIds=new Set(d.steps.map(step=>step.id));
   for(const step of d.steps){const spec=operationSpec(d,step);if(!spec)throw new Error('Unknown custom recipe or version');
@@ -70,9 +74,9 @@ export function expandRecipes(raw,{aliases}={}){
     if(!spec.recipe){const copy=structuredClone(step);if(copy.source)copy.source=upstream(copy.source);if(copy.sources)copy.sources=copy.sources.map(upstream);for(const[key,type]of Object.entries(spec.params))if(type==='curves')copy.params[key]=copy.params[key].map(ref=>ref.startsWith('step:')?`step:${upstream(ref.slice(5))}`:ref);expanded.push(copy);mapping.set(step.id,step.id);continue}
     if(!step.params||typeof step.params!=='object'||Array.isArray(step.params)||Object.keys(step.params).some(key=>!Object.hasOwn(spec.params,key)))throw new Error('Invalid recipe arguments');
     for(const[key,type]of Object.entries(spec.params)){const value=step.params[key];if(value&&typeof value==='object'&&!Array.isArray(value)){if(Object.keys(value).length!==1||d.inputs.find(input=>input.id===value.input)?.type!==type)throw new Error('Invalid typed recipe argument')}else if(!validLiteral(type,value))throw new Error('Missing or invalid recipe argument')}
-    if(spec.code!==undefined){d.programs??=[];if(!d.programs.some(r=>r.id===spec.id&&r.version===spec.version))d.programs.push(structuredClone(d.recipes.find(r=>r.id===spec.id&&r.version===spec.version)));expanded.push({...structuredClone(step),operation:`program:${spec.id}`,source:upstream(step.source)});mapping.set(step.id,step.id);continue}
+    if(spec.code!==undefined){d.programs??=[];if(!d.programs.some(r=>r.id===spec.id&&r.version===spec.version))d.programs.push(structuredClone(d.recipes.find(r=>r.id===spec.id&&r.version===spec.version)));const copy={...structuredClone(step),operation:`program:${spec.id}`,source:upstream(step.source)};for(const[key,type]of Object.entries(spec.params))if(type==='curves')copy.params[key]=copy.params[key].map(ref=>ref.startsWith('step:')?`step:${upstream(ref.slice(5))}`:ref);expanded.push(copy);mapping.set(step.id,step.id);continue}
     const local=new Map([['$input',upstream(step.source)]]);
-    for(const inner of spec.steps){const copy=structuredClone(inner);copy.id=uniqueId('recipe-step',[...usedIds]);usedIds.add(copy.id);local.set(inner.id,copy.id);if(copy.source)copy.source=local.get(copy.source);if(copy.sources)copy.sources=copy.sources.map(id=>local.get(id));for(const[key,value]of Object.entries(copy.params))if(value&&typeof value==='object'&&!Array.isArray(value))copy.params[key]=structuredClone(step.params[value.parameter]);expanded.push(copy)}mapping.set(step.id,local.get(spec.output));
+    for(const inner of spec.steps){const copy=structuredClone(inner);if(step.pendingInputs)copy.pendingInputs=true;copy.id=uniqueId('recipe-step',[...usedIds]);usedIds.add(copy.id);local.set(inner.id,copy.id);if(copy.source)copy.source=local.get(copy.source);if(copy.sources)copy.sources=copy.sources.map(id=>local.get(id));for(const[key,value]of Object.entries(copy.params))if(value&&typeof value==='object'&&!Array.isArray(value))copy.params[key]=structuredClone(step.params[value.parameter]);expanded.push(copy)}mapping.set(step.id,local.get(spec.output));
   }
   if(expanded.length>256)throw new Error('Expanded recipe graph is too large');if(aliases)for(const[key,value]of mapping)aliases[key]=value;d.steps=expanded;d.output=mapping.get(d.output)||d.output;if(d.toolOutput)d.toolOutput=mapping.get(d.toolOutput)||d.toolOutput;for(const output of d.printOutputs||[]){output.source=mapping.get(output.source)||output.source;if(output.toolSource)output.toolSource=mapping.get(output.toolSource)||output.toolSource}delete d.recipes;return d;
 }
@@ -140,22 +144,23 @@ export function validatePipeline(raw){
       if(!Array.isArray(input.value)||!input.value.length||input.value.length>256||input.value.some(v=>!finite(v)||Math.abs(v)>10000))throw new Error(`Invalid number list: ${input.name}`);
     }else throw new Error(`Unsupported input type: ${input.type}`);
   }
-  const results=new Map(d.inputs.filter(input=>['curve','surface'].includes(input.type)).map(input=>[`input:${input.id}`,input.type==='curve'?'contours':'surface']));
+  const results=new Map(d.inputs.filter(input=>['curve','surface','point','number','list'].includes(input.type)).map(input=>[`input:${input.id}`,input.type==='curve'?'contours':input.type==='point'?'points':input.type]));
   for(const step of d.steps){
     const spec=operationSpec(d,step);
     if(!idValid(step.id)||results.has(step.id)||!spec||step.version!==(spec.code!==undefined?spec.version:1)||!step.params||typeof step.params!=='object'||Array.isArray(step.params))throw new Error('Invalid operation or version');
+    if(step.pendingInputs!==undefined&&typeof step.pendingInputs!=='boolean')throw new Error('Invalid Component input state');
     if(step.group!==undefined&&(typeof step.group!=='string'||!step.group.trim()||step.group.length>80))throw new Error('Invalid Component group');
     if(step.label!==undefined&&(typeof step.label!=='string'||!step.label.trim()||step.label.length>120))throw new Error('Invalid Component name');
     if(Object.keys(step.params).some(key=>!Object.hasOwn(spec.params,key)))throw new Error(`Unknown parameter in ${step.id}`);
     if(spec.accepts==='branches'){
-      if(!Array.isArray(step.sources)||step.sources.length<2||step.sources.length>8||new Set(step.sources).size!==step.sources.length||step.sources.some(id=>results.get(id)!=='paths'))throw new Error('Merge needs prior path branches');
-    }else if(spec.accepts&&(!acceptsGeometryType(spec.accepts,results.get(step.source))))throw new Error(`Invalid upstream input for ${step.id}`);
+      if(!Array.isArray(step.sources)||!step.pendingInputs&&step.sources.length<2||step.sources.length>8||new Set(step.sources).size!==step.sources.length||step.sources.some(id=>results.get(id)!=='paths'))throw new Error('Merge needs prior path branches');
+    }else if(spec.accepts&&!(step.pendingInputs&&step.source==null)&&(!acceptsGeometryType(spec.accepts,results.get(step.source))))throw new Error(`Invalid upstream input for ${step.id}`);
     for(const[key,type]of Object.entries(spec.params)){
       const value=step.params[key];
       if(type==='curves'){
-        const minimum=spec.minCurves?.[key]??1;
+        const minimum=spec.minCurves?.[key]??(spec.code!==undefined?0:1);
         const invalidCurve=id=>{if(typeof id!=='string')return true;if(!id.startsWith('step:')&&inputs.has(id)){const input=inputs.get(id);return input.type!=='curve'||spec.curveSelection==='closed'&&!input.curve.closed||input.curve.points.length<2}return !isCurveType(results.get(id.startsWith('step:')?id.slice(5):id))};
-        if(!Array.isArray(value)||value.length<minimum||value.length>16||new Set(value).size!==value.length||value.some(invalidCurve))throw new Error(`Select ${spec.curveSelection==='closed'?'closed ':''}Curve geometry for ${step.id}.${key}`);
+        if(!Array.isArray(value)||!step.pendingInputs&&value.length<minimum||value.length>16||new Set(value).size!==value.length||value.some(invalidCurve))throw new Error(`Select ${spec.curveSelection==='closed'?'closed ':''}Curve geometry for ${step.id}.${key}`);
       }else if(value&&typeof value==='object'&&!Array.isArray(value)){
         const input=inputs.get(value.input);if(Object.keys(value).length!==1||!input||input.type!==type)throw new Error(`Wrong input type for ${step.id}.${key}`);
       }else if(type==='number'&&!finite(value)||type==='boolean'&&typeof value!=='boolean'||type==='point'&&(!Array.isArray(value)||value.length!==3||!value.every(finite))||type==='list'&&(!Array.isArray(value)||!value.length||value.length>256||!value.every(finite)))throw new Error(`Invalid ${step.id}.${key}`);
@@ -165,8 +170,8 @@ export function validatePipeline(raw){
     results.set(step.id,spec.returns==='same'?results.get(step.source):spec.returns);
   }
   if(d.printOutputs!==undefined&&(!Array.isArray(d.printOutputs)||d.printOutputs.length>31))throw new Error('Too many Print outputs');
-  const outputIds=new Set();for(const output of printOutputNodes(d)){if(!idValid(output.id)||outputIds.has(output.id)||typeof output.name!=='string'||!output.name.trim()||output.name.length>120||!['curve','contours','layers','paths'].includes(results.get(output.source)))throw new Error('Invalid Print output object');outputIds.add(output.id);if(output.toolSource!==undefined&&results.get(output.toolSource)!=='tool-info')throw new Error('Print output Tool input needs Tool information');printIntroSettings(output)}
-  if(!['curve','paths','layers','contours'].includes(results.get(d.output)))throw new Error('Print output needs planar Curve geometry or Toolpaths');if(d.toolOutput!==undefined&&results.get(d.toolOutput)!=='tool-info')throw new Error('Print output Tool input needs Tool information');
+  const outputIds=new Set();for(const output of printOutputNodes(d)){if(!idValid(output.id)||outputIds.has(output.id)||typeof output.name!=='string'||!output.name.trim()||output.name.length>120||output.source!==null&&!['curve','contours','layers','paths'].includes(results.get(output.source)))throw new Error('Invalid Print output object');outputIds.add(output.id);if(output.toolSource!==undefined&&results.get(output.toolSource)!=='tool-info')throw new Error('Print output Tool input needs Tool information');printIntroSettings(output)}
+  if(d.output!==null&&!['curve','paths','layers','contours'].includes(results.get(d.output)))throw new Error('Print output needs planar Curve geometry or Toolpaths');if(d.toolOutput!==undefined&&results.get(d.toolOutput)!=='tool-info')throw new Error('Print output Tool input needs Tool information');
   return d;
 }
 export function usedBy(definition,inputId){return definition.steps.filter(step=>step.source===`input:${inputId}`||inputReferences(step).includes(inputId)||curveInputReferences(step,operationSpec(definition,step)).includes(inputId)).map(step=>step.id)}
@@ -187,15 +192,22 @@ export function newInput(type,existing){
 }
 export function uniqueId(prefix,existing){let i=1;while(existing.includes(`${prefix}-${i}`))i++;return `${prefix}-${i}`}
 export function appendOperation(definition,operation){return appendComponent(definition,operation)}
-export function appendComponent(definition,operation){
+export function appendComponent(definition,operation,{detached=false}={}){
   const d=validatePipeline(definition),spec=operationSpec(d,operation);if(!spec)throw new Error('Choose a Component');
   const step={id:uniqueId(operation.replace(/[^A-Za-z0-9_-]/g,'-'),d.steps.map(step=>step.id)),operation,version:spec.recipe?spec.version:1,group:spec.group||'Custom',params:structuredClone(spec.defaults)};
+  if(detached){step.pendingInputs=true;for(const[key,type]of Object.entries(spec.params))if(type==='curves')step.params[key]=[];if(spec.accepts==='branches')step.sources=[];d.steps.push(step);return validatePipeline(d)}
   const type=id=>geometrySourceType(d,id);
   if(spec.accepts==='branches'){const candidates=[d.output,...d.steps.map(s=>s.id).reverse()].filter((id,i,a)=>a.indexOf(id)===i&&type(id)==='paths');if(candidates.length<2)throw new Error('Merge needs two existing Toolpath outputs');step.sources=candidates.slice(0,2)}
   else if(spec.accepts){const accepts=type=>acceptsGeometryType(spec.accepts,type);const upstream=accepts(type(d.output))?d.output:[...d.steps].reverse().find(s=>accepts(type(s.id)))?.id||d.inputs.filter(input=>['curve','surface'].includes(input.type)).map(input=>`input:${input.id}`).find(id=>accepts(type(id)));if(!upstream)throw new Error('Connect compatible geometry first');step.source=upstream}
   else if(operation==='sections'){const curve=d.inputs.find(i=>i.type==='curve'&&i.curve.closed);if(!curve)throw new Error('Sections needs a closed curve input');step.params.curves=[curve.id]}
   for(const[key,type]of Object.entries(spec.params))if(type==='curves'&&!step.params[key].length){const closed=spec.curveSelection==='closed',candidates=d.inputs.filter(input=>input.type==='curve'&&(!closed||input.curve.closed));if(operation==='curve-boolean'&&key==='b'){const next=candidates.find(input=>input.id!==step.params.a?.[0]);if(next)step.params[key]=[next.id]}else if(candidates[0])step.params[key]=[candidates[0].id];else if((spec.minCurves?.[key]??1)>0)throw new Error(`${spec.label} needs a curve input`)}
   const terminal=d.steps.find(s=>s.id===d.output&&s.operation==='to-toolpath');if(terminal&&spec.accepts&&acceptsGeometryType(spec.accepts,'layers'))step.source=terminal.source;d.steps.push(step);if(terminal&&operationSpec(d,step).returns==='layers'){d.steps=d.steps.filter(s=>s!==terminal);terminal.source=step.id;d.steps.push(terminal)}else if(['curve','paths','layers'].includes(operationSpec(d,step).returns)||(step.source===d.output&&operationSpec(d,step).returns==='contours'))d.output=step.id;return validatePipeline(d);
+}
+export function detachComponent(raw,id){
+  const d=structuredClone(raw),step=d.steps.find(step=>step.id===id);if(!step)throw new Error('Unknown Component');
+  const spec=operationSpec(d,step);delete step.source;delete step.sources;if(spec.accepts==='branches')step.sources=[];
+  for(const[key,type]of Object.entries(spec.params)){if(type==='curves')step.params[key]=[];else if(type==='point'&&step.params[key]?.input)step.params[key]=structuredClone(resolveValue(d,step.params[key]));}
+  step.pendingInputs=true;return validatePipeline(d);
 }
 export function componentGroup(definition,step){return step.group||operationSpec(definition,step)?.group||'Custom'}
 export function removeOperation(definition,id){
@@ -209,21 +221,25 @@ export function removeOperation(definition,id){
 const curveClosed=points=>points.length>2&&Math.hypot(...points[0].map((value,axis)=>value-points.at(-1)[axis]))<1e-6;
 export function curveAttributes(curves){let minZ=Infinity,maxZ=-Infinity;for(const curve of curves)for(const point of curve.points){const z=point[2]||0;minZ=Math.min(minZ,z);maxZ=Math.max(maxZ,z)}return{count:curves.length,closed:curves.every(curve=>curveClosed(curve.points)),planar:curves.every(curve=>curve.points.every(point=>Math.abs((point[2]||0)-(curve.points[0][2]||0))<1e-6)),minZ,maxZ}}
 
-export function executePipeline(raw,{sectionPoints,validateSection,sliceBrep,runCode}){
-  if(raw?.recipes!==undefined){const definition=validatePipeline(raw),aliases={},result=executePipeline(expandRecipes(definition,{aliases}),{sectionPoints,validateSection,sliceBrep,runCode});for(const[key,value]of Object.entries(aliases))if(result.curveAttributes?.[value])result.curveAttributes[key]=result.curveAttributes[value];result.definition=definition;return result}
+export function executePipeline(raw,{sectionPoints,validateSection,sliceBrep,runCode,geometryOnly=false}){
+  if(raw?.recipes!==undefined){const definition=validatePipeline(raw),aliases={},result=executePipeline(expandRecipes(definition,{aliases}),{sectionPoints,validateSection,sliceBrep,runCode,geometryOnly});for(const[key,value]of Object.entries(aliases))if(result.curveAttributes?.[value])result.curveAttributes[key]=result.curveAttributes[value];result.definition=definition;return result}
   const definition=validatePipeline(raw),results=new Map(),inputs=new Map(definition.inputs.map(i=>[i.id,i])),resolve=value=>structuredClone(resolveValue(definition,value));
-  for(const input of definition.inputs.filter(input=>input.type==='curve'&&definition.steps.some(step=>step.source===`input:${input.id}`)||input.type==='curve'&&printOutputNodes(definition).some(o=>o.source===`input:${input.id}`))){const points=inputCurvePoints(input,180,sectionPoints);results.set(`input:${input.id}`,[{inputId:input.id,closed:input.curve.closed,points}])}
+  for(const input of definition.inputs.filter(input=>input.type==='curve')){const points=inputCurvePoints(input,180,sectionPoints);results.set(`input:${input.id}`,[{inputId:input.id,closed:input.curve.closed,points}])}
   for(const input of definition.inputs.filter(input=>input.type==='surface'))results.set(`input:${input.id}`,Object.assign([...input.meshes],{brep:input.brep}));
+  for(const input of definition.inputs.filter(input=>['point','number','list'].includes(input.type)))results.set(`input:${input.id}`,input.type==='point'?[structuredClone(input.value)]:structuredClone(input.value));
   const ensureBudget=paths=>{if(paths.reduce((n,p)=>n+p.points.length,0)>300000)throw new Error('Too many points; reduce samples, layers or copies')};
   const warnings=[];let intermediatePoints=0;
   for(const step of definition.steps){
+    const inputSpec=operationSpec(definition,step),curveRefs=curveInputReferences(step,inputSpec);
+    const unavailable=id=>!results.has(id.startsWith('step:')?id.slice(5):id.startsWith('input:')?id:inputs.has(id)?`input:${id}`:id);
+    if((inputSpec.accepts&&inputSpec.accepts!=='branches'&&(!step.source||!results.has(step.source)))||(inputSpec.accepts==='branches'&&(!step.sources||step.sources.length<2||step.sources.some(id=>!results.has(id))))||curveRefs.some(unavailable)||(step.pendingInputs&&Object.entries(inputSpec.params).some(([key,type])=>type==='curves'&&step.params[key].length<Math.max(1,inputSpec.minCurves?.[key]??1)))){warnings.push(`${step.label||inputSpec.label||step.id}: waiting for inputs`);continue}
     const p=Object.fromEntries(Object.entries(step.params).map(([key,value])=>[key,resolve(value)]));let result;
     let source=step.source?results.get(step.source):null;
     if(['twist-scale','radial-wave','shells','bottom','assign-tool','build-toolpath','to-toolpath'].includes(step.operation)&&source)source=source.map(path=>({...path,points:path.points.map(point=>point.length===2?[...point,0]:[...point])}));
     if(step.operation==='seam'&&source.some(curve=>!curveClosed(curve.points)))throw new Error('Curve seam requires closed Curve geometry');
     if(source&&['offset','twist-scale','radial-wave','shells','bottom'].includes(step.operation)){const attributes=curveAttributes(source);if(!attributes.closed||!attributes.planar)throw new Error(`${operationSpec(definition,step).label} requires closed planar Curve geometry`);}
-    const spec=operationSpec(definition,step),curveInputs=new Map(inputs);for(const[key,type]of Object.entries(spec.params))if(type==='curves')p[key]=p[key].flatMap(id=>{if(!id.startsWith('step:')&&inputs.has(id))return[id];return results.get(id.startsWith('step:')?id.slice(5):id).map((curve,index)=>{const key=`computed:${id}:${index}`,closed=curveClosed(curve.points);curveInputs.set(key,{type:'curve',curve:{type:'polyline',closed,points:closed?curve.points.slice(0,-1):curve.points}});return key})});for(const[key,bounds]of Object.entries(BASIC_COMPONENTS[step.operation]?.constraints||{})){limit(p[key],bounds.min??-10000,bounds.max??10000,key);if(bounds.integer&&!Number.isInteger(p[key]))throw new Error(`${key} must be an integer`)}
-    if(spec.code!==undefined){if(!runCode)throw new Error('Code Components require the isolated code runtime');result=runCode(spec.code,spec.accepts==='surface'?{type:'surface'}:structuredClone(source??[]),p,{brep:source?.brep,sliceBrep})}
+    const spec=operationSpec(definition,step),curveInputs=new Map(inputs);for(const[key,type]of Object.entries(spec.params))if(type==='curves'&&spec.code===undefined)p[key]=p[key].flatMap(id=>{if(!id.startsWith('step:')&&inputs.has(id))return[id];return results.get(id.startsWith('step:')?id.slice(5):id).map((curve,index)=>{const key=`computed:${id}:${index}`,closed=curveClosed(curve.points);curveInputs.set(key,{type:'curve',curve:{type:'polyline',closed,points:closed?curve.points.slice(0,-1):curve.points}});return key})});for(const[key,bounds]of Object.entries(BASIC_COMPONENTS[step.operation]?.constraints||{})){limit(p[key],bounds.min??-10000,bounds.max??10000,key);if(bounds.integer&&!Number.isInteger(p[key]))throw new Error(`${key} must be an integer`)}
+    if(spec.code!==undefined){for(const[key,type]of Object.entries(spec.params))if(type==='curves')p[key]=p[key].flatMap(id=>{const sourceId=id.startsWith('step:')?id.slice(5):id;const value=results.get(sourceId)||results.get(`input:${sourceId}`);if(value)return structuredClone(value);const input=inputs.get(sourceId);return [{points:inputCurvePoints(input,180,sectionPoints),closed:input.curve.closed}]});if(!runCode)throw new Error('Code Components require the isolated code runtime');result=runCode(spec.code,spec.accepts==='surface'?{type:'surface'}:structuredClone(source??[]),p,{brep:source?.brep,sliceBrep,returns:spec.returns})}
     else if(step.operation==='slice-step'){if(!source?.length)throw new Error('Choose a STEP file in STEP Input first');if(source.brep&&sliceBrep)result=sliceBrep(source.brep,p.layerHeight,p.tolerance??.02);else{warnings.push('Slice STEP uses approximate mesh sections');result=sliceMeshesToPaths(source,p.layerHeight,{preserveHeight:true})}}
     else if(step.operation==='tool-info'){if(!p.sequence.length||p.sequence.some(n=>!Number.isInteger(n)||n<0||n>4))throw new Error('Tool sequence needs IDs 0–4');if(![0,1].includes(p.mode))throw new Error('Choose layer or curve Tool assignment');result={sequence:[...p.sequence],mode:p.mode}}
     else if(step.operation==='build-toolpath'){
@@ -287,25 +303,29 @@ export function executePipeline(raw,{sectionPoints,validateSection,sliceBrep,run
         }
       }
     }
-    if(['curve','paths','contours','layers'].includes(spec.returns)){ensureBudget(result);intermediatePoints+=result.reduce((n,path)=>n+path.points.length,0);if(intermediatePoints>2000000)throw new Error('Processing graph is too large; reduce points or operations')}
+    if(['curve','paths','contours','layers'].includes(spec.returns)){if(!Array.isArray(result)||result.some(path=>!Array.isArray(path.points)||path.points.length<2||path.points.some(point=>!Array.isArray(point)||![2,3].includes(point.length)||!point.every(finite))))throw new Error('Curve output must contain finite 2D or 3D coordinates');ensureBudget(result);intermediatePoints+=result.reduce((n,path)=>n+path.points.length,0);if(intermediatePoints>2000000)throw new Error('Processing graph is too large; reduce points or operations')}
     else if(spec.returns==='points'){if(!Array.isArray(result)||result.length>300000||result.some(point=>!Array.isArray(point)||point.length!==3||!point.every(finite)))throw new Error('Point output exceeds the supported limit or contains invalid coordinates');intermediatePoints+=result.length;if(intermediatePoints>2000000)throw new Error('Processing graph is too large; reduce points or operations')}
     results.set(step.id,result);
   }
+  const geometryPreview=geometryOnly;
   const objects=printOutputNodes(definition).map(output=>{
+  if(output.source===null||!results.has(output.source)){warnings.push(`${output.name}: waiting for geometry`);return {id:output.id,name:output.name,paths:[]}}
+  if(output.toolSource&&!results.has(output.toolSource)){warnings.push(`${output.name}: waiting for Tool input`);return {id:output.id,name:output.name,paths:[]}}
   const finalGeometry=structuredClone(results.get(output.source)),toolInfo=output.toolSource?results.get(output.toolSource):null;
   if(toolInfo){const zs=[...new Set(finalGeometry.map(path=>path.points[0][2]))].sort((a,b)=>a-b),layers=new Map(zs.map((z,index)=>[z,index]));finalGeometry.forEach((path,index)=>{path.tool=toolInfo.sequence[(toolInfo.mode===0?layers.get(path.points[0][2]):index)%toolInfo.sequence.length]})}
+  if(geometryPreview)return {id:output.id,name:output.name,paths:finalGeometry.map(path=>({...path,tool:path.tool??0,points:path.points.map(point=>point.length===2?[...point,0]:point)}))};
   for(const path of finalGeometry){if(path.points.some(point=>point.length!==3))throw new Error('Print output requires Curve geometry with Z coordinates; use Stack or move it in Z');path.tool??=0}
   let paths=finalGeometry.sort((a,b)=>a.points[0][2]-b.points[0][2]).map((path,order)=>({...path,order,points:path.points.map(point=>point.map(v=>Number(v.toFixed(6))))}));
-  paths=addPrintIntro(paths,output);
+  const bodyPaths=paths;paths=addPrintIntro(paths,output);
   for(const path of paths){const z=path.points[0][2];if(z<0||path.points.some(point=>point.some(v=>!finite(v)||Math.abs(v)>10000)||Math.abs(point[2]-z)>1e-6))throw new Error('Output must be finite and planar with nonnegative Z');}
-  validateOutput(paths);
+  try{validateOutput(paths)}catch(error){if(paths.length>bodyPaths.length){validateOutput(bodyPaths);throw new Error(`Intro line overlaps the object at Z ${paths[0].points[0][2]} mm. Change Direction, Gap or Length in Print output.`)}throw error}
   return {id:output.id,name:output.name,paths};
   });
   if(objects.reduce((n,object)=>n+object.paths.reduce((total,path)=>total+path.points.length,0),0)>1000000)throw new Error('Print outputs exceed 1,000,000 points');
   const paths=objects[0].paths;
   const previewPoints=definition.previewOutputId&&operationSpec(definition,definition.steps.find(step=>step.id===definition.previewOutputId))?.returns==='points'?results.get(definition.previewOutputId):[];
   const attributes={};for(const[id,value]of results)if(Array.isArray(value)&&value.length&&value[0]?.points)attributes[id]=curveAttributes(value);
-  return{definition,paths,objects,curveAttributes:attributes,previewPoints:previewPoints||[],section:[],warnings};
+  return{definition,paths,objects,curveAttributes:attributes,previewPoints:previewPoints||[],previewValue:definition.previewOutputId?results.get(definition.previewOutputId):undefined,section:[],warnings};
 }
 // Spatial bins test self-intersections and intersections between contours at a Z.
 export function validateOutput(paths){
@@ -339,7 +359,7 @@ export function stageDefinition(raw,stepId){
   if(index<0)throw new Error('Unknown processing stage');
   if(operationSpec(definition,definition.steps[index]).returns==='tool-info'){definition.toolOutput=stepId;return definition}
   const toolStep=definition.toolOutput?structuredClone(definition.steps.find(s=>s.id===definition.toolOutput)):null;
-  if(operationSpec(definition,definition.steps[index]).returns==='points'){definition.previewOutputId=stepId;return definition}
+  if(['points','number','list','boolean'].includes(operationSpec(definition,definition.steps[index]).returns)){definition.previewOutputId=stepId;return definition}
   definition.steps=definition.steps.slice(0,index+1);if(toolStep&&!definition.steps.some(s=>s.id===toolStep.id))definition.steps.push(toolStep);
   const step=definition.steps.find(s=>s.id===stepId);
   if(operationSpec(definition,step).returns==='contours'){
@@ -401,11 +421,11 @@ export function validateStepEdit(before,after,stepId){
 export function validateEditorState(editor){
   if(editor===undefined)return;
   if(!editor||typeof editor!=='object'||!editor.nodes||typeof editor.nodes!=='object'||Array.isArray(editor.nodes)||Object.keys(editor.nodes).length>512)throw new Error('Invalid node layout');
-  for(const position of Object.values(editor.nodes))if(!position||![position.x,position.y].every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=100000))throw new Error('Invalid node position');
-  if(editor.view&&(![editor.view.x,editor.view.y,editor.view.zoom].every(v=>typeof v==='number'&&Number.isFinite(v))||Math.abs(editor.view.x)>100000||Math.abs(editor.view.y)>100000||editor.view.zoom<.15||editor.view.zoom>2))throw new Error('Invalid graph view');
+  for(const position of Object.values(editor.nodes))if(!position||![position.x,position.y].every(v=>typeof v==='number'&&Number.isFinite(v)))throw new Error('Invalid node position');
+  if(editor.view&&(![editor.view.x,editor.view.y,editor.view.zoom].every(v=>typeof v==='number'&&Number.isFinite(v))||editor.view.zoom<.15||editor.view.zoom>2))throw new Error('Invalid graph view');
 }
 
-export const CODE_COMPONENT_FORMAT={operation:'recipe:<id>',definition:{id:'custom-wave',version:1,label:'Custom wave',accepts:'curve',returns:'contours',params:{amplitude:'number'},defaults:{amplitude:2},code:'return input.map(curve => ({...curve, points: curve.points.map(([x,y,z=0]) => [x,y + params.amplitude * Math.sin(x / 10),z])}));'},api:['JavaScript function body with input, params, cad; return an array of {points:[[x,y,z],...],tool?:0..4}', 'input is an array of curves, or {type:"surface"} for a surface input; accepts:null creates a standalone component with input:[] and no source','cad.section(layerHeight,tolerance=0.02) returns Curve layers from the connected editable B-rep; synchronous API; only available for surface input', 'No fetch, DOM, files, imports, shell, timers or desktop IPC. Pure math and arrays; no async code.', '64 MB runtime memory, 750 ms per execution, maximum 300000 points; finite coordinates within 10000 mm', 'Embed code Components in definition.recipes; no internal steps; increment version on every algorithm edit; preserve old versions and unrelated instances']};
+export const CODE_COMPONENT_FORMAT={operation:'recipe:<id>',definition:{id:'custom-wave',version:1,label:'Custom wave',accepts:'curve',returns:'contours',params:{amplitude:'number'},defaults:{amplitude:2},code:'return input.map(curve => ({...curve, points: curve.points.map(([x,y,z=0]) => [x,y + params.amplitude * Math.sin(x / 10),z])}));'},api:['JavaScript function body with input, params, cad; return an array of {points:[[x,y,z],...],tool?:0..4}', 'returns supports curve (array of {points}), points (array of [x,y,z]), number, list (finite numbers), boolean and tool-info ({sequence:[0..4],mode:0|1}). Match the declared output type. params may include curves: use arrays of input IDs or step:<id> references; the runtime supplies actual Curve collections, enabling independent inputs such as curvesA and curvesB. Point results can feed components accepting points.','input is an array of curves, or {type:"surface"} for a surface input; accepts:null creates a standalone component with input:[] and no source','cad.section(layerHeight,tolerance=0.02) returns Curve layers from the connected editable B-rep; synchronous API; only available for surface input', 'No fetch, DOM, files, imports, shell, timers or desktop IPC. Pure math and arrays; no async code.', '64 MB runtime memory, 750 ms per execution, maximum 300000 points; finite coordinates. The Print output applies printer-specific geometric restrictions separately', 'Embed code Components in definition.recipes; no internal steps; increment version on every algorithm edit; preserve old versions and unrelated instances']};
 
 export function reviseComponentCode(raw,stepId,code){
   const d=validatePipeline(raw),step=d.steps.find(s=>s.id===stepId),spec=operationSpec(d,step);

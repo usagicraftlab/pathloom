@@ -466,3 +466,86 @@ printOutputs contains additional {id,name,source,toolSource?,intro?} objects.
 Generation returns objects and retains paths for primary-output compatibility.
 Projects store a shared generator graph once and use generatorRef for siblings,
 with generatorGroup and generatorOutputId retaining stable object identity.
+
+Slice STEP samples the center of each layer at modelMinZ + (n + 0.5) × layerHeight.
+The resulting XY contour is printed at modelMinZ + (n + 1) × layerHeight,
+independently of the sampling plane. Thus 0.6 mm layers sample at 0.3, 0.9,
+1.5 mm and print at 0.6, 1.2, 1.8 mm. Mesh fallback uses the same rule.
+
+When regeneration fails, cached print geometry is hidden until a valid result
+is generated. Cached results are also blocked from export while regenerating.
+Intro-line collisions report the Print output Direction/Gap/Length settings
+explicitly instead of appearing as a general body-intersection failure.
+
+The Processing graph allows negative node coordinates and unrestricted panning.
+Dragging and keyboard nudges share this behavior; saved layouts retain their
+positions, including Print output above its source. Auto-arrange is explicit.
+Connection paths remain visible across the origin; Fit uses the actual bounds.
+
+### PrusaLink from Desktop
+
+Settings → Printer Connection stores the printer address, authentication mode,
+username and storage in the app configuration directory. The initial address is
+http://192.168.11.5 and storage is usb. API keys and Digest passwords are stored
+in the system credential store (macOS Keychain), never in project JSON or browser
+storage. An existing local-config.json is imported on first access. Leave the
+secret field blank to retain a credential for the same address/auth/user; a new
+address requires its own credential. Test connection can use unsaved fields.
+
+Generate G-code and Send to Printer are separate, adjacent buttons. Send to Printer
+opens a filename dialog with two adjacent actions: Transfer only and Transfer and
+print. Clicking either action starts that command immediately; pressing Enter in
+the filename field defaults to Transfer only.
+G-code is generated on confirmation using the same exporter as local file saves.
+The Desktop Rust runtime checks printer status and storage, sends PUT to the v1
+file endpoint with Overwrite: ?0, and emits printer-upload-progress events. A
+100% transfer bar means bytes were submitted; success waits for the printer's
+HTTP response. Interrupted PUTs are not automatically retried. Check the printer
+before retrying an uncertain transfer. Read-only/unavailable storage, rejected
+authentication, filename conflicts and printer errors are shown in the dialog.
+Closing is allowed before transfer and after an error, but disabled during PUT.
+
+The connection UI uses printer_connection_get/save/test and
+printer_upload_gcode Tauri commands. Read/save replies contain only connection
+metadata and hasCredentials. HTTP redirects are disabled, LAN requests bypass
+HTTP proxies, and errors omit credentials and raw printer responses. UI tests use
+mock IPC; Rust tests use a local HTTP server and an in-memory credential vault.
+Actual upload/print operation requires a reachable printer and valid credentials.
+
+### Typed code Components
+
+Code Components may return Curve collections, Point collections (`returns: "points"`,
+value `[[x,y,z], ...]`), a finite `number`, a numeric `list`, a `boolean`, or
+`tool-info` (`{sequence: [0,1], mode: 0}`). The output type is checked by the isolated
+runtime and preserved through versioning and library saves. A primary input can
+accept these types; Point input nodes provide a one-element Point collection.
+
+For independent Curve inputs (for example, closest points between curves A and B),
+use named `curves` parameters with empty-array defaults. Instance values contain
+raw input IDs or `step:<id>` references. The runtime resolves these to actual Curve
+collections in `params`, and the node editor exposes each as a wired Curve port.
+Existing native multi-Curve operations retain their own input semantics.
+
+Construction Curve coordinates need only be finite; they can be nonplanar,
+negative in Z, or self-intersecting. Stage previews and AI proposal checks do not
+apply print constraints. Print output still validates printable paths. Keep its
+connection unchanged when adding Point or numeric construction Components.
+Scalar/list stage previews show their values in the processing status.
+
+Memory, execution-time, payload and point-count budgets remain in place. Custom
+code still cannot access the network, filesystem or application APIs. Surface
+creation/editing requires native CAD capabilities; arbitrary code cannot fabricate
+an editable B-rep from a JavaScript object.
+
+### Disconnected Components
+
+New Components added through the menu, Library, or AI are placed without geometry
+connections and preserve Print output. Nodes with missing required inputs use
+`pendingInputs: true` and wait until the user connects their ports. Waiting nodes
+and downstream branches produce no stale geometry; the rest of the graph remains
+usable. Disconnected Print output stores a null geometry source and exports no paths.
+These states persist in project files and support undo/redo.
+
+Select a wire and press Delete/Backspace, or double-click the wire, to disconnect
+it. Option-click an input port to remove all its incoming wires. Required inputs,
+Merge inputs and Print output geometry can all be disconnected and reconnected.

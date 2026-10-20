@@ -1,5 +1,5 @@
 import {validateDefinition,DEFAULT_DEFINITION} from './cad-kernel.js';
-import {acceptsGeometryType,recipeFingerprint,componentGroup,operationSpec,OPERATIONS,inputReferences,curveInputReferences,uniqueId,validatePipeline,migrateDefinition} from './cad-pipeline.js';
+import {acceptsGeometryType,recipeFingerprint,componentGroup,operationSpec,OPERATIONS,inputReferences,curveInputReferences,uniqueId,detachComponent,validatePipeline,migrateDefinition} from './cad-pipeline.js';
 export function normalizeLibrary(raw){
   if(!Array.isArray(raw)||raw.length>500)throw new Error('Invalid library');
   const ids=new Set();
@@ -41,9 +41,10 @@ export function saveLibraryEntry(library,{kind,definition,stepId,name,descriptio
   }
   return entry;
 }
-export function applyLibraryOperation(definition,entry,{replaceTerminal=true}={}){
+export function applyLibraryOperation(definition,entry,{replaceTerminal=true,detached=false}={}){
   if(definition.version!==2||entry.kind!=='operation')throw new Error('Choose a saved Component');
   const d=structuredClone(definition);if(entry.recipes){d.recipes??=[];for(const recipe of entry.recipes){const old=d.recipes.find(r=>r.id===recipe.id&&r.version===recipe.version);if(old&&recipeFingerprint(old)!==recipeFingerprint(recipe))throw new Error('Conflicting recipe version; save a new version');if(!old)d.recipes.push(structuredClone(recipe))}}
+  if(detached){const step=structuredClone(entry.step);step.id=uniqueId(step.operation.replace(/[^A-Za-z0-9_-]/g,'-'),d.steps.map(s=>s.id));const spec=operationSpec(d,step);for(const[key,value]of Object.entries(step.params))if(value?.input){const saved=entry.inputs.find(input=>input.id===value.input);step.params[key]=structuredClone(saved?.value??spec.defaults[key]);}step.label=entry.name;step.group=entry.group||spec.group||'Custom';step.origin={libraryId:entry.id,revision:entry.revision};d.steps.push(step);return detachComponent(d,step.id)}
   const step=structuredClone(entry.step),mapping=new Map();const current=d.steps.find(s=>s.id===d.output);if(replaceTerminal&&entry.recipes&&current?.operation===step.operation&&!d.steps.some(s=>s.source===current.id||s.sources?.includes(current.id))){d.steps=d.steps.filter(s=>s.id!==current.id);d.output=current.source}
   const entrySpec=operationSpec({recipes:entry.recipes},step),curveRefs=curveInputReferences(step,entrySpec);if(entry.curveSources!==undefined&&(!Array.isArray(entry.curveSources)||entry.curveSources.length>32||entry.curveSources.some(ref=>typeof ref!=='string'||!ref.startsWith('step:'))))throw new Error('Invalid saved Curve bindings');if([...inputReferences(step),...curveRefs].some(id=>!entry.inputs.some(input=>input.id===id)&&!entry.curveSources?.includes(id)))throw new Error('Missing saved input snapshot');
   for(const input of entry.inputs){const copy=structuredClone(input),id=uniqueId(input.id,d.inputs.map(i=>i.id));mapping.set(input.id,id);copy.id=id;if(copy.type==='number')copy.key=id;d.inputs.push(copy)}

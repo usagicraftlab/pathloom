@@ -1,3 +1,4 @@
+import {advancePreview,curveDirection} from './preview-helpers.js';
 import {initCadGizmo} from './cad-gizmo.js';
 import {moveStepFaces} from './step-import.js';
 let cadHiddenGroups=[],cadProposalGroup=null;
@@ -214,6 +215,20 @@ function createInstanceGroup(instanceId,data){
 }
 function buildInstances(){schedulePrintEstimate();requestAnimationFrame(()=>window.PathloomCad?.refreshInputs?.());updateLayerRange();$('#emptyState').hidden=sourceState.size>0||importedShapes.length>0;if(!toolpathGroup)return;toolpathGroup.traverse(child=>{if(child.isMesh||child.isLine){child.geometry.dispose();child.material.dispose()}});toolpathGroup.clear();renderedInstances.clear();for(const id of previewGeometryCache.keys())if(!sourceState.has(id))previewGeometryCache.delete(id);for(const[id,data]of instanceState){if(!sourceState.has(data.source))continue;const group=createInstanceGroup(id,data);toolpathGroup.add(group);renderedInstances.set(id,group)}refreshVisibility()}
 function previewInstances(){return [...instanceState.entries()].filter(([,data])=>sourceState.has(data.source)).sort((a,b)=>a[1].order-b[1].order)}
+let curveEndpointGroup=null,endpointTexture=null;
+function updateCurveEndpoints(){
+  if(!scene||!THREE)return;
+  if(curveEndpointGroup){scene.remove(curveEndpointGroup);curveEndpointGroup.traverse(node=>{node.geometry?.dispose();node.material?.dispose()});curveEndpointGroup=null}
+  if(!$('#showCurveEndpoints').checked)return;
+  const starts=[],ends=[],arrows=[],layer=Number($('#layerSlider').value),all=previewInstance==='ALL';
+  for(const[id,data]of instanceState){if(!all&&id!==previewInstance)continue;const source=sourceState.get(data.source);if(!source||source.generationError)continue;let remaining=Number($('#pathSlider').value);
+    for(const path of source.paths){if(!all&&path.layer!==layer)continue;const count=all?path.points.length:Math.max(0,Math.min(remaining,path.points.length));if(!all)remaining-=count;if(!count)continue;const points=transformedPoints(path,data);starts.push(...points[0]);if(count===points.length)ends.push(...points.at(-1));if(count<2)continue;const vector=curveDirection(points);if(!vector)continue;const origin=new THREE.Vector3(...vector.start),direction=new THREE.Vector3(...vector.direction),tip=origin.clone().addScaledVector(direction,vector.length),side=new THREE.Vector3().crossVectors(direction,Math.abs(direction.z)<.9?new THREE.Vector3(0,0,1):new THREE.Vector3(1,0,0)).normalize(),head=Math.min(1.5,vector.length*.35),base=tip.clone().addScaledVector(direction,-head);arrows.push(...origin,...tip,...tip,...base.clone().addScaledVector(side,head*.5),...tip,...base.clone().addScaledVector(side,-head*.5));}
+  }
+  if(!endpointTexture){const canvas=document.createElement('canvas');canvas.width=canvas.height=32;const ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.beginPath();ctx.arc(16,16,15,0,Math.PI*2);ctx.fill();endpointTexture=new THREE.CanvasTexture(canvas)}
+  curveEndpointGroup=new THREE.Group();curveEndpointGroup.name='Curve endpoints';
+  for(const[positions,color,size,name]of [[starts,0x237bff,10,'Curve starts'],[ends,0xf04444,6,'Curve ends']]){const points=new THREE.Points(new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute(positions,3)),new THREE.PointsMaterial({color,size,toneMapped:false,map:endpointTexture,transparent:true,alphaTest:.1,sizeAttenuation:false,depthTest:false,depthWrite:false}));points.name=name;points.renderOrder=20;curveEndpointGroup.add(points)}
+  const line=new THREE.LineSegments(new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute(arrows,3)),new THREE.LineBasicMaterial({color:0x237bff,toneMapped:false,depthTest:false,depthWrite:false}));line.name='Curve start directions';line.renderOrder=19;curveEndpointGroup.add(line);scene.add(curveEndpointGroup);
+}
 function updatePrintOrderMarkers(){
   const layoutIsland=$('#layoutIsland'),active=layoutIsland&&!layoutIsland.classList.contains('collapsed')&&!layoutIsland.classList.contains('disabled')&&$('#showPrintOrder').checked;const host=$('#printOrderMarkers');host.innerHTML='';if(!active||!THREE||!camera)return;
   for(const[id,data]of previewInstances()){
@@ -250,8 +265,9 @@ function showLayerPauseMenu(event){
 document.querySelector('.layer-control').addEventListener('contextmenu',showLayerPauseMenu);
 document.addEventListener('pointerdown',event=>{if(!layerPauseMenu.contains(event.target))layerPauseMenu.hidden=true});document.addEventListener('keydown',event=>{if(event.key==='Escape')layerPauseMenu.hidden=true});new MutationObserver(()=>{layerPauseMenu.hidden=true}).observe(document.body,{attributes:true,attributeFilter:['data-workspace-mode']});
 function stepPreviewLayer(direction){const slider=$('#layerSlider');if(slider.disabled)return;const next=Math.max(Number(slider.min),Math.min(Number(slider.max),Number(slider.value)+direction));if(next===Number(slider.value))return;slider.value=next;$('#layerValue').textContent=`${next} / ${slider.max}`;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false;refreshVisibility()}
-function stepLayerPoint(direction){const slider=$('#pathSlider');if(slider.disabled)return;slider.value=Math.max(0,Math.min(Number(slider.max),Number(slider.value)+direction));inspectingLayerPaths=true;refreshVisibility()}
+function stepLayerPoint(direction){const slider=$('#pathSlider');if(slider.disabled||window.PathloomCad?.isProcessing?.())return;const source=sourceState.get(instanceState.get(previewInstance)?.source);if(!source)return;const counts=Array.from({length:source.maxLayer},()=>0);for(const path of source.paths)counts[path.layer-1]+=path.points.length;const next=advancePreview(Number($('#layerSlider').value),Number(slider.value),direction,counts);$('#layerSlider').value=next.layer;slider.max=counts[next.layer-1];slider.value=next.point;$('#layerValue').textContent=`${next.layer} / ${$('#layerSlider').max}`;inspectingLayerPaths=true;refreshVisibility()}
 function applyCadPreviewVisibility(){
+  for(const[id,group]of renderedInstances){const source=sourceState.get(instanceState.get(id)?.source);if(source?.generationError&&source.generationError!=='Recalculating…')group.visible=false}
   for(const group of cadHiddenGroups)group.visible=false;
   const cad=window.PathloomCad?.snapshot?.();
   if(cadProposalGroup&&cad?.sourceId)for(const[id,group]of renderedInstances)if(instanceState.get(id)?.source===cad.sourceId){group.visible=false;if(!cadHiddenGroups.includes(group))cadHiddenGroups.push(group)}
@@ -260,7 +276,7 @@ function refreshVisibility(){
   renderLayerPauses();
   const processing=window.PathloomCad?.isProcessing?.();if(processing){$('#layerSlider').value=$('#layerSlider').max;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false;$('#layerValue').textContent=`${$('#layerSlider').max} / ${$('#layerSlider').max}`}
   previewDirty=true;
-  if(previewInstance==='ALL'){if(previewPointMarker)previewPointMarker.visible=false;$('#pathValue').textContent='ALL';for(const[id,group]of renderedInstances){group.visible=true;const source=sourceState.get(instanceState.get(id)?.source);for(const line of group.children){line.visible=true;line.geometry.setDrawRange(0,Infinity);line.material.color.set(toolPreviewColor(source,line.userData.toolId));line.material.uniforms.lineOpacity.value=1}}applyCadPreviewVisibility();updatePrintOrderMarkers();return}
+  if(previewInstance==='ALL'){if(previewPointMarker)previewPointMarker.visible=false;$('#pathValue').textContent='ALL';for(const[id,group]of renderedInstances){group.visible=true;const source=sourceState.get(instanceState.get(id)?.source);for(const line of group.children){line.visible=true;line.geometry.setDrawRange(0,Infinity);line.material.color.set(toolPreviewColor(source,line.userData.toolId));line.material.uniforms.lineOpacity.value=1}}applyCadPreviewVisibility();updatePrintOrderMarkers();updateCurveEndpoints();return}
   const layer=Number($('#layerSlider').value);
   const data=instanceState.get(previewInstance),source=sourceState.get(data?.source);
   const eligible=source?source.paths.map((path,index)=>({path,index})).filter(item=>item.path.layer===layer):[];
@@ -268,7 +284,7 @@ function refreshVisibility(){
   if(processing||Number(slider.max)!==totalPoints){slider.max=totalPoints;slider.value=totalPoints}
   const complete=Math.min(totalPoints,Math.floor(Number(slider.value))),visiblePoints=new Map();let remaining=complete,currentPoint=null;
   for(const item of eligible){const count=Math.min(remaining,item.path.points.length);visiblePoints.set(item.index,count);remaining-=count;if(count)currentPoint=item.path.points[count-1]}
-  $('#pathValue').textContent=`${complete} / ${totalPoints}`;$('#previousPath').disabled=!source||complete===0;$('#nextPath').disabled=!source||complete===totalPoints;
+  $('#pathValue').textContent=`${complete} / ${totalPoints}`;$('#previousPath').disabled=!source||complete===0&&layer<=1;$('#nextPath').disabled=!source||complete===totalPoints&&layer>=source.maxLayer;
   if(previewPointMarker){previewPointMarker.visible=inspectingLayerPaths&&!!currentPoint;if(previewPointMarker.visible){const point=transformedPoints({points:[currentPoint]},data)[0],attribute=previewPointMarker.geometry.getAttribute('position');attribute.setXYZ(0,...point);attribute.needsUpdate=true;previewPointMarker.geometry.computeBoundingSphere()}}
   for(const[id,group]of renderedInstances){
     group.visible=true;const selected=id===previewInstance,groupSource=sourceState.get(instanceState.get(id)?.source);
@@ -289,7 +305,7 @@ function refreshVisibility(){
     }
   }
   updatePrintOrderMarkers();
-applyCadPreviewVisibility();
+applyCadPreviewVisibility();updateCurveEndpoints();
 }
 function objectToolSlots(tools){const numeric=[...tools.keys()].filter(id=>/^\d+$/.test(id)).map(Number),max=Math.max(-1,...numeric);const slots=[];for(let id=0;id<=max;id++)slots.push([String(id),tools.get(String(id))]);for(const[id,tool]of tools)if(!/^\d+$/.test(id))slots.push([id,tool]);return slots}
 let pendingSourceRemoval=null;
@@ -465,10 +481,10 @@ M73 Q100 S0`;
 function profileGcodeDefaults(name){return name==='Prusa MK4S'?{startGcode:referenceStartGcode,toolChangeGcode:referenceToolChangeGcode,endGcode:referenceEndGcode}:{startGcode:defaultStartGcode,toolChangeGcode:defaultToolChangeGcode,endGcode:defaultEndGcode}}
 function normalizeStoredGcode(code){return String(code||'').replace(/^M555 X63 Y42 W123 H125$/m,'M555 X{print_min_x} Y{print_min_y} W{print_area_width} H{print_area_height}').replace(/^M106 S125(?:\s*;.*)?$/m,'M106 S{fan_speed_255} ; set fan to {fan_speed_percent}%')}
 function readPrinterProfiles(){try{const value=JSON.parse(localStorage.getItem(PROFILE_KEY)||'{}');return value&&typeof value==='object'&&!Array.isArray(value)?value:{}}catch{return{}}}
-function selectSettingsTab(tab){const printer=tab==='printer';$('#printerSettings').hidden=!printer;$('#filamentSettings').hidden=printer;$('#printerSettingsTab').setAttribute('aria-selected',String(printer));$('#filamentSettingsTab').setAttribute('aria-selected',String(!printer))}
+function selectSettingsTab(tab){for(const key of ['printer','connection','filament']){const name=key==='connection'?'connection':key;$('#'+name+'Settings').hidden=key!==tab;$('#'+name+'SettingsTab').setAttribute('aria-selected',String(key===tab))}if(tab==='connection')document.dispatchEvent(new Event('pathloom:open-printer-settings-tab'))}
 function loadPrinterProfile(){const name=$('#profilePrinter').value,saved=readPrinterProfiles()[name],defaults=profileGcodeDefaults(name);profileFields.forEach(([field,basic],i)=>{$(`#${field}`).value=Number(saved?.[basic])>0?Number(saved[basic]):profileDefaults[i]});$('#profileStartGcode').value=normalizeStoredGcode(typeof saved?.startGcode==='string'?saved.startGcode:defaults.startGcode);$('#profileToolChangeGcode').value=normalizeStoredGcode(typeof saved?.toolChangeGcode==='string'?saved.toolChangeGcode:defaults.toolChangeGcode);$('#profileEndGcode').value=normalizeStoredGcode(typeof saved?.endGcode==='string'?saved.endGcode:defaults.endGcode)}
 function applyPrinterProfile(name){const saved=readPrinterProfiles()[name],defaults=profileGcodeDefaults(name);profileFields.forEach(([,basic],i)=>{const value=Number(saved?.[basic])>0?Number(saved[basic]):profileDefaults[i];if(basic==='filamentDiameter')configuredFilamentDiameter=value;else if(basic in configuredBuildVolume)configuredBuildVolume[basic]=value;else $(`#${basic}`).value=value});configuredStartGcode=normalizeStoredGcode(typeof saved?.startGcode==='string'?saved.startGcode:defaults.startGcode);configuredToolChangeGcode=normalizeStoredGcode(typeof saved?.toolChangeGcode==='string'?saved.toolChangeGcode:defaults.toolChangeGcode);configuredEndGcode=normalizeStoredGcode(typeof saved?.endGcode==='string'?saved.endGcode:defaults.endGcode);syncToolSpeedPlaceholders();updateBuildVolumePreview();buildInstances()}
-function openSettings(tab='printer'){settingsReturnFocus=document.activeElement;$('#profilePrinter').innerHTML=$('#printerSelect').innerHTML;$('#profilePrinter').value=$('#printerSelect').value;loadPrinterProfile();renderFilamentLibrary();selectSettingsTab(tab);$('#libraryModal').hidden=false;$(tab==='printer'?'#printerSettingsTab':'#filamentSettingsTab').focus()}
+function openSettings(tab='printer'){settingsReturnFocus=document.activeElement;$('#profilePrinter').innerHTML=$('#printerSelect').innerHTML;$('#profilePrinter').value=$('#printerSelect').value;loadPrinterProfile();renderFilamentLibrary();selectSettingsTab(tab);$('#libraryModal').hidden=false;$('#'+tab+'SettingsTab').focus()}
 function openLibrary(){openSettings('filament')}
 function closeLibrary(){$('#libraryModal').hidden=true;resetFilamentForm();settingsReturnFocus?.focus()}
 function renderFilamentLibrary(){const host=$('#filamentList');host.innerHTML='';if(!filamentLibrary.length){host.innerHTML='<div class="library-empty">No saved filaments yet.</div>';return}filamentLibrary.forEach(f=>{const row=document.createElement('div');row.className='filament-item';row.innerHTML=`<button class="filament-pick" title="Use this color"><i style="--filament-color:${f.color}"></i><span><strong>${escapeHtml(f.name)}</strong><small>${escapeHtml([f.brand,f.material,`${f.diameter} mm`].filter(Boolean).join(' · '))}</small></span></button><details class="filament-menu"><summary aria-label="Actions for ${escapeHtml(f.name)}">…</summary><div class="filament-item-actions"><button class="edit-filament">Edit</button><button class="delete-filament">Delete</button></div></details>`;row.querySelector('.filament-pick').addEventListener('click',()=>{if(activeTool){applyPaletteEntry({name:f.name,hex:f.color,filamentId:f.id});$('#libraryModal').hidden=true;$('#colorPopover').hidden=false}else showToast('Open a tool color first to apply this filament')});row.querySelector('.edit-filament').addEventListener('click',()=>editFilament(f.id));row.querySelector('.delete-filament').addEventListener('click',()=>deleteFilament(f.id));row.querySelector('.filament-menu').addEventListener('toggle',e=>{if(!e.currentTarget.open)return;host.querySelectorAll('.filament-menu[open]').forEach(menu=>{if(menu!==e.currentTarget)menu.open=false})});host.appendChild(row)})}
@@ -556,7 +572,7 @@ function generateGcode(){
   if(!instanceState.size)throw new Error('Add a .toolpath file first');
   assertPrintReferencesCurrent();
   for(const source of sourceState.values())if(source.generator&&source.generationError)throw new Error(`${source.label}: ${source.generationError}`);
-  for(const source of sourceState.values())if(source.generator){const layerHeight=pipelineLayerHeight(source.generator,source.generatorOutputId);if(layerHeight===null||Math.abs(layerHeight-Number($('#printHeight').value))>1e-6)throw new Error(`Set Print height to ${layerHeight} mm to match ${source.label}`)}
+  for(const source of sourceState.values())if(source.generator){const layerHeight=pipelineLayerHeight(source.generator,source.generatorOutputId);if(Number.isFinite(layerHeight)&&layerHeight>0&&Math.abs(layerHeight-Number($('#printHeight').value))>1e-6)throw new Error(`Set Print height to ${layerHeight} mm to match ${source.label}`)}
   const width=Number($('#printWidth').value),height=Number($('#printHeight').value),filamentD=configuredFilamentDiameter,travel=Number($('#travelSpeed').value),nozzleTemperature=Number($('#nozzleTemperature').value),bedTemperature=Number($('#bedTemperature').value),fanSpeed=Number($('#fanSpeed').value);
   if(![width,height,filamentD,travel].every(value=>Number.isFinite(value)&&value>0)||![nozzleTemperature,bedTemperature].every(value=>Number.isFinite(value)&&value>=0)||!Number.isFinite(fanSpeed)||fanSpeed<0||fanSpeed>100)throw new Error('Check Basic Settings');
   const orderedInstances=[...instanceState.entries()].sort((a,b)=>a[1].order-b[1].order),filamentArea=Math.PI*Math.pow(filamentD/2,2),ePerMmBase=width*height/filamentArea;
@@ -639,11 +655,23 @@ $('#layerSlider').addEventListener('input',e=>{$('#layerValue').textContent=`${e
 ['gridColumns','gridRows','gridSpacingX','gridSpacingY','gridRowOffset','gridRotation'].forEach(id=>$(`#${id}`).addEventListener('input',()=>autoArrange(true)));$('#gridPattern').addEventListener('change',()=>autoArrange(true));
 $('#autoArrangeEnabled').addEventListener('change',e=>{$('#arrangeGridSettings').disabled=!e.target.checked;if(e.target.checked)autoArrange(true)});
 $('#showPrintOrder').addEventListener('change',updatePrintOrderMarkers);
-function syncOutputAction(){const send=$('#outputAction').value==='send',label=send?'Send to Printer':'Generate G-code';$('#executeOutputBtn').textContent=label;$('#executeOutputBtn').title=send?'Send generated G-code to the selected printer':'Download generated G-code';$('#outputAction').title=label}
-$('#outputAction').addEventListener('change',syncOutputAction);$('#executeOutputBtn').addEventListener('click',()=>{if($('#outputAction').value==='send'){try{const gcode=generateGcode();document.dispatchEvent(new CustomEvent('pathloom:send-to-printer',{detail:{gcode,filename:'pathloom-output.gcode'}}))}catch(err){showToast(err.message,'error')}return}try{downloadText('pathloom-output.gcode',generateGcode());showToast('G-code generated')}catch(err){showToast(err.message,'error')}});syncOutputAction();
+$('#showCurveEndpoints').addEventListener('change',()=>{updateCurveEndpoints();previewDirty=true});
+async function executeOutput(send){
+  const buttons=[$('#executeOutputBtn'),$('#sendToPrinterBtn')];if(buttons.some(button=>button.disabled))return;for(const button of buttons)button.disabled=true;
+  try{
+    const project=$('#projectName').textContent.trim(),base=project&&project!=='Untitled'?project.replace(/\.pathloom$/i,''):'pathloom-output',filename=base.replace(/[\x00-\x1f<>:"/\\|?*]/g,'-').slice(0,120)+'.gcode';
+    if(send){if(!window.PathloomPrinter)throw new Error('Printer sending requires Pathloom Desktop.');await window.PathloomPrinter.send({filename,generate:generateGcode});return}
+    const gcode=generateGcode();
+    if(window.__TAURI__?.core?.invoke){const path=await window.__TAURI__.core.invoke('save_gcode_file',{content:gcode,filename});if(path)showToast('G-code saved')}
+    else{downloadText(filename,gcode);showToast('G-code generated')}
+  }catch(err){showToast(err.message||String(err),'error')}finally{for(const button of buttons)button.disabled=false}
+}
+$('#executeOutputBtn').addEventListener('click',()=>executeOutput(false));
+$('#sendToPrinterBtn').addEventListener('click',()=>executeOutput(true));
+
 $('#openLibrary').addEventListener('click',openLibrary);$('#closeLibrary').addEventListener('click',closeLibrary);$('#libraryModal').addEventListener('pointerdown',e=>{if(e.target===$('#libraryModal'))closeLibrary()});$('#filamentForm').addEventListener('submit',upsertFilament);$('#cancelFilamentEdit').addEventListener('click',resetFilamentForm);$('#filamentColor').addEventListener('input',e=>$('#filamentHex').value=e.target.value.toUpperCase());$('#filamentHex').addEventListener('input',e=>{const hex=normalizeHex(e.target.value);if(hex)$('#filamentColor').value=hex});
-$('#openSettings').addEventListener('click',()=>openSettings());
-$('#printerSettingsTab').addEventListener('click',()=>selectSettingsTab('printer'));$('#filamentSettingsTab').addEventListener('click',()=>selectSettingsTab('filament'));$('#profilePrinter').addEventListener('change',loadPrinterProfile);$('#printerSelect').addEventListener('change',()=>applyPrinterProfile($('#printerSelect').value));
+$('#openSettings').addEventListener('click',()=>openSettings());document.addEventListener('pathloom:open-printer-settings',()=>openSettings('connection'));
+$('#printerSettingsTab').addEventListener('click',()=>selectSettingsTab('printer'));$('#filamentSettingsTab').addEventListener('click',()=>selectSettingsTab('filament'));$('#connectionSettingsTab').addEventListener('click',()=>selectSettingsTab('connection'));$('#profilePrinter').addEventListener('change',loadPrinterProfile);$('#printerSelect').addEventListener('change',()=>applyPrinterProfile($('#printerSelect').value));
 $('#printerProfileForm').addEventListener('submit',e=>{e.preventDefault();const profiles=readPrinterProfiles(),name=$('#profilePrinter').value,profile={};for(const[field,basic]of profileFields){const value=Number($(`#${field}`).value);if(!Number.isFinite(value)||value<=0){showToast('Enter positive profile values','error');return}profile[basic]=value}profile.startGcode=$('#profileStartGcode').value.trim();profile.toolChangeGcode=$('#profileToolChangeGcode').value.trim();profile.endGcode=$('#profileEndGcode').value.trim();try{profiles[name]=profile;localStorage.setItem(PROFILE_KEY,JSON.stringify(profiles));$('#printerSelect').value=name;applyPrinterProfile(name);showToast('Printer profile saved')}catch{showToast('Unable to save printer profile','error')}});
 document.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)&&$('#libraryModal').hidden&&!e.altKey&&!e.ctrlKey&&!e.metaKey){const target=e.target;if(target===$('#pathSlider')||target===$('#layerSlider')||!target.closest('input,select,textarea,[contenteditable],button')){e.preventDefault();const step=(e.key==='ArrowRight'||e.key==='ArrowUp'?1:-1)*(e.shiftKey?10:1);if(e.key==='ArrowUp'||e.key==='ArrowDown')stepPreviewLayer(step);else stepLayerPoint(step);return}}if(e.key==='Escape'){if(!$('#libraryModal').hidden)closeLibrary();else $('#colorPopover').hidden=true}if(e.key==='Tab'&&!$('#libraryModal').hidden){const items=[...$('#libraryModal').querySelectorAll('button,input,select,textarea')].filter(el=>!el.disabled&&el.getClientRects().length);const first=items[0],last=items.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
 $('#arrangeGridSettings').disabled=!$('#autoArrangeEnabled').checked;$('#rowOffsetField').hidden=$('#gridPattern').value!=='staggered';applyPrinterProfile($('#printerSelect').value);renderPalette();renderFilamentLibrary();renderAllUI();initializePreview().catch(err=>{console.error('3D preview initialization failed',err);$('#emptyState').hidden=false;$('#emptyState strong').textContent='3D preview unavailable';$('#emptyState span').textContent='Reload to retry. Settings remain available.';showToast('Unable to load 3D preview. Settings remain available.','error')});
@@ -654,8 +682,6 @@ $('#removeObjectDialog').addEventListener('close',()=>pendingSourceRemoval=null)
 
 document.addEventListener('input',event=>{if(event.target.matches('#printSpeed, #travelSpeed, #printWidth, #printHeight, .tool-speed, .tool-erate'))schedulePrintEstimate()});
 
-const estimateOverlay=document.querySelector('.print-estimate-overlay');
-new ResizeObserver(()=>{viewport.style.setProperty('--print-estimate-bottom',Math.ceil(estimateOverlay.getBoundingClientRect().bottom+16)+'px')}).observe(estimateOverlay);
 for(const sidebarScroll of document.querySelectorAll('.sidebar,.cad-panel')){
   function updateSidebarFade(){sidebarScroll.classList.toggle('scrolled',sidebarScroll.scrollTop>0);sidebarScroll.classList.toggle('has-more-below',sidebarScroll.scrollTop+sidebarScroll.clientHeight<sidebarScroll.scrollHeight-1)}
   sidebarScroll.addEventListener('scroll',updateSidebarFade,{passive:true});updateSidebarFade();
@@ -682,7 +708,7 @@ function captureProject(){
   return {format:'pathloom',version:1,printLinks:structuredClone(printLinks),sources:[...sourceState.values()].map(source=>{const owner=source.generatorGroup&&[...sourceState.values()].find(s=>s.generatorGroup===source.generatorGroup&&s.generator);return {...source,tools:[...source.tools],liveSource:source.generator?source.liveSource:undefined,...(owner&&owner.id!==source.id?{generator:undefined,generatorRef:owner.id}:{generatorRef:undefined})}}),instances:[...instanceState],importedShapes:importedShapes.map(({id,name,visible,sliceLayerHeight,assetId,brepIndex,brep,kernel,faces,meshes})=>({id,name,visible,sliceLayerHeight,assetId,brepIndex,brep:brep?structuredClone(brep):undefined,kernel,faces:faces?structuredClone(faces):undefined,meshes:structuredClone(meshes)})),
     settings:{printer:$('#printerSelect').value,...Object.fromEntries(BASIC_FIELDS.map(id=>[id,Number($('#'+id).value)]))},
     profile:{filamentDiameter:configuredFilamentDiameter,...configuredBuildVolume,startGcode:configuredStartGcode,toolChangeGcode:configuredToolChangeGcode,endGcode:configuredEndGcode},
-    view:{layer:Number($('#layerSlider').value),showInputs:!$('#cadShowInputs')||$('#cadShowInputs').checked,camera:camera?.position.toArray(),target:controls?.target.toArray(),showPrintOrder:$('#showPrintOrder').checked},
+    view:{layer:Number($('#layerSlider').value),showInputs:!$('#cadShowInputs')||$('#cadShowInputs').checked,camera:camera?.position.toArray(),target:controls?.target.toArray(),showPrintOrder:$('#showPrintOrder').checked,showCurveEndpoints:$('#showCurveEndpoints').checked},
     cad:window.PathloomCad?.snapshot?.()||null};
 }
 function restoreProject(raw){
@@ -698,7 +724,7 @@ function restoreProject(raw){
   for(const id of BASIC_FIELDS)$('#'+id).value=project.settings[id];
   configuredFilamentDiameter=project.profile.filamentDiameter;Object.assign(configuredBuildVolume,{bedWidth:project.profile.bedWidth,bedDepth:project.profile.bedDepth,maxHeight:project.profile.maxHeight});
   configuredStartGcode=project.profile.startGcode;configuredToolChangeGcode=project.profile.toolChangeGcode;configuredEndGcode=project.profile.endGcode;
-  $('#showPrintOrder').checked=project.view.showPrintOrder!==false;
+  $('#showPrintOrder').checked=project.view.showPrintOrder!==false;$('#showCurveEndpoints').checked=project.view.showCurveEndpoints===true;
   syncPrintLinks();updateBuildVolumePreview();renderAllUI();buildInstances();renderImportedShapes();
   $('#layerSlider').value=Math.min(Number($('#layerSlider').max),project.view.layer);
   const vector=value=>Array.isArray(value)&&value.length===3&&value.every(Number.isFinite);
@@ -754,7 +780,7 @@ initCad({
     for(const source of [...sourceState.values()])if(source.generatorGroup===key&&!kept.has(source.id))removeSource(source.id,false);
     if(instanceState.has(previousSelection))selectedInstance=previousSelection;syncPrintLinks();renderAllUI();buildInstances();return kept.has(selectedId)?selectedId:[...kept][0];
   },
-  invalidate(id,message){const source=sourceState.get(id);if(source?.generator)for(const sibling of sourceState.values())if(sibling.id===id||source.generatorGroup&&sibling.generatorGroup===source.generatorGroup)sibling.generationError=message},
+  invalidate(id,message){const source=sourceState.get(id);if(source?.generator){const affected=new Set();for(const sibling of sourceState.values())if(sibling.id===id||source.generatorGroup&&sibling.generatorGroup===source.generatorGroup){sibling.generationError=message;affected.add(sibling.id)}if(message!=='Recalculating…'){clearCadProposal();for(const[instanceId,group]of renderedInstances)if(affected.has(instanceState.get(instanceId)?.source))group.visible=false;previewDirty=true}}},
   sourceExists:id=>sourceState.has(id),sources:()=>[...sourceState.values()],
   placement(sourceId){const selected=instanceState.get(selectedInstance);return selected?.source===sourceId?selected:[...instanceState.values()].find(instance=>instance.source===sourceId)||{x:0,y:0,rotation:0}},captureProject,restoreProject,
   preview:()=>({THREE,scene,camera,controls,canvas,viewport,dirty:()=>{previewDirty=true}}),

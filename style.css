@@ -11,7 +11,7 @@
 }
 *{box-sizing:border-box}
 .palette-empty{grid-column:1/-1;font-size:11px;color:var(--muted);line-height:1.5}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--text)}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none;background:var(--bg);color:var(--text)}
 button,input,select{font:inherit} button{color:inherit}
 .app-shell{display:grid;grid-template-columns:240px 1fr;height:100vh;overflow:hidden}
 .sidebar{background:#0f1318;border-right:1px solid var(--line);padding:12px;overflow-x:hidden;overflow-y:scroll;scrollbar-gutter:stable;background-clip:padding-box;scrollbar-width:thin;scrollbar-color:#3a444f #0f1318;display:flex;flex-direction:column;gap:10px}
@@ -93,7 +93,7 @@ button:focus-visible{outline:2px solid #8ebcff;outline-offset:2px}
 
 .filament-list{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.library-empty{grid-column:1/-1}.filament-item{position:relative;display:block;min-width:0;padding:12px}.filament-pick{width:100%;display:grid;grid-template-columns:32px minmax(0,1fr);align-items:center;gap:9px;padding:0}.filament-pick i{width:32px;height:32px}.filament-menu{position:absolute;right:6px;top:5px;z-index:2}.filament-menu summary{width:26px;height:24px;display:grid;place-items:center;list-style:none;border:0;border-radius:6px;background:#11161be8;color:#aab4bf;cursor:pointer;font-size:16px;line-height:1;opacity:0;pointer-events:none;transition:opacity .12s}.filament-menu summary::-webkit-details-marker{display:none}.filament-item:hover .filament-menu summary,.filament-item:focus-within .filament-menu summary,.filament-menu[open] summary{opacity:1;pointer-events:auto}.filament-menu:not([open]) .filament-item-actions{display:none}.filament-item-actions{position:absolute;right:0;top:28px;min-width:88px;display:grid;gap:2px;padding:4px;background:#11161b;border:1px solid #303943;border-radius:8px;box-shadow:0 10px 24px #0008}.filament-item-actions button{width:100%;border:0;background:transparent;text-align:left;padding:7px 8px}.filament-item-actions button:hover{background:#20262d;color:#fff}
 
-.app-shell{position:relative;display:block;height:100vh;overflow:hidden}.workspace{position:relative;display:block;height:100vh}.viewport{height:100vh}.topbar{position:absolute;z-index:18;top:12px;right:12px;height:auto;padding:0;border:0;background:transparent;pointer-events:none}.top-actions{gap:6px;padding:5px;border:1px solid #2d3640;border-radius:13px;background:#11161be8;box-shadow:0 10px 28px #0007;backdrop-filter:blur(10px);pointer-events:auto}.top-actions .settings-button{height:38px;padding:0 13px;background:#171c22}.top-actions #executeOutputBtn{height:38px;padding:0 19px;border-color:#fff;background:#fff;color:#0c1116;font-size:12px;box-shadow:0 4px 16px #ffffff2e}.top-actions #executeOutputBtn:hover{background:#eef5fb;box-shadow:0 5px 20px #ffffff42}.top-actions .output-command{height:38px}.sidebar{position:absolute;z-index:15;left:12px;top:116px;bottom:12px;width:240px;padding:0 6px 0 0;overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;background:transparent;background-clip:border-box;border:0;gap:9px}.sidebar::-webkit-scrollbar-track{background:transparent}.sidebar::-webkit-scrollbar-thumb{border-color:transparent}.sidebar-island{flex:0 0 auto;padding:8px;background:#12161bf2;box-shadow:0 10px 28px #0006;backdrop-filter:blur(10px)}.island-header{width:100%;height:28px;display:flex;align-items:center;justify-content:space-between;border:0;background:transparent;color:#dfe5ec;padding:0 2px;font-size:11px;font-weight:700;text-align:left;cursor:pointer}.island-chevron{width:16px;color:var(--muted);font-size:14px;text-align:center;transition:transform .15s}.sidebar-island.collapsed .island-chevron{transform:rotate(-90deg)}.sidebar-island.collapsed .island-content{display:none}.sidebar-island.disabled{opacity:.42}.sidebar-island.disabled .island-header{cursor:not-allowed}.basic-content{display:flex;flex-direction:column;gap:4px}.sidebar-island:not(.collapsed)>.island-content{padding-top:4px}.viewport-status{position:absolute;left:20px;top:38px;font-size:10px}.viewport-status .dot{width:6px;height:6px}.preview-object-control{top:68px}.layer-control{top:116px}
+.app-shell{position:fixed;inset:0;display:block;height:100%;overflow:hidden}.workspace{position:relative;display:block;height:100%;min-height:0}.viewport{height:100%;min-height:0}.topbar{position:absolute;z-index:18;top:12px;right:12px;height:auto;padding:0;border:0;background:transparent;pointer-events:none}.top-actions{gap:6px;padding:5px;border:1px solid #2d3640;border-radius:13px;background:#11161be8;box-shadow:0 10px 28px #0007;backdrop-filter:blur(10px);pointer-events:auto}.top-actions .settings-button{height:38px;padding:0 13px;background:#171c22}.top-actions #executeOutputBtn{height:38px;padding:0 19px;border-color:#fff;background:#fff;color:#0c1116;font-size:12px;box-shadow:0 4px 16px #ffffff2e}.top-actions #executeOutputBtn:hover{background:#eef5fb;box-shadow:0 5px 20px #ffffff42}.top-actions .output-command{height:38px}.sidebar{position:absolute;z-index:15;left:12px;top:116px;bottom:12px;width:240px;padding:0 6px 0 0;overflow-x:hidden;overflow-y:auto;scrollbar-gutter:stable;background:transparent;background-clip:border-box;border:0;gap:9px}.sidebar::-webkit-scrollbar-track{background:transparent}.sidebar::-webkit-scrollbar-thumb{border-color:transparent}.sidebar-island{flex:0 0 auto;padding:8px;background:#12161bf2;box-shadow:0 10px 28px #0006;backdrop-filter:blur(10px)}.island-header{width:100%;height:28px;display:flex;align-items:center;justify-content:space-between;border:0;background:transparent;color:#dfe5ec;padding:0 2px;font-size:11px;font-weight:700;text-align:left;cursor:pointer}.island-chevron{width:16px;color:var(--muted);font-size:14px;text-align:center;transition:transform .15s}.sidebar-island.collapsed .island-chevron{transform:rotate(-90deg)}.sidebar-island.collapsed .island-content{display:none}.sidebar-island.disabled{opacity:.42}.sidebar-island.disabled .island-header{cursor:not-allowed}.basic-content{display:flex;flex-direction:column;gap:4px}.sidebar-island:not(.collapsed)>.island-content{padding-top:4px}.viewport-status{position:absolute;left:20px;top:38px;font-size:10px}.viewport-status .dot{width:6px;height:6px}.preview-object-control{top:68px}.layer-control{top:116px}
 
 /* Light workspace */
 :root{--bg:#eef1f4;--panel:#ffffff;--panel-2:#f5f7f9;--line:#d5dbe1;--text:#18202a;--muted:#65717e;--accent:#202a35;--soft:#e8edf2}
@@ -136,9 +136,6 @@ html,body,.workspace{background:var(--bg);color:var(--text)}
 .print-estimate-overlay strong{display:block;margin-top:14px;font-size:inherit;font-weight:400}
 #filamentUsageDetails{padding-left:10px}
 .viewport-label,.print-estimate-overlay{font-size:9px;color:#4f5c69;letter-spacing:.12em}
-.objects-connection-status{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);font-size:10px;line-height:1.6;align-items:flex-start}
-.objects-connection-status .dot{flex-shrink:0;width:6px;height:6px;margin-top:5px}
-.objects-connection-status #connectionStatus{overflow-wrap:anywhere}
 .sidebar{left:auto;right:12px;top:12px;overflow-y:scroll;scrollbar-gutter:stable;padding-right:14px}
 .sidebar{--fade-top:0px;--fade-bottom:0px;-webkit-mask-image:linear-gradient(to bottom,transparent 0,black var(--fade-top),black calc(100% - var(--fade-bottom)),transparent 100%);mask-image:linear-gradient(to bottom,transparent 0,black var(--fade-top),black calc(100% - var(--fade-bottom)),transparent 100%)}
 .sidebar.scrolled{--fade-top:48px}.sidebar.has-more-below{--fade-bottom:48px}
@@ -202,7 +199,7 @@ html,body,.workspace{background:var(--bg);color:var(--text)}
 *{scrollbar-width:none!important}*::-webkit-scrollbar{display:none!important;width:0!important;height:0!important}
 .sidebar,.cad-panel,.cad-chat-column #cadSteps{scrollbar-gutter:auto}
 .sidebar{padding-right:0}.cad-workspace .cad-panel{padding-right:0}
-.output-actions{display:flex;gap:6px;padding:0 0 8px}.output-actions #executeOutputBtn{flex:1;padding:10px;font-size:11px}.output-actions .output-command{width:30px}
+.output-actions{display:flex;gap:6px;padding:0 0 8px}.output-actions>button{flex:1;min-width:0;padding:10px 5px;font-size:11px;white-space:nowrap}
 .geometry-visibility{position:absolute;left:520px;bottom:20px;z-index:20;font-size:10px;color:var(--muted)}.geometry-visibility label{display:flex;align-items:center;gap:6px}
 .print-estimate-overlay #cadStatus{margin:0 0 8px;font:inherit;color:inherit}
 .operation-heading>summary{display:flex;align-items:center;gap:8px;flex:1;cursor:pointer;list-style:none}.operation-heading>summary::-webkit-details-marker{display:none}.operation-card{padding:0 10px}.operation-card:not([open]){display:none}.operation-card[open]{padding-bottom:8px}
@@ -218,7 +215,7 @@ body:not([data-workspace-mode=output]) .layer-control,body:not([data-workspace-m
 /* One shared viewport, three workspace stages. */
 .workspace-modes{position:absolute;z-index:40;left:12px;top:12px;display:flex;gap:4px;padding:4px;border-radius:10px;background:#ffffff60;backdrop-filter:blur(5px)}
 .workspace-modes button{display:grid;place-items:center;width:36px;height:36px;padding:7px;border:1px solid transparent;border-radius:7px;background:transparent;color:#6a7883;cursor:pointer}.workspace-modes button[aria-selected=true]{background:#fff;border-color:#c4d1dc;color:#244e70;box-shadow:0 2px 7px #304f6817}.workspace-modes button:hover{background:#ffffffa0}.workspace-modes button:focus-visible{outline:2px solid #4385b5;outline-offset:2px}.workspace-modes svg{width:21px;height:21px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}.workspace-modes circle{fill:#fff}
-.topbar{left:160px;right:auto;top:18px}.sidebar{left:12px;right:auto;top:76px;width:280px;bottom:12px}.cad-workspace{left:12px;top:76px;right:auto}.cad-workspace .cad-panel{width:280px}.print-estimate-overlay{right:24px;top:84px}.geometry-visibility{left:310px}
+.topbar{left:160px;right:auto;top:18px}.sidebar{left:12px;right:auto;top:76px;width:280px;bottom:12px}.cad-workspace{left:12px;top:76px;right:auto}.cad-workspace .cad-panel{width:280px}.print-estimate-overlay{right:78px;top:84px}.geometry-visibility{left:310px}
 body[data-workspace-mode=generate] .cad-inputs-column,body[data-workspace-mode=parameters] .cad-chat-column,body:not([data-workspace-mode=output]) #outputPanel,body[data-workspace-mode=output] #cadPanel{display:none!important}
 .path-control{left:310px;right:80px}
 .operation-flow{padding:0 12px 10px;font-size:9px;line-height:1.7;color:var(--muted);overflow-wrap:anywhere}.parameter-reference{display:block;width:100%;font-size:9px;color:#477899}.parameter-links{border-bottom:1px solid #d4dde3;padding-bottom:8px;margin-bottom:10px}.parameter-links details{margin-left:10px}.parameter-links>details{margin-left:0}.parameter-links button{display:block;text-align:left;width:100%;margin:3px 0}#cadInputInspector .parameter-links summary{cursor:pointer;font-weight:400}#cadInputInspector .parameter-links summary::after{content:' ▸'}#cadInputInspector .parameter-links details[open]>summary::after{content:' ▾'}
@@ -260,7 +257,7 @@ body[data-workspace-mode=generate] .viewport{position:absolute;left:calc(min(52v
 .cad-panel .node-port-row button.node-port{position:absolute;left:50%;top:-8px;transform:translateX(-50%)}
 .cad-panel .node-port-row.out button.node-port{left:50%;right:auto;top:auto;bottom:-8px}
 /* Floating generation panel shares the other panels' white glass surface. */
-body[data-workspace-mode=generate] .viewport{position:absolute;inset:0;width:100%;height:100vh}
+body[data-workspace-mode=generate] .viewport{position:absolute;inset:0;width:100%;height:100%}
 body[data-workspace-mode=generate] .cad-chat-column{width:min(var(--node-panel-width,min(52vw,760px)),calc(100vw - 24px));position:relative;overflow:visible}
 body[data-workspace-mode=generate] .cad-chat-column>.sidebar-island{background:rgba(255,255,255,.2);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
 .cad-chat-column #cadSteps{background:transparent}.node-viewport{background-color:transparent}
@@ -305,8 +302,8 @@ body .node-toolbar .geometry-visibility{position:static;inset:auto;margin-left:a
 /* Print preview exposes both layer and path progress controls. */
 body[data-workspace-mode=output] .layer-control{display:flex;right:18px;top:260px;bottom:66px}
 body[data-workspace-mode=output] .path-control{display:grid;left:310px;right:64px;bottom:18px;width:auto;transform:none}
-.print-estimate-overlay{text-align:right;max-width:calc(100vw - 48px)}
-.print-estimate-overlay .project-name{display:block;max-width:min(360px,calc(100vw - 48px));margin:0 0 8px auto;padding:0;font:inherit;color:inherit;letter-spacing:inherit}
+.print-estimate-overlay{text-align:right;max-width:calc(100vw - 110px)}
+.print-estimate-overlay .project-name{display:block;max-width:min(360px,calc(100vw - 110px));margin:0 0 8px auto;padding:0;font:inherit;color:inherit;letter-spacing:inherit}
 .print-estimate-overlay #printTimeDetails,.print-estimate-overlay #filamentUsageDetails{padding:0}
 .topbar:not(:has(.top-actions> :not([hidden]))){display:none}
 /* Shared numeric columns keep time units and filament decimals aligned. */
@@ -335,14 +332,10 @@ body[data-workspace-mode=output] .path-control{display:grid;left:310px;right:64p
 .cad-face-range{position:fixed;z-index:100;pointer-events:none;border:1px solid #4f99da;background:rgba(79,153,218,.13);border-radius:2px}
 .component-details-panel textarea.component-code-editor{width:100%;min-height:180px;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;tab-size:2}
 /* Orientation cube with six independently reachable direction arrows. */
-.view-axis-buttons.view-cube{width:160px;height:160px;display:block;padding:0;right:18px;bottom:42px;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:none}
-#viewCube{position:absolute;left:30px;top:30px;width:100px;height:100px;overflow:visible;pointer-events:auto;filter:drop-shadow(0 3px 6px #34485c18)}
+.view-axis-buttons.view-cube{width:160px;height:160px;display:block;padding:0;right:18px;bottom:18px;background:transparent;backdrop-filter:none;-webkit-backdrop-filter:none;pointer-events:none}
+#viewCube{position:absolute;left:0;top:0;width:160px;height:160px;overflow:visible;pointer-events:auto;filter:drop-shadow(0 3px 6px #34485c18)}
 .cube-face{cursor:pointer;outline:none}.cube-face polygon{fill:rgba(255,255,255,.8);stroke:#99a7b5;stroke-width:1;stroke-linejoin:round}.cube-face text{fill:#536475;font-size:10px;text-anchor:middle;dominant-baseline:central;pointer-events:none}.cube-face:hover polygon,.cube-face:focus-visible polygon{fill:#e4eff8;stroke:#5789b3}.cube-face[aria-pressed=true] polygon{fill:#d4e5f5;stroke:#6a9ac1}
-.view-cube .cube-arrow{position:absolute;display:flex;align-items:center;justify-content:center;flex-direction:column;width:30px;height:30px;padding:2px;border:0;border-radius:7px;background:rgba(255,255,255,.4);color:#63809b;pointer-events:auto;cursor:pointer}.cube-arrow svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.cube-arrow span{font-size:8px;line-height:9px;color:#586878}.view-cube .cube-arrow:hover,.view-cube .cube-arrow:focus-visible{background:#ffffffd9;outline:1px solid #a7b9c9}.view-cube .cube-arrow[aria-pressed=true]{background:#d9e8f8}
-.cube-arrow-top{left:65px;top:0}.cube-arrow-bottom{left:65px;bottom:0}.cube-arrow-left{left:0;top:30px}.cube-arrow-front{left:0;bottom:30px}.cube-arrow-back{right:0;top:30px}.cube-arrow-right{right:0;bottom:30px}
-.cube-arrow-bottom svg{transform:rotate(180deg)}.cube-arrow-left svg{transform:rotate(-60deg)}.cube-arrow-front svg{transform:rotate(-120deg)}.cube-arrow-back svg{transform:rotate(60deg)}.cube-arrow-right svg{transform:rotate(120deg)}
-.view-cube .cube-arrow-top,.view-cube .cube-arrow-bottom{color:#5580b1}.view-cube .cube-arrow-left,.view-cube .cube-arrow-right{color:#b16b68}.view-cube .cube-arrow-front,.view-cube .cube-arrow-back{color:#61947d}
-body[data-workspace-mode=output] .layer-control{bottom:222px}body[data-workspace-mode=output] .path-control{right:190px}
+body[data-workspace-mode=output] .layer-control{top:22px;bottom:192px}body[data-workspace-mode=output] .path-control{right:196px}
 #layerPauseMarkers{position:absolute;inset:2px 0;pointer-events:none}.layer-pause-marker{position:absolute;left:-13px;width:17px;height:17px;transform:translateY(50%);padding:0;border:1px solid #be9b5f;border-radius:4px;background:#fff3d7;color:#866125;font-size:10px;line-height:15px;cursor:pointer;pointer-events:auto}.layer-pause-marker:focus-visible{outline:2px solid #a88043}.layer-control input.has-layer-pause{accent-color:#b28b48}.layer-pause-menu{z-index:240}
 
 /* Object identity stays readable inside the compact printer component. */
@@ -356,4 +349,8 @@ body[data-workspace-mode=output] .layer-control{bottom:222px}body[data-workspace
 .basic-panel .field-row #printerSelect{width:128px}
 
 .print-estimate-overlay .project-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-body[data-workspace-mode=output] .layer-control{top:max(260px,var(--print-estimate-bottom,260px))}
+
+
+.connection-address{grid-column:1/-1}.connection-actions{display:flex;align-items:center;gap:8px;margin-top:14px}.connection-actions button{padding:8px 12px;font-size:11px}.connection-status{min-height:1.5em;font-size:11px;line-height:1.6;overflow-wrap:anywhere;color:var(--muted)}.connection-status.is-error{color:#a4423f}
+.printer-send-dialog{width:min(420px,calc(100vw - 48px));font-size:12px;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}.printer-send-dialog .library-head{align-items:center;padding-bottom:10px}.printer-send-dialog .library-head h2{font-size:12px;margin:0;font-weight:600}.printer-send-dialog .modal-close{border:0;padding:0 4px;font-size:20px;background:transparent}.printer-send-dialog progress{width:100%;height:8px;accent-color:#477c98}.printer-send-dialog .hint{margin:0;overflow-wrap:anywhere}.printer-send-dialog .connection-status:empty{display:none}.printer-transfer-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.printer-transfer-actions button{font-size:11px;min-height:36px;white-space:nowrap}.printer-send-cancel{justify-self:end;font-size:11px}.printer-send-dialog button:disabled{opacity:.45;cursor:wait}
+#printerConnectionForm [hidden],#printerSendDialog [hidden]{display:none!important}

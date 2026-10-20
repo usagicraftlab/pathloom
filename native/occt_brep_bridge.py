@@ -243,15 +243,23 @@ def slice_brep(shape, height, tolerance):
     if high-low<height*.5:raise ValueError('STEP model is too thin to slice at this layer height')
     count=math.floor((high-low-height/2)/height)+1
     if count>2000:raise ValueError('Slicing would create more than 2,000 layers')
+    def section_wires(z):
+        try:
+            section=BRepAlgoAPI_Section(shape,gp_Pln(gp_Pnt(0,0,z),gp_Dir(0,0,1)),False)
+            section.Approximation(True);section.Build()
+            if not section.IsDone():return None
+            edges=TopTools_HSequenceOfShape();explorer=TopExp_Explorer(section.Shape(),TopAbs_EDGE)
+            while explorer.More():edges.Append(explorer.Current());explorer.Next()
+            wires=TopTools_HSequenceOfShape();ShapeAnalysis_FreeBounds.ConnectEdgesToWires_s(edges,1e-6,False,wires)
+            return wires
+        except RuntimeError:return None
     paths=[];total=0
     for layer in range(count):
-        z=low+height/2+layer*height
-        section=BRepAlgoAPI_Section(shape,gp_Pln(gp_Pnt(0,0,z),gp_Dir(0,0,1)),False)
-        section.Approximation(True);section.Build()
-        if not section.IsDone():raise ValueError('Open CASCADE section failed')
-        edges=TopTools_HSequenceOfShape();explorer=TopExp_Explorer(section.Shape(),TopAbs_EDGE)
-        while explorer.More():edges.Append(explorer.Current());explorer.Next()
-        wires=TopTools_HSequenceOfShape();ShapeAnalysis_FreeBounds.ConnectEdgesToWires_s(edges,1e-6,False,wires)
+        # Sample at the layer center; print at the layer top.
+        sample_z=low+(layer+.5)*height
+        z=round(low+(layer+1)*height,9)
+        wires=section_wires(sample_z)
+        if wires is None:raise ValueError('Open CASCADE section failed')
         for i in range(1,wires.Length()+1):
             wire=TopoDS.Wire_s(wires.Value(i));walk=BRepTools_WireExplorer(wire);points=[]
             while walk.More():

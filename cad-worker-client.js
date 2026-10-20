@@ -19,11 +19,11 @@ export function createCadWorker(){
   const post=job.postMessage.bind(job),geometry=new Map();
   job.postMessage=(message,...rest)=>{
     if(message.nativeSliceResult){post(message,...rest);return}
-    const graph=message.kind==='cad-preview'?message.definition:message;
+    const graph=['cad-preview','cad-stage','cad-validate'].includes(message.kind)?message.definition:message;
     if(!Array.isArray(graph.inputs)){post(message,...rest);return}
     const ids=new Set();const inputs=graph.inputs.map(input=>{if(input.type!=='surface')return input;ids.add(input.id);const previous=geometry.get(input.id);geometry.set(input.id,{meshes:input.meshes,brep:input.brep,faces:input.faces,kernel:input.kernel});if(!previous||previous.meshes!==input.meshes||previous.brep!==input.brep||previous.faces!==input.faces||previous.kernel!==input.kernel)return input;const copy={...input,_workerGeometryRef:input.id};for(const key of ['meshes','brep','faces','kernel'])delete copy[key];return copy});
     for(const id of geometry.keys())if(!ids.has(id))geometry.delete(id);
-    const compact={...graph,inputs};post(message.kind==='cad-preview'?{...message,definition:compact}:compact,...rest);
+    const compact={...graph,inputs};post(['cad-preview','cad-stage','cad-validate'].includes(message.kind)?{...message,definition:compact}:compact,...rest);
   };
   job.terminate=()=>{if(!alive)return;alive=false;nativeSlices.cancel(owner);terminate()};
   job.addEventListener('message',async event=>{if(!event.data.nativeSlice)return;event.stopImmediatePropagation();const request=event.data.request;try{
@@ -35,5 +35,5 @@ export function validateCodeDefinition(definition){return new Promise((resolve,r
   const job=createCadWorker(),timer=setTimeout(()=>{job.terminate();reject(new Error('Component validation exceeded 30 seconds'))},30000);
   const finish=()=>{clearTimeout(timer);job.terminate()};
   job.onerror=event=>{finish();reject(new Error(event.message||'Component worker failed'))};
-  job.onmessage=event=>{finish();event.data.ok?resolve(event.data.result):reject(new Error(event.data.error))};job.postMessage(definition);
+  job.onmessage=event=>{finish();event.data.ok?resolve(event.data.result):reject(new Error(event.data.error))};job.postMessage({kind:'cad-validate',definition});
 })}
