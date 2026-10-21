@@ -1,4 +1,5 @@
 mod cad_process;
+mod cad_runtime;
 mod codex_bridge;
 mod grasshopper_brep;
 mod printer;
@@ -684,7 +685,16 @@ pub fn run() {
             tauri::async_runtime::spawn(run_grasshopper_server(app_handle, shared));
             Ok(())
         })
+        .manage(Arc::new(cad_runtime::CadRuntime::default()))
         .invoke_handler(tauri::generate_handler![
+            cad_runtime::cad_runtime_start,
+            cad_runtime::cad_runtime_status,
+            cad_runtime::cad_runtime_restart,
+            cad_runtime::cad_evaluate,
+            cad_runtime::cad_cancel,
+            cad_runtime::cad_import_asset,
+            cad_runtime::cad_export_assets,
+            cad_runtime::cad_release_handles,
             runtime_info,
             printer::printer_connection_get,
             printer::printer_connection_save,
@@ -704,6 +714,9 @@ pub fn run() {
             project_files::save_pathloom_project,
             project_files::open_pathloom_project,
             project_files::cad_library,
+            project_files::cad_shape_library,
+            project_files::cad_command_library,
+            project_files::cad_recovery,
             codex_bridge::codex_status,
             codex_bridge::codex_login,
             codex_bridge::codex_cancel,

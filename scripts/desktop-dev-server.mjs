@@ -11,6 +11,7 @@ const port = 1420;
 const allowedRootFiles = new Set(await frontendFiles());
 const allowedDirs = frontendDirectories;
 const mime = {
+  '.md': 'text/plain; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.wasm': 'application/wasm',
   '.js': 'text/javascript; charset=utf-8',

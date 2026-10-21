@@ -1,3 +1,4 @@
+import {validateCadDocument} from './cad/document.js';
 import {BASIC_FIELDS,validatePrintSettings,validateToolSettings} from './toolpath-data.js';
 export {BASIC_FIELDS} from './toolpath-data.js';
 import {validatePauseLayers} from './gcode-metadata.js';
@@ -6,7 +7,7 @@ import {printOutputNodes,numberParameters} from './cad-pipeline.js';
 import {validateDefinition} from './cad-kernel.js';
 const finite=value=>typeof value==='number'&&Number.isFinite(value);
 export const LAYOUT_DEFAULTS={autoArrangeEnabled:true,gridColumns:3,gridRows:2,gridSpacingX:66,gridSpacingY:66,gridPattern:'rectangular',gridRowOffset:50,gridRotation:0};
-export function validateProject(input){
+function validateLegacyProject(input){
   if(!input||input.format!=='pathloom'||input.version!==1)throw new Error('Unsupported .pathloom project');
   const project=structuredClone(input);
   if(project.importedShapes!==undefined&&(!Array.isArray(project.importedShapes)||project.importedShapes.length>100))throw new Error('Invalid imported shapes');
@@ -74,9 +75,11 @@ export function validateProject(input){
     if(!layout||typeof layout.autoArrangeEnabled!=='boolean'||!['rectangular','staggered','diamond'].includes(layout.gridPattern)||!['gridColumns','gridRows'].every(key=>Number.isInteger(layout[key])&&layout[key]>0)||!['gridSpacingX','gridSpacingY'].every(key=>finite(layout[key])&&layout[key]>=0)||!finite(layout.gridRowOffset)||Math.abs(layout.gridRowOffset)>100||!finite(layout.gridRotation)||Math.abs(layout.gridRotation)>180)throw new Error('Invalid layout settings');
   }
   if(project.cad?.previewStepId!=null){const source=project.sources.find(source=>source.id===project.cad.sourceId);if(typeof project.cad.previewStepId!=='string'||!source?.generator?.steps?.some(step=>step.id===project.cad.previewStepId))throw new Error('Invalid processing preview stage')}
-  if(project.cad?.mode!==undefined&&!['generate','parameters','output'].includes(project.cad.mode))throw new Error('Invalid workspace mode');
+  if(project.cad?.mode!==undefined&&!['model','generate','parameters','output'].includes(project.cad.mode))throw new Error('Invalid workspace mode');
   return project;
 }
 
 // Serialize a shared processing graph once; object placements/settings remain independent.
 export function compactProjectGenerators(project){const owners=new Map();return {...project,sources:project.sources.map(source=>{if(!source.generatorGroup||!source.generator)return source;const owner=owners.get(source.generatorGroup);if(!owner){owners.set(source.generatorGroup,source.id);return source}const next={...source,generatorRef:owner};delete next.generator;return next})}}
+
+export function validateProject(input){if(input?.version===2){const document=validateCadDocument(input.cadDocument);const {cadDocument,...legacyFields}=input;const legacy=validateLegacyProject({...legacyFields,version:1});return {...legacy,version:2,cadDocument:structuredClone(document)}}return validateLegacyProject(input)}

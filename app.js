@@ -1,10 +1,11 @@
+import {initModelWorkspace} from './cad/workspace-ui.js';
 import {defaultStartGcode,defaultToolChangeGcode,defaultEndGcode,profileGcodeDefaults,normalizeStoredGcode} from './printer-profiles.js';
 import {normalizeToolpath,toolSlots,outputToolOptions,validatePrintSettings,printableBounds} from './toolpath-data.js';
 import {advancePreview,curveDirection} from './preview-helpers.js';
 import {initCadGizmo} from './cad-gizmo.js';
 import {moveStepFaces} from './step-import.js';
 let hiddenStageGroups=[],stagePreviewGroup=null;
-import {printOutputNodes,numberParameters,pipelineLayerHeight,migrateDefinition} from './cad-pipeline.js';
+import {cadInputUsed,printOutputNodes,numberParameters,pipelineLayerHeight,migrateDefinition} from './cad-pipeline.js';
 import { initCad } from './cad-ui.js';
 import { BASIC_FIELDS, LAYOUT_DEFAULTS, validateProject } from './pathloom-project.js';
 import { validatePauseLayers, pauseGcode, durationText, thumbnailBlock, encodeQoi, progressCommand, usageComments } from './gcode-metadata.js';
@@ -23,7 +24,7 @@ let filamentLibrary = loadFilamentLibrary();
 const $ = sel => document.querySelector(sel);
 const canvas = $('#threeCanvas');
 const viewport = $('#viewport');
-let THREE,renderer,scene,camera,controls,toolpathGroup,importedShapeGroup,buildVolumeGroup,previewPointMarker;
+let THREE,renderer,scene,camera,controls,toolpathGroup,importedShapeGroup,buildVolumeGroup,previewPointMarker,modelWorkspace;
 let importedShapes=[],selectedImportedId=null,importedGizmo=null;
 const selectedBrepFaces=new Map();
 const configuredBuildVolume={bedWidth:250,bedDepth:210,maxHeight:220};
@@ -50,7 +51,7 @@ updateBuildVolumePreview();
 toolpathGroup=new THREE.Group(); scene.add(toolpathGroup);
 importedShapeGroup=new THREE.Group();scene.add(importedShapeGroup);
 previewPointMarker=new THREE.Points(new THREE.BufferGeometry().setAttribute('position',new THREE.Float32BufferAttribute([0,0,0],3)),new THREE.PointsMaterial({color:0xffffff,size:7,sizeAttenuation:false,depthTest:false}));previewPointMarker.renderOrder=10;previewPointMarker.visible=false;scene.add(previewPointMarker);
-  buildInstances();renderImportedShapes();resize();requestPreviewRender();window.PathloomCad?.refreshInputs?.();
+  buildInstances();renderImportedShapes();resize();requestPreviewRender();window.PathloomCad?.refreshInputs?.();modelWorkspace?.refreshView();
 }
 
 function renderImportedShapes(){
@@ -125,7 +126,7 @@ let facePickStart=null;
 canvas.addEventListener('pointerdown',event=>{facePickStart=event.button===0?[event.clientX,event.clientY]:null});
 canvas.addEventListener('pointerup',event=>{if(!facePickStart)return;const distance=Math.hypot(event.clientX-facePickStart[0],event.clientY-facePickStart[1]);facePickStart=null;if(distance<4)selectImportedFace(event)});
 
-importedGizmo=initCadGizmo({preview:()=>({THREE,scene,camera,controls,canvas,dirty:()=>{requestPreviewRender()}}),error:message=>showToast(message,'error'),selection(){const shape=importedShapes.find(s=>s.id===selectedImportedId&&s.visible!==false);if(!shape?.brep)return null;return{id:shape.id,data:shape.brep.data,faces:new Set(selectedBrepFaces.get(shape.id)||[]),objects:importedShapeGroup?.children.flatMap(g=>g.children.filter(n=>n.userData.shapeId===shape.id))||[]}},async commit(target,offset){const shape=importedShapes.find(s=>s.id===target.id);if(shape?.brep?.data!==target.data)throw new Error('CAD object changed; select it again');const result=await moveStepFaces(shape,[...target.faces],offset,!target.faces.size);if(shape.brep.data!==target.data)throw new Error('CAD object changed during edit');applyImportedBrepEdit(shape.id,result)}});
+importedGizmo=initCadGizmo({preview:()=>({THREE,scene,camera,controls,canvas,dirty:()=>{requestPreviewRender()}}),error:message=>showToast(message,'error'),selection(){if(document.body.dataset.workspaceMode==='model')return null;const shape=importedShapes.find(s=>s.id===selectedImportedId&&s.visible!==false);if(!shape?.brep)return null;return{id:shape.id,data:shape.brep.data,faces:new Set(selectedBrepFaces.get(shape.id)||[]),objects:importedShapeGroup?.children.flatMap(g=>g.children.filter(n=>n.userData.shapeId===shape.id))||[]}},async commit(target,offset){const shape=importedShapes.find(s=>s.id===target.id);if(shape?.brep?.data!==target.data)throw new Error('CAD object changed; select it again');const result=await moveStepFaces(shape,[...target.faces],offset,!target.faces.size);if(shape.brep.data!==target.data)throw new Error('CAD object changed during edit');applyImportedBrepEdit(shape.id,result)}});
 document.addEventListener('pathloom:geometry-selection',event=>{if(event.detail.owner!=='imported'&&selectedImportedId){selectedImportedId=null;selectedBrepFaces.clear();renderImportedShapes()}});
 
 function updateBuildVolumePreview(){
@@ -465,7 +466,7 @@ function exportThumbnails(){
   }
 }
 
-function generateGcode(){
+function generateGcode(){for(const source of sourceState.values())for(const input of source.generator?.inputs||[])if(input.cadBinding&&cadInputUsed(source.generator,input.id)){const binding=window.PathloomModel?.store.document.outputBindings.find(b=>b.id===input.cadBinding.id);if(binding?.status!=='ready'||binding.resolvedResultHash!==input.cadBinding.resultHash)throw new Error(`CAD input ${input.name}: update or repair the CAD binding before exporting`)}
   if(!instanceState.size)throw new Error('Add a .toolpath file first');
   assertPrintReferencesCurrent();
   for(const source of sourceState.values())if(source.generator&&source.generationError)throw new Error(`${source.label}: ${source.generationError}`);
@@ -602,9 +603,9 @@ function syncPrintLinks(){
   document.dispatchEvent(new Event('pathloom:print-links-changed'));
 }
 function assertPrintReferencesCurrent(){for(const source of sourceState.values())for(const input of source.generator?.inputs||[])if(input.printSetting&&input.value!==Number($('#'+input.printSetting).value))throw new Error(`${source.label}: select the object to update its linked Print Settings before saving or exporting`)}
-function captureProject(){
+function captureProject({allowCadDraft=false}={}){
   assertPrintReferencesCurrent();
-  for(const source of sourceState.values())if(source.generator&&source.generationError)throw new Error(`${source.label}: fix the generation error before saving`);
+  for(const source of sourceState.values())if(source.generator&&source.generationError&&!(allowCadDraft&&source.generator.inputs?.some(i=>i.cadBinding)))throw new Error(`${source.label}: fix the generation error before saving`);
   return {format:'pathloom',version:1,printLinks:structuredClone(printLinks),sources:[...sourceState.values()].map(source=>{const owner=source.generatorGroup&&[...sourceState.values()].find(s=>s.generatorGroup===source.generatorGroup&&s.generator);return {...source,tools:[...source.tools],liveSource:source.generator?source.liveSource:undefined,...(owner&&owner.id!==source.id?{generator:undefined,generatorRef:owner.id}:{generatorRef:undefined})}}),instances:[...instanceState],importedShapes:importedShapes.map(({id,name,visible,sliceLayerHeight,assetId,brepIndex,brep,kernel,faces,meshes})=>({id,name,visible,sliceLayerHeight,assetId,brepIndex,brep:brep?structuredClone(brep):undefined,kernel,faces:faces?structuredClone(faces):undefined,meshes:structuredClone(meshes)})),
     settings:{printer:$('#printerSelect').value,...Object.fromEntries(BASIC_FIELDS.map(id=>[id,Number($('#'+id).value)]))},
     profile:{filamentDiameter:configuredFilamentDiameter,...configuredBuildVolume,startGcode:configuredStartGcode,toolChangeGcode:configuredToolChangeGcode,endGcode:configuredEndGcode},
@@ -642,6 +643,8 @@ function restoreProject(raw){
 function clearStagePreview(){for(const group of hiddenStageGroups)group.visible=true;hiddenStageGroups=[];if(!stagePreviewGroup)return;scene?.remove(stagePreviewGroup);stagePreviewGroup.traverse(node=>{node.geometry?.dispose();node.material?.dispose()});stagePreviewGroup=null;requestPreviewRender()}
 initCad({
   setComponentMetadata(id,stepId,metadata){const step=sourceState.get(id)?.generator?.steps.find(s=>s.id===stepId);if(step)Object.assign(step,structuredClone(metadata))},
+  syncCadBinding({bindingId,status,input}){for(const source of sourceState.values()){const target=source.generator?.inputs?.find(i=>i.cadBinding?.id===bindingId);if(!target)continue;const changed=target.cadBinding.resultHash!==input?.cadBinding?.resultHash||target.cadBinding.status!==status;if(input)Object.assign(target,structuredClone({...input,name:target.name,exposed:target.exposed,visible:target.visible}));else target.cadBinding.status=status;if(changed&&cadInputUsed(source.generator,target.id))source.generationError=`CAD input ${target.name}: ${status==='ready'?'updated; select this graph to recalculate':status}`;}refreshVisibility();requestPreviewRender()},
+  syncCadInput(id,input){const source=sourceState.get(id);if(!source?.generator)return;for(const sibling of sourceState.values())if(sibling===source||source.generatorGroup&&sibling.generatorGroup===source.generatorGroup){const target=sibling.generator?.inputs?.find(i=>i.id===input.id);if(target)Object.assign(target,structuredClone(input))}},
   setEditorState(id,editor){const source=sourceState.get(id);if(source?.generator)source.generator.editor=structuredClone(editor)},
   lockPreview(active){if(active){$('#layerSlider').value=$('#layerSlider').max;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false}refreshVisibility()},
   setInputVisibility(sourceId,inputId,visible){const source=sourceState.get(sourceId);if(!source?.generator)return;const definition=migrateDefinition(source.generator),input=definition.inputs.find(input=>input.id===inputId);if(input){input.visible=visible;source.generator=definition;syncPrintLinks()}},
@@ -691,3 +694,8 @@ initCad({
   preview:()=>({THREE,scene,camera,controls,canvas,viewport,dirty:()=>{requestPreviewRender()}}),
   toast:showToast
 });
+
+modelWorkspace=initModelWorkspace({preview:()=>({THREE,scene,camera,controls,canvas,dirty:requestPreviewRender})});
+window.PathloomModel=modelWorkspace;
+
+new MutationObserver(()=>{if(toolpathGroup)toolpathGroup.visible=document.body.dataset.workspaceMode!=='model';requestPreviewRender()}).observe(document.body,{attributes:true,attributeFilter:['data-workspace-mode']});

@@ -1,10 +1,11 @@
 // Only this envelope crosses the AI boundary. CAD payloads stay in the vault.
 const clone=value=>structuredClone(value);
-const CAD_FIELDS=['meshes','brep','faces','kernel'];
+const CAD_FIELDS=['meshes','brep','faces','kernel','curve'];
 const size=value=>new TextEncoder().encode(JSON.stringify(value)).length;
 export const DESIGN_PATCH_FORMAT={format:'pathloom-design-patch',inputs:{upsert:[],remove:[]},steps:{upsert:[],remove:[]},recipes:{upsert:[]},rules:['Return this patch as the JSON string in definitionJson; send only changed items.','Upserts merge existing inputs/steps by id; new items must be complete. Recipe identity is id + version.','Optional printOutput.intro has enabled, gap (mm, 0.1–200), length (mm, 0.1–200), angle (degrees, -360–360; 0 extends toward +X, 90 toward +Y). It adds one lead-in on the first layer per object. Set output to a step/input ID only when changing it. Set toolOutput:null to disconnect tools.','Multiple print objects use optional printOutputs: [{id,name,source,toolSource?,intro?}]. The primary uses output/toolOutput and printOutput.name; preserve all objects unless explicitly changing them. In a patch, printOutputs replaces the whole additional-output array. Each output becomes a separately placed object in Print Settings.', 'Preserve local geometryRef and codeRef tokens. Never send meshes, brep, faces or kernel data.','Do not remove unchanged nodes or inputs. Existing recipe versions are immutable; add a new version.']};
 function summary(input){
   const min=[Infinity,Infinity,Infinity],max=[-Infinity,-Infinity,-Infinity];let vertices=0,triangles=0;
+  for(const point of input.cadBinding&&input.curve?.points||[]){vertices++;for(let axis=0;axis<3;axis++){const value=point[axis]??0;if(Number.isFinite(value)){min[axis]=Math.min(min[axis],value);max[axis]=Math.max(max[axis],value)}}}
   for(const mesh of input.meshes||[]){const p=mesh.positions||[];vertices+=p.length/3;triangles+=(mesh.indices?.length||0)/3;for(let i=0;i<p.length;i++)if(Number.isFinite(p[i])){const axis=i%3;min[axis]=Math.min(min[axis],p[i]);max[axis]=Math.max(max[axis],p[i])}}
   return {editable:!!input.brep,vertices,triangles,faces:input.faces?.length||0,...(min.every(Number.isFinite)?{bounds:{min,max},dimensions:max.map((v,i)=>v-min[i])}:{})};
 }
@@ -29,7 +30,7 @@ export function createDesignEnvelope(raw,{maxBytes=140000}={}){
   function packGraph(graph){
     const copy=clone({...graph,inputs:[]});delete copy.editor;
     copy.inputs=(graph.inputs||[]).map(input=>{
-      if(input.type!=='surface')return clone(input);
+      if(input.type!=='surface'&&!input.cadBinding)return clone(input);
       const token=`geometry-${assetIndex++}`,metadata={...input};
       assets.set(token,clone(input));for(const key of CAD_FIELDS)delete metadata[key];
       return {...clone(metadata),geometryRef:token,geometrySummary:summary(input)};
@@ -53,10 +54,10 @@ export function createDesignEnvelope(raw,{maxBytes=140000}={}){
   function hydrate(candidate){
     const next=candidate?.format==='pathloom-design-patch'?applyPatch(baseline,candidate):clone(candidate);
     if(!next||!Array.isArray(next.inputs))throw new Error('AI returned an invalid design');
-    for(const input of next.inputs){if(input.type!=='surface')continue;
+    for(const input of next.inputs){if(input.cadBinding&&!input.geometryRef)throw new Error('AI must preserve a local CAD binding reference; create CAD bindings in the CAD workspace');if(input.type!=='surface'&&!input.cadBinding&&!input.geometryRef)continue;
       if(CAD_FIELDS.some(key=>Object.hasOwn(input,key))&&!(input.meshes?.length===0&&!input.brep&&!input.faces&&!input.kernel))throw new Error('AI must reference local CAD geometry, not return CAD payloads');
-      if(input.geometryRef!==undefined){const original=assets.get(input.geometryRef);if(!original)throw new Error('Unknown local geometry reference');for(const key of CAD_FIELDS){if(Object.hasOwn(original,key))input[key]=clone(original[key]);else delete input[key]}}
-      else if(raw.definition.inputs.some(old=>old.id===input.id&&old.type==='surface'))throw new Error('AI removed a local geometry reference');
+      if(input.geometryRef!==undefined){const original=assets.get(input.geometryRef);if(!original||original.type!==input.type)throw new Error('Unknown local geometry reference');if(original.cadBinding)input.cadBinding=clone(original.cadBinding);else delete input.cadBinding;for(const key of CAD_FIELDS){if(Object.hasOwn(original,key))input[key]=clone(original[key]);else delete input[key]}}
+      else if(raw.definition.inputs.some(old=>old.id===input.id&&(old.type==='surface'||old.cadBinding)))throw new Error('AI removed a local geometry reference');
       else input.meshes=[];
       delete input.geometryRef;delete input.geometrySummary;
     }

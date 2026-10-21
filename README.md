@@ -4,6 +4,27 @@ A local macOS workspace for custom 3D printing toolpaths, parametric components,
 and exact STEP B-rep editing. The primary runtime is **Pathloom Desktop (Tauri 2)**.
 GitHub Pages is a browser preview with a smaller set of capabilities.
 
+## CAD workspace (in development)
+
+The leftmost CAD stage adds exact OCP curve, surface and solid operations with
+commands on the left, settings at upper right and feature history below it.
+Numerical edits, last-valid geometry, explicit edge repair, Undo/Redo and portable
+project v2 assets are connected. The original three stages remain available.
+CAD can retain open/nonplanar geometry and negative Z independently of printing.
+
+Use **生成で使用** in shape properties to add an explicit body-result input to the
+generation graph. It does not wire nodes automatically. Shape/history Library
+and CAD-only recovery data use separate application-data files. Normal Save now
+writes v2; v1 files remain readable and are not rewritten merely by opening them.
+
+This is **not the complete 65-command CAD specification**. The
+[command ledger](docs/cad-command-status.md),
+[acceptance ledger](docs/cad-verification-status.md) and
+[implementation/restart notes](docs/cad-implementation-notes.md) distinguish
+implemented subsets, numeric evidence, missing modes and local-Mac checks.
+Advanced surface matching/network construction and several editing commands are
+still pending. CAD requires the separately provisioned runtime below.
+
 ## AI components on the canvas
 
 - Click blank space on the Processing node canvas, or use **✦ New AI Component**.

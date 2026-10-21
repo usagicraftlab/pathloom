@@ -15,7 +15,7 @@ fn gcode_save_path(mut path: std::path::PathBuf) -> std::path::PathBuf {
     path
 }
 
-fn write_atomic(path: &std::path::Path, content: &str) -> Result<(), String> {
+pub(crate) fn write_atomic(path: &std::path::Path, content: &str) -> Result<(), String> {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?
@@ -28,8 +28,16 @@ fn write_atomic(path: &std::path::Path, content: &str) -> Result<(), String> {
         std::process::id(),
         stamp
     ));
-    let result =
-        std::fs::write(&temporary, content).and_then(|_| std::fs::rename(&temporary, path));
+    let result = (|| -> std::io::Result<()> {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        std::fs::rename(&temporary, path)
+    })();
     if result.is_err() {
         let _ = std::fs::remove_file(&temporary);
     }
@@ -73,7 +81,7 @@ pub async fn save_pathloom_project(
         return Err("Project exceeds 200 MB; reduce embedded geometry before saving".into());
     }
     let parsed: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-    if parsed["format"] != "pathloom" || parsed["version"] != 1 {
+    if parsed["format"] != "pathloom" || (parsed["version"] != 1 && parsed["version"] != 2) {
         return Err("Invalid project format".into());
     }
     let path = if let Some(path) = current_path {
@@ -201,4 +209,95 @@ mod gcode_tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
         std::fs::remove_file(path).unwrap();
     }
+}
+
+#[tauri::command]
+pub async fn cad_shape_library(app: AppHandle, content: Option<String>) -> Result<String, String> {
+    let root = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let path = root.join("cad-shape-library.json");
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(content) = content {
+            if content.len() > 200_000_000 {
+                return Err("CAD_RESOURCE_LIMIT: library exceeds 200 MB".into());
+            }
+            let value: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+            if !value.is_array() {
+                return Err("Invalid shape library".into());
+            }
+            write_atomic(&path, &content)?;
+            Ok(content)
+        } else if path.exists() {
+            std::fs::read_to_string(path).map_err(|e| e.to_string())
+        } else {
+            Ok("[]".into())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub async fn cad_command_library(
+    app: AppHandle,
+    content: Option<String>,
+) -> Result<String, String> {
+    let root = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let path = root.join("cad-command-library.json");
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Some(content) = content {
+            if content.len() > 200_000_000 {
+                return Err("CAD_RESOURCE_LIMIT: library exceeds 200 MB".into());
+            }
+            let value: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+            if !value.is_array() {
+                return Err("Invalid shape library".into());
+            }
+            write_atomic(&path, &content)?;
+            Ok(content)
+        } else if path.exists() {
+            std::fs::read_to_string(path).map_err(|e| e.to_string())
+        } else {
+            Ok("[]".into())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub async fn cad_recovery(
+    app: AppHandle,
+    content: Option<String>,
+    discard: Option<bool>,
+) -> Result<Option<String>, String> {
+    let root = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let path = root.join("cad-recovery.json");
+    tauri::async_runtime::spawn_blocking(move || {
+        if discard == Some(true) {
+            if path.exists() {
+                std::fs::remove_file(path).map_err(|e| e.to_string())?
+            }
+            return Ok(None);
+        }
+        if let Some(content) = content {
+            if content.len() > 200_000_000 {
+                return Err("CAD_RESOURCE_LIMIT: recovery exceeds 200 MB".into());
+            }
+            let value: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+            if value["format"] != "pathloom-cad-document" || value["schemaVersion"] != 1 {
+                return Err("Invalid recovery document".into());
+            }
+            write_atomic(&path, &content)?;
+            Ok(Some(content))
+        } else if path.exists() {
+            std::fs::read_to_string(path)
+                .map(Some)
+                .map_err(|e| e.to_string())
+        } else {
+            Ok(None)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

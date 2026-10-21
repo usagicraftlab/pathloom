@@ -86,6 +86,7 @@ const finite=v=>typeof v==='number'&&Number.isFinite(v);
 const idValid=id=>typeof id==='string'&&/^[A-Za-z][A-Za-z0-9_-]{0,79}$/.test(id);
 const limit=(v,min,max,label)=>{if(!finite(v)||v<min||v>max)throw new Error(`Invalid ${label}`);return v};
 export function numberParameters(definition){return definition?.version===2?definition.inputs.filter(input=>input.type==='number'):definition?.parameters||[]}
+export function cadInputUsed(definition,inputId){return printOutputNodes(definition).some(o=>o.source===`input:${inputId}`)||definition.steps.some(step=>inputReferences(step).includes(inputId)||curveInputReferences(step,operationSpec(definition,step)).includes(inputId))}
 export function inputReferences(step){return [...(step.source?.startsWith('input:')?[step.source.slice(6)]:[]),...Object.values(step.params||{}).flatMap(value=>value&&typeof value==='object'&&!Array.isArray(value)&&typeof value.input==='string'?[value.input]:[])]}
 export function curveInputReferences(step,spec){return Object.entries(step.params||{}).filter(([key])=>spec?.params?.[key]==='curves').flatMap(([,ids])=>Array.isArray(ids)?ids:[])}
 export function migrateDefinition(legacy){
@@ -131,9 +132,10 @@ export function validatePipeline(raw){
     if(input.exposed!==undefined&&typeof input.exposed!=='boolean')throw new Error('Invalid input exposure');
     if(input.printSetting!==undefined&&(input.type!=='number'||!['printWidth','printHeight','printSpeed','travelSpeed','nozzleTemperature','bedTemperature','fanSpeed'].includes(input.printSetting)))throw new Error('Invalid print setting reference');
     inputs.set(input.id,input);
+    if(input.cadBinding!==undefined){const b=input.cadBinding;if(!b||typeof b.id!=='string'||!['ready','pending','missing','type-changed'].includes(b.status)||typeof b.assetHash!=='string'||!Number.isFinite(b.sampling?.toleranceMm)||b.sampling.toleranceMm<=0)throw new Error('Invalid CAD binding')}
     if(input.type==='curve'){
       const curve=input.curve;
-      if(!curve||!['control','polyline'].includes(curve.type)||typeof curve.closed!=='boolean'||!Array.isArray(curve.points)||curve.points.length<2||curve.points.length>256||curve.points.some(p=>!Array.isArray(p)||p.length!==2||p.some(v=>!finite(v)||Math.abs(v)>500)))throw new Error(`Invalid curve: ${input.name}`);
+      if(!curve||!['control','polyline'].includes(curve.type)||typeof curve.closed!=='boolean'||!Array.isArray(curve.points)||curve.points.length<2||curve.points.length>(input.cadBinding?300000:256)||curve.points.some(p=>!Array.isArray(p)||!(input.cadBinding?[2,3]:[2]).includes(p.length)||p.some(v=>!finite(v)||!input.cadBinding&&Math.abs(v)>500)))throw new Error(`Invalid curve: ${input.name}`);
     }else if(input.type==='surface'){validateStepMeshes(input.meshes);if(input.brep!==undefined)validateEditableShape(input);if(typeof input.filename!=='string'||input.filename.length>255)throw new Error('Invalid STEP filename');
     }else if(input.type==='point'){
       if(!Array.isArray(input.value)||input.value.length!==3||input.value.some(v=>!finite(v)||Math.abs(v)>1000))throw new Error(`Invalid point: ${input.name}`);
@@ -223,7 +225,7 @@ export function curveAttributes(curves){let minZ=Infinity,maxZ=-Infinity;for(con
 
 export function executePipeline(raw,{sectionPoints,validateSection,sliceBrep,runCode,geometryOnly=false}){
   if(raw?.recipes!==undefined){const definition=validatePipeline(raw),aliases={},result=executePipeline(expandRecipes(definition,{aliases}),{sectionPoints,validateSection,sliceBrep,runCode,geometryOnly});for(const[key,value]of Object.entries(aliases))if(result.curveAttributes?.[value])result.curveAttributes[key]=result.curveAttributes[value];result.definition=definition;return result}
-  const definition=validatePipeline(raw),results=new Map(),inputs=new Map(definition.inputs.map(i=>[i.id,i])),resolve=value=>structuredClone(resolveValue(definition,value));
+  const definition=validatePipeline(raw);for(const input of definition.inputs)if(input.cadBinding&&input.cadBinding.status!=='ready'&&cadInputUsed(definition,input.id))throw new Error(`CAD input ${input.name}: ${input.cadBinding.status}; repair the CAD feature before generating`);const results=new Map(),inputs=new Map(definition.inputs.map(i=>[i.id,i])),resolve=value=>structuredClone(resolveValue(definition,value));
   for(const input of definition.inputs.filter(input=>input.type==='curve')){const points=inputCurvePoints(input,180,sectionPoints);results.set(`input:${input.id}`,[{inputId:input.id,closed:input.curve.closed,points}])}
   for(const input of definition.inputs.filter(input=>input.type==='surface'))results.set(`input:${input.id}`,Object.assign([...input.meshes],{brep:input.brep}));
   for(const input of definition.inputs.filter(input=>['point','number','list'].includes(input.type)))results.set(`input:${input.id}`,input.type==='point'?[structuredClone(input.value)]:structuredClone(input.value));
