@@ -92,6 +92,7 @@ export function insertShapes(doc, entry) {
   )
     throw new Error("Unsupported shape library entry");
   const map = new Map();
+  const slotKeys = new Map();
   function remap(value) {
     if (!value) return value;
     if (!map.has(value)) map.set(value, id());
@@ -101,6 +102,9 @@ export function insertShapes(doc, entry) {
   const features = [];
   const remapEntity = (e) => {
     const original = e.id;
+    e.producer.slotKey =
+      slotKeys.get(`${e.producer.featureId}:${e.producer.slotKey}`) ||
+      e.producer.slotKey;
     e.id = remap(e.id);
     e.bodyId = remap(e.bodyId);
     e.producer.featureId = remap(e.producer.featureId);
@@ -109,11 +113,28 @@ export function insertShapes(doc, entry) {
   };
   if (entry.withHistory) {
     for (const f of clone(entry.features)) {
+      const originalFeatureId = f.id;
       f.id = remap(f.id);
       if (f.sketchId) f.sketchId = remap(f.sketchId);
       for (const ref of references(f.inputs))
         ref.entityId = remap(ref.entityId);
       for (const slot of f.outputSlots) {
+        if (
+          slot.sourceEntityId &&
+          ["solid.split", "surface.split", "solid.difference"].includes(
+            f.operation.id,
+          )
+        ) {
+          const oldKey = slot.key,
+            oldPrefix = `${f.operation.id}/${slot.sourceEntityId}`;
+          slot.sourceEntityId = remap(slot.sourceEntityId);
+          if (oldKey === oldPrefix || oldKey.startsWith(oldPrefix + "/")) {
+            slot.key =
+              `${f.operation.id}/${slot.sourceEntityId}` +
+              oldKey.slice(oldPrefix.length);
+            slotKeys.set(`${originalFeatureId}:${oldKey}`, slot.key);
+          }
+        }
         slot.entityId = remap(slot.entityId);
         slot.bodyId = remap(slot.bodyId);
       }

@@ -22,6 +22,8 @@ import {
   createCommandSession,
   dispatchSession,
   sessionReady,
+  rectanglePointKeys,
+  setRectangleMode,
 } from "./commands/session.js";
 import { parseScalar, parseCoordinate } from "./commands/input.js";
 import { makeSubshapeRef } from "./references.js";
@@ -51,6 +53,7 @@ const labels = {
   axis: "軸（原点・方向）",
   angleRad: "角度 rad",
   anchorMode: "基準モード",
+  keepTools: "工具を残す",
 };
 export function initModelWorkspace(api) {
   let library = [],
@@ -61,11 +64,15 @@ export function initModelWorkspace(api) {
     autosaveRevision = -1,
     draftVersion = 0,
     savedDraftVersion = -1;
+  let recoveryWrites = Promise.resolve();
   let lastCommand = null;
   let session = null,
     selectedFeature = null,
     status = "CADを開くと正確な形状ランタイムを起動します。",
     pointStep = 0,
+    lastPoint = null,
+    activeInputKey = null,
+    runtimeStarting = null,
     previewTimer = null,
     previewBusy = false,
     previewAgain = false,
@@ -97,18 +104,24 @@ export function initModelWorkspace(api) {
   }
   async function startRuntime() {
     if (ready) return;
-    try {
-      const hello = await native.start();
-      ready = true;
-      store.document.kernel.version = hello.occtVersion ?? null;
-      store.document.kernel.bindingVersion = hello.ocpVersion;
-      setStatus(`OCCT（OCP ${hello.ocpVersion}） · 正確な形状で作図できます`);
-      await loadCommands();
-      await loadLibrary();
-      await checkRecovery();
-    } catch (error) {
-      report(error);
-    }
+    if (runtimeStarting) return runtimeStarting;
+    runtimeStarting = (async () => {
+      try {
+        const hello = await native.start();
+        ready = true;
+        store.document.kernel.version = hello.occtVersion ?? null;
+        store.document.kernel.bindingVersion = hello.ocpVersion;
+        setStatus(`OCCT（OCP ${hello.ocpVersion}） · 正確な形状で作図できます`);
+        await loadCommands();
+        await loadLibrary();
+        await checkRecovery();
+      } catch (error) {
+        report(error);
+      }
+    })().finally(() => {
+      runtimeStarting = null;
+    });
+    return runtimeStarting;
   }
   function saveDraft() {
     if (session && !["committed", "cancelled"].includes(session.state)) {
@@ -120,6 +133,21 @@ export function initModelWorkspace(api) {
       ];
       draftVersion++;
       queueAutosave();
+    }
+  }
+  function restoreRawInput(input, key) {
+    if (session?.rawDraft?.[key] !== undefined) {
+      input.value = session.rawDraft[key];
+      input.setCustomValidity("未確定の入力を修正してください");
+    }
+  }
+  function retainInvalidInput(input, key, error) {
+    input.setCustomValidity(error.message);
+    if (session) {
+      session.rawDraft[key] = input.value;
+      session.previewSequence++;
+      session.result = null;
+      saveDraft();
     }
   }
   function cancel() {
@@ -146,6 +174,8 @@ export function initModelWorkspace(api) {
     }
     selectedFeature = null;
     pointStep = 0;
+    lastPoint = null;
+    activeInputKey = null;
     session = createCommandSession(command, {
       selection: selection.map((r) => ({
         ...r,
@@ -191,7 +221,7 @@ export function initModelWorkspace(api) {
             if (!["valid", "warning"].includes(f?.status))
               throw new Error("未解決の古い形状は生成に渡せません");
             const binding = bindBody(store.document, e);
-            store.resolveBindings();
+            store.notify();
             updateBindings();
             setStatus("生成入力へ接続しました。ノード配線は変更していません。");
           } catch (error) {
@@ -200,9 +230,27 @@ export function initModelWorkspace(api) {
         };
         if (e.kind === "curve" || e.displayCache?.preview?.meshes?.length) {
           host.append(use);
+          for (const binding of store.document.outputBindings.filter(
+            (b) => b.status !== "ready",
+          )) {
+            const repair = document.createElement("button");
+            repair.textContent = `「${binding.name}」の生成参照をこの形状へ変更`;
+            repair.onclick = () => {
+              try {
+                store.rebindOutput(binding.id, e.id);
+                setStatus(
+                  "生成参照を修復しました。既存のノード配線を維持します。",
+                );
+              } catch (error) {
+                report(error);
+              }
+            };
+            host.append(repair);
+          }
         } else {
           const note = document.createElement("p");
-          note.textContent = "この形状はCAD内で保存・編集できます。生成入力へのadapterは未対応です。";
+          note.textContent =
+            "この形状はCAD内で保存・編集できます。生成入力へのadapterは未対応です。";
           host.append(note);
         }
         for (const [label, key] of [
@@ -218,6 +266,7 @@ export function initModelWorkspace(api) {
                   ? "visible"
                   : "hidden"
                 : !e.locked;
+            store.document.documentRevision++;
             render();
           };
           host.append(b);
@@ -327,7 +376,7 @@ export function initModelWorkspace(api) {
         const discard = document.createElement("button");
         discard.textContent = "未収束の拘束変更を取り消す";
         discard.onclick = () => {
-          delete sketch.draft;
+          store.discardSketchDraft(f.id);
           properties();
         };
         host.append(discard);
@@ -350,7 +399,123 @@ export function initModelWorkspace(api) {
     settingsForm.id = "modelSettingsForm";
     const draft = clone(params),
       draftTolerance = clone(f?.toleranceOverrides || {});
-    for (const [key, value] of Object.entries(f?.sketchId ? {} : params)) {
+    if (session?.command.id === "C04") {
+      const label = document.createElement("label"),
+        select = document.createElement("select");
+      label.textContent = "作図モード";
+      select.setAttribute("aria-label", "長方形の作図モード");
+      for (const [value, text] of [
+        ["center", "中心＋幅・高さ"],
+        ["twoCorners", "2コーナー"],
+        ["threePoints", "3点"],
+      ]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = text;
+        select.append(option);
+      }
+      select.value = session.drawingMode || "center";
+      select.onchange = () => {
+        try {
+          setRectangleMode(session, select.value);
+          pointStep = 0;
+          lastPoint = null;
+          saveDraft();
+          properties();
+          queuePreview();
+        } catch (error) {
+          report(error);
+        }
+      };
+      label.append(select);
+      settingsForm.append(label);
+      if (session.drawingMode && session.drawingMode !== "center")
+        for (const [i, key] of rectanglePointKeys(session).entries()) {
+          const label = document.createElement("label"),
+            input = document.createElement("input");
+          label.textContent = `作図点 ${i + 1} XYZ`;
+          input.setAttribute("aria-label", label.textContent);
+          input.value = JSON.stringify(session.inputValues[key]);
+          restoreRawInput(input, key);
+          input.oninput = () => {
+            try {
+              const p = input.value.trim().startsWith("[")
+                ? JSON.parse(input.value)
+                : parseCoordinate(input.value, {
+                    plane: session.parameters.plane,
+                  });
+              if (
+                !Array.isArray(p) ||
+                p.length !== 3 ||
+                !p.every(Number.isFinite)
+              )
+                throw new Error("XYZを指定してください");
+              session.inputValues[key] = p;
+              delete session.rawDraft[key];
+              session.previewSequence++;
+              session.result = null;
+              saveDraft();
+              queuePreview();
+              input.setCustomValidity("");
+            } catch (error) {
+              retainInvalidInput(input, key, error);
+            }
+          };
+          label.append(input);
+          settingsForm.append(label);
+        }
+    }
+    const editable = { ...params };
+    if (
+      (session?.command.baseOperation.id || f?.operation.id) ===
+      "solid.difference"
+    )
+      editable.keepTools ??= false;
+    for (const [key, value] of Object.entries(f?.sketchId ? {} : editable)) {
+      if (
+        session?.command.id === "C04" &&
+        session.drawingMode &&
+        session.drawingMode !== "center" &&
+        (["anchor", "anchorMode", "widthMm", "heightMm"].includes(key) ||
+          (session.drawingMode === "threePoints" && key === "plane"))
+      )
+        continue;
+      if (key === "translation" && Array.isArray(value)) {
+        for (const [i, axis] of ["X", "Y", "Z"].entries()) {
+          const label = document.createElement("label"),
+            input = document.createElement("input");
+          label.textContent = `移動 ${axis} mm`;
+          input.setAttribute("aria-label", label.textContent);
+          input.value = value[i];
+          const rawKey = `translation.${i}`;
+          restoreRawInput(input, rawKey);
+          input.oninput = () => {
+            try {
+              const vector = [
+                ...(session?.parameters.translation || draft.translation),
+              ];
+              vector[i] = parseScalar(input.value);
+              draft.translation = vector;
+              if (session) {
+                delete session.rawDraft[rawKey];
+                dispatchSession(session, {
+                  type: "setting.change",
+                  key: "translation",
+                  value: vector,
+                });
+                saveDraft();
+                queuePreview();
+              }
+              input.setCustomValidity("");
+            } catch (error) {
+              retainInvalidInput(input, rawKey, error);
+            }
+          };
+          label.append(input);
+          settingsForm.append(label);
+        }
+        continue;
+      }
       const label = document.createElement("label");
       label.textContent = labels[key] || key;
       const input =
@@ -380,6 +545,7 @@ export function initModelWorkspace(api) {
             : value === null
               ? "null"
               : String(value);
+      restoreRawInput(input, key);
       input.addEventListener("input", () => {
         try {
           const v =
@@ -399,17 +565,14 @@ export function initModelWorkspace(api) {
                   : input.value;
           draft[key] = v;
           if (session) {
+            delete session.rawDraft[key];
             dispatchSession(session, { type: "setting.change", key, value: v });
             saveDraft();
             queuePreview();
           }
           input.setCustomValidity("");
         } catch (error) {
-          input.setCustomValidity(error.message);
-          if (session) {
-            session.rawDraft[key] = input.value;
-            saveDraft();
-          }
+          retainInvalidInput(input, key, error);
         }
       });
       label.append(input);
@@ -428,12 +591,14 @@ export function initModelWorkspace(api) {
         session?.toleranceOverrides?.joinLinearMm ??
         f?.toleranceOverrides?.joinLinearMm ??
         store.document.tolerances.joinLinearMm;
+      restoreRawInput(input, "tolerance.joinLinearMm");
       input.oninput = () => {
         try {
           const v = parseScalar(input.value);
           if (v <= 0) throw new Error("正の許容差を指定してください");
           input.setCustomValidity("");
           if (session) {
+            delete session.rawDraft["tolerance.joinLinearMm"];
             session.toleranceOverrides ??= {};
             session.toleranceOverrides.joinLinearMm = v;
             session.previewSequence++;
@@ -441,7 +606,7 @@ export function initModelWorkspace(api) {
             queuePreview();
           } else draftTolerance.joinLinearMm = v;
         } catch (error) {
-          input.setCustomValidity(error.message);
+          retainInvalidInput(input, "tolerance.joinLinearMm", error);
         }
       };
       label.append(input);
@@ -458,6 +623,7 @@ export function initModelWorkspace(api) {
           ? JSON.stringify(session.inputValues[slot.key])
           : "";
         input.setAttribute("aria-label", `CAD point ${slot.key}`);
+        restoreRawInput(input, slot.key);
         input.onchange = () => {
           try {
             const p = input.value.trim().startsWith("[")
@@ -472,12 +638,14 @@ export function initModelWorkspace(api) {
             )
               throw new Error("XYZを指定してください");
             session.inputValues[slot.key] = p;
+            delete session.rawDraft[slot.key];
+            input.setCustomValidity("");
             session.previewSequence++;
             saveDraft();
             queuePreview();
             render({ keepProperties: true });
           } catch (error) {
-            report(error);
+            retainInvalidInput(input, slot.key, error);
           }
         };
         label.append(input);
@@ -499,6 +667,9 @@ export function initModelWorkspace(api) {
           ? 1
           : Math.min(5, Math.max(2, store.document.entities.length));
       select.setAttribute("aria-label", `CAD input ${slot.key}`);
+      select.onfocus = () => {
+        activeInputKey = slot.key;
+      };
       if (slot.maxCount === 1) {
         const o = document.createElement("option");
         o.value = "";
@@ -575,6 +746,14 @@ export function initModelWorkspace(api) {
     }
   }
   function updateBindings() {
+    for (const id of bindingStamps.keys())
+      if (!store.document.outputBindings.some((b) => b.id === id)) {
+        window.PathloomCad?.upsertCadBinding?.({
+          bindingId: id,
+          status: "missing",
+        });
+        bindingStamps.delete(id);
+      }
     for (const b of store.document.outputBindings) {
       const stamp = `${b.status}:${b.resolvedResultHash}:${b.resolvedEntityId}`;
       if (bindingStamps.get(b.id) === stamp) continue;
@@ -852,7 +1031,9 @@ export function initModelWorkspace(api) {
         );
       }
       if (choice === "discard")
-        await native.invoke("cad_recovery", { discard: true });
+        await (recoveryWrites = recoveryWrites
+          .catch(() => {})
+          .then(() => native.invoke("cad_recovery", { discard: true })));
       recoveryDialog.close();
     } catch (error) {
       report(error);
@@ -883,12 +1064,27 @@ export function initModelWorkspace(api) {
     const wait = Math.max(1000, 10000 - (Date.now() - lastAutosave));
     autosaveTimer = setTimeout(async () => {
       try {
+        const document = store.document,
+          epoch = store.epoch;
         const draftSnapshot = draftVersion,
           doc = await store.snapshot();
-        await native.invoke("cad_recovery", { content: JSON.stringify(doc) });
+        if (store.document !== document || store.epoch !== epoch) return;
+        const saved = await (recoveryWrites = recoveryWrites
+          .catch(() => {})
+          .then(async () => {
+            if (store.document !== document || store.epoch !== epoch)
+              return false;
+            await native.invoke("cad_recovery", {
+              content: JSON.stringify(doc),
+            });
+            return true;
+          }));
+        if (!saved || store.document !== document || store.epoch !== epoch)
+          return;
         lastAutosave = Date.now();
         autosaveRevision = doc.documentRevision;
         savedDraftVersion = draftSnapshot;
+        queueAutosave();
       } catch (error) {
         setStatus("CAD自動回復保存に失敗しました: " + error.message);
       }
@@ -928,8 +1124,9 @@ export function initModelWorkspace(api) {
         f.status = "dirty";
     store.recompute().catch(report);
   };
-  $("modelRegister").onclick = () => {
+  $("modelRegister").onclick = async () => {
     try {
+      await startRuntime();
       const d = JSON.parse($("modelCommandDefinition").value);
       const normalized = registerCommand(d);
       store.document.commandDefinitions.push(clone(normalized));
@@ -980,6 +1177,8 @@ export function initModelWorkspace(api) {
     if (slots.length) {
       const slot = slots[pointStep++ % slots.length];
       session.inputValues[slot.key] = p;
+      delete session.rawDraft[slot.key];
+      lastPoint = p;
       session.previewSequence++;
       saveDraft();
       properties();
@@ -993,18 +1192,35 @@ export function initModelWorkspace(api) {
       if (pointStep++ === 0) params.points = [p];
       else params.points.push(p);
     } else if (op === "curve.rectangle") {
-      if (pointStep++ % 2 === 0) params.anchor = p;
+      if (session.drawingMode && session.drawingMode !== "center") {
+        const keys = rectanglePointKeys(session);
+        const key = keys[pointStep++ % keys.length];
+        session.inputValues[key] = p;
+        delete session.rawDraft[key];
+      } else {
+        if (pointStep++ % 2 === 0) params.anchor = p;
+        else {
+          const diff = p.map((v, i) => v - params.anchor[i]),
+            pl = params.plane;
+          params.widthMm =
+            2 * Math.abs(diff.reduce((s, v, i) => s + v * pl.xAxis[i], 0));
+          params.heightMm =
+            2 * Math.abs(diff.reduce((s, v, i) => s + v * pl.yAxis[i], 0));
+        }
+      }
+    } else if (op === "curve.circle") {
+      if (pointStep++ % 2 === 0) params.center = p;
       else {
-        const diff = p.map((v, i) => v - params.anchor[i]),
-          pl = params.plane;
-        params.widthMm =
-          2 * Math.abs(diff.reduce((s, v, i) => s + v * pl.xAxis[i], 0));
-        params.heightMm =
-          2 * Math.abs(diff.reduce((s, v, i) => s + v * pl.yAxis[i], 0));
+        const delta = p.map((v, i) => v - params.center[i]);
+        params.radiusMm = Math.hypot(
+          delta.reduce((n, v, i) => n + v * params.plane.xAxis[i], 0),
+          delta.reduce((n, v, i) => n + v * params.plane.yAxis[i], 0),
+        );
       }
     } else if ("center" in params) params.center = p;
     else if ("anchor" in params) params.anchor = p;
     else return;
+    lastPoint = p;
     session.previewSequence++;
     saveDraft();
     properties();
@@ -1017,7 +1233,7 @@ export function initModelWorkspace(api) {
     try {
       acceptPoint(
         parseCoordinate(event.target.value, {
-          previous: session?.parameters.end || session?.parameters.anchor,
+          previous: lastPoint,
           plane: store.document.uiState.workPlane,
         }),
       );
@@ -1073,11 +1289,13 @@ export function initModelWorkspace(api) {
     else selection.push(hit);
     store.document.uiState.selection = clone(selection);
     if (session) {
-      const slot = session.command.inputs.find((s) =>
+      const eligible = session.command.inputs.filter((s) =>
         s.kind === "subshape"
           ? s.allowedEntityKinds.includes(hit.kind)
           : !hit.kind && s.allowedEntityKinds.includes(e.kind),
       );
+      const slot =
+        eligible.find((s) => s.key === activeInputKey) || eligible[0];
       if (slot) {
         const refs = selection
           .filter((r) =>
@@ -1130,6 +1348,21 @@ export function initModelWorkspace(api) {
         const feature = store.getFeature(e.producer.featureId);
         if (feature?.parameters.center)
           candidates.push({ point: feature.parameters.center, label: "中心" });
+        if (feature?.operation.id === "curve.rectangle") {
+          const p = feature.parameters;
+          candidates.push({
+            point: p.anchor.map(
+              (n, i) =>
+                n +
+                (p.anchorMode === "center"
+                  ? 0
+                  : (p.widthMm * p.plane.xAxis[i] +
+                      p.heightMm * p.plane.yAxis[i]) /
+                    2),
+            ),
+            label: "中心",
+          });
+        }
         for (const candidate of candidates) {
           const p = new THREE.Vector3(...candidate.point).project(camera);
           const distance = Math.hypot(
@@ -1224,6 +1457,8 @@ export function initModelWorkspace(api) {
           event.key === "Backspace"
         ) {
           session.parameters.points.pop();
+          pointStep = Math.max(0, pointStep - 1);
+          lastPoint = session.parameters.points.at(-1) || null;
           session.previewSequence++;
           saveDraft();
           properties();
@@ -1334,7 +1569,14 @@ export function initModelWorkspace(api) {
       }
       return store.prepareRestore(doc);
     },
+    assertRestoreCurrent(doc) {
+      if (doc) store.assertRestoreCurrent(doc);
+    },
     restorePrepared(doc) {
+      if (doc) store.assertRestoreCurrent(doc);
+      clearTimeout(autosaveTimer);
+      autosaveRevision = -1;
+      savedDraftVersion = -1;
       session = null;
       selectedFeature = null;
       view.clearPreview();

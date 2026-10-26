@@ -1,5 +1,6 @@
 import {execFileSync} from 'node:child_process';
-import {mkdir,access,writeFile} from 'node:fs/promises';
+import {mkdir,access,writeFile,rename} from 'node:fs/promises';
+import {homedir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),runtime=path.join(root,'.pathloom-runtime');
@@ -17,4 +18,14 @@ try{await access(uv)}catch{
 const env=path.join(runtime,'python'),python=path.join(env,process.platform==='win32'?'Scripts/python.exe':'bin/python');
 try{await access(python)}catch{execFileSync(uv,['venv','--python','3.12',env],{stdio:'inherit'})}
 execFileSync(uv,['pip','install','--python',python,'cadquery-ocp==7.8.1.1'],{stdio:'inherit'});
+// Finder-launched apps do not inherit terminal environment variables or the
+// build machine's repository path. Persist the interpreter selected by setup.
+const dataRoot=process.platform==='darwin'?path.join(homedir(),'Library','Application Support'):
+  process.platform==='win32'?(process.env.APPDATA||path.join(homedir(),'AppData','Roaming')):
+  (process.env.XDG_DATA_HOME||path.join(homedir(),'.local','share'));
+const configDir=path.join(dataRoot,'com.usagicraftlab.pathloom');
+await mkdir(configDir,{recursive:true});
+const config=path.join(configDir,'cad-runtime.json'),temporary=config+`.${process.pid}.tmp`;
+await writeFile(temporary,JSON.stringify({schemaVersion:1,python}),{mode:0o600});
+await rename(temporary,config);
 console.log('Editable CAD runtime ready:',python);

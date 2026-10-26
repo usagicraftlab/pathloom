@@ -4,7 +4,7 @@ This is the historical 2026-10-21 implementation record. The current direction,
 next tasks and dated verification live in [cad-master-plan.md](cad-master-plan.md),
 [cad-roadmap.md](cad-roadmap.md) and [cad-development-log.md](cad-development-log.md).
 The original checkpoint results and no-push statements below describe that
-earlier session, not the current Phase 0 documentation PR.
+earlier session, not the current Phase 1 work or later merge authorization.
 
 Started 2026-10-21 JST from local HEAD `93c5139` on `codex/cad-workspace`.
 The user explicitly adopted work-order §28.5. No push/merge/publication is

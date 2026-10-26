@@ -203,3 +203,100 @@ PY
 Phase 0のPRは資料だけを含み、上記4件とPR CIで発見したAUD-007は未修正のままPhase 1へ引き継ぐ。
 未実施のmacOS項目はロードマップM01〜M07を参照。実AI推論、実Rhinoセッション、
 プリンター送信・印刷は実施していない。mainへのマージは行わない。
+
+## 2026-10-26 JST — Phase 1 基本操作・整合性修正
+
+### 許可と対象
+
+後続のユーザー指示でmainへのマージとPhase 01までの実装を明示的に許可された。
+Phase 0資料[PR #1](https://github.com/usagicraftlab/pathloom/pull/1)をmainへマージ。
+merge SHAは`716a155fad5b50a2e1501bb08f078456dfb862c1`。
+上の「マージしない」「未修正」はPhase 0実施時点の範囲を表す履歴として残す。
+
+Phase 1ブランチは`feat/cad-phase1-basics-20261026`、[PR #2](https://github.com/usagicraftlab/pathloom/pull/2)。
+最初の実装commitは`45608c84a9e3352be3e18989d4fcc87dc43be113`。
+保存schema/operation versionと既存42 ID＋Moveの構成は維持した。
+新しいRectangleモードはsession/feature command metadataに保持し、保存済み組込command版の内容を書き換えない。
+
+### 変更と証拠
+
+| 対象 | 実装したこと | 検証の範囲 |
+| --- | --- | --- |
+| P1-00 / AUD-007 | Nodeで不足するClipper navigatorを読込前に補完。既存のbrowser navigatorは維持 | Node20/24の全JS回帰 |
+| P1-01 / AUD-001 | awaitの後にdoc/epoch/feature revision/入力hash/入力状態を再検査。export後の適用をまとめ、破棄handleを解放。recomputeの待ち手は最新のqueued処理まで待つ | `cad-jobs.test.mjs`：再編集/Undo/削除/別文書/上流編集のexport競合、無関係revision。実OCCT追加プローブでも設定80/実幅80へ改善 |
+| P1-02 / AUD-002 | argumentsごとにtoolsだけを減算。source entityごとのbodyを保持。工具保持は明示的設定。body結果を履歴順に再構成し、cached結果でも工具保持の切替が反映される | native実体積500＋1000＝1500、単一/非接触/空。実Storeの工具保持true→false→true、Undo/Redo、保存再開 |
+| P1-03 / AUD-003 | Split slotはoperation/source entity/正本hash。同一の厳密結果だけIDを継承。旧UUIDは一意の同一正本に限り移行。source/slotを型付きでLibrary再割当。binding修復操作を追加 | 同じ分割の再評価/新Runtimeで一致。分割数2→1で古い後段をblockedにし保存保持、明示的再選択で復旧。依存Libraryは独立してvalid |
+| P1-04 / AUD-004 | 指定planeを支持面としてOffsetへ渡す。平面内/軸/パラメータ型/未知設定を検証し、開曲線を閉じない | XY/XZ/YZ/任意平面、±1、round/miter、反転法線、開曲線の長さ/位置。不正軸/不一致/非平面/未知設定は型付き失敗 |
+| P1-05 | Rectangle中心・2コーナー・3点、Circle中心/半径点、Move単位付きXYZ。Polylineの相対入力/Backspace、role picker後の選択、Rectangle中心snap | ブラウザUIで形状数値・自由平面・Undo/Redo・保存再開。viewport選択前/後＋Shift、端点/中心への2pxずらしsnap、入力中Delete、Esc |
+| P1-06 | bindingのdirty/failedを即時通知し、削除されたbindingもmissing通知。ノードの明示接続は維持 | Rectangle→capped Extrude25→Fillet R2→binding→実Python STEP断面。幅80のパス、G-code成功。幅-1でlastValid/blocked/出力阻止、80へ修正して復旧。別生成グラフを保持 |
+| P1-07 | 不正な入力文字列をdraftとして再表示し、修正まで評価/確定を阻止。staged Open/Library読込中の変更を保護。CAD recovery書込を直列化し文書世代を照合 | 実Python childをkillして別PIDで再起動＋ページreload。開曲線/開面/有理NURBSのhash/bbox/closure、failed/lastValid、不正draftを復元。nativeは次数/knots/weights/metricsも比較。v1はOpenで未書込、次のSaveはv2。破損Openは現文書を保持 |
+| P1-08 / runtime | `cad:setup`がapp-dataへ絶対Pythonパスを原子的に保存。daemonと既存STEP bridgeで探索処理を共用。import epoch再確認、timeout理由とrestart状態を修正。macOS CIへ.app/.dmg生成を追加 | Rustに探索4ケースを追加。NativeCadClientのcancel/遅延結果/daemon epoch復帰のtransportテスト。Finder起動や実Tauri GUI通信は未実行 |
+
+実OCCTのAUD-001再検証は本ログのPhase 0再現コードをそのままstdin実行した。
+`parameterWidth=80`、`actualWidth=80`、`status=valid`、`requestedHash`は非null、snapshotもvalid。
+JSの競合fixtureはtransportを置換するが、このプローブでは形状自体を実OCCTで計算した。
+
+### 環境と最終ローカル実行
+
+Linux/Node24.22.1/npm11.9.0/Python3.12.14/OCP7.8.1.1/VTK9.3.1。
+OCCT版はhelloのnullを維持し、OCP版から推定しない。lockfile/依存定義の変更なし。
+
+公式Playwright Chromium取得はPhase 0と同じ環境障害で失敗したため、ignoredな
+`work/cad-phase1/browser`の`@sparticuz/chromium`からChromium153.0.8010.0を用意した。
+展開時のchown制約をその一時依存だけで回避し、完全に展開した実行ファイルを
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE=/tmp/pathloom-chromium`で指定した。
+製品・依存定義へこの回避策を入れていない。CIは公式Playwright Chromiumを取得して使う。
+
+| ID | コマンド / 確認 | 結果 | 境界 |
+| --- | --- | --- | --- |
+| P1-L01 | `npm test` | exit0、165成功/0失敗/0skip、約2.98秒 | JS全体。native数値証拠の代わりにはしない |
+| P1-L02 | `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | exit0、165成功/0失敗/0skip、約3.10秒 | 同じ165件を対応最低版で再実行。330独立条件とは数えない |
+| P1-L03 | `npm run test:cad-native` | exit0、43検出/41成功/2skip、約2.18秒 | 実OCP7.8.1.1。skip2件は任意NVIDIA USD。成功数に加えない |
+| P1-L04 | 下記browserコマンド | exit0、28成功/0失敗/0skip、約1.3分 | 実OCCTのCAD14シナリオ＋既存操作/AI/出力14。Tauri transport、OS storage、cad_cancelは置換 |
+| P1-L05 | Phase 0 AUD-001実OCCTプローブを再実行 | exit0、設定80/実形状80/valid/非null hash | export待ちだけを注入。自然なmacOS操作での発生頻度は未測定 |
+| P1-L06 | `npm run cad:setup`を修正後に再実行 | exit0、指定版を確認しapp-dataのruntime設定を保存 | Linuxでの配置。Finder探索の実確認ではない |
+| P1-L07 | `git diff --check`、変更Markdownの相対リンクと台帳列数検査 | 成功・exit0、相対リンク/65機能と9タスクの列数を照合 | 資料整合性。製品受け入れとは別 |
+
+```sh
+PATHLOOM_FRONTEND_DIR=desktop-dist \
+PATHLOOM_BREP_PYTHON=.pathloom-runtime/python/bin/python \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/tmp/pathloom-chromium \
+npm run test:browser -- --max-failures=1
+```
+
+### 途中で失敗した試行
+
+- 最初のPhase 1 CI（下記）は既存idle-renderテストで1失敗。
+  カメラaxisの同期状態だけを待って描画frameを即時assertしていた。
+  `expect.poll`で実frameを待つよう修正した。閾値緩和やテストskipはしていない。
+- 新しいv1保存fixtureの初回はOpen直後の生成中にSaveを呼んで失敗した。
+  復元/生成完了を待って検査するよう修正し、v1の未書込と次回v2保存を確認した。
+- 工具保持false→trueで工具が戻らない実装上の問題を新fixtureで再現した。
+  body policyの履歴順再構成へ修正し、同fixtureのUndo/Redo/reopenを含め成功した。
+- Splitの復旧検査では、Open前の古いbindingオブジェクトを読むfixtureを修正した。
+  保存後の新文書からbindingを取得してready/blocked/明示的修復を判定する。
+
+これらの失敗した試行を最終成功数へ加算しない。
+
+### GitHub Actions
+
+最初のhead `45608c84a9e3352be3e18989d4fcc87dc43be113`：
+[run 40309275440](https://github.com/usagicraftlab/pathloom/actions/runs/40309275440)。
+
+| ジョブ | 結果 | 根拠 |
+| --- | --- | --- |
+| javascript-and-browser / 121526086062 | 失敗 | JS163件は成功。browser24成功/1失敗（idle-renderの非同期待ち）。CI全体合格とは扱わない |
+| native-cad / 121526086436 | 成功 | 43件中41成功・2optional skip |
+| rust-and-macos / 121526086710 | 成功 | macOS arm64。Rust crateコンパイルと25成功/0失敗/0ignored。`npm run mac:build`でPathloom.appとPathloom_0.1.0_aarch64.dmg生成、artifact保存成功 |
+
+### 残る受け入れと次の開始点
+
+P1-00〜07の上記実装・自動検証は完了。Phase 1の全体受け入れは、P1-08の実機ゲートが残るため未完。
+M01のmacOS Pythonセットアップ/実利用、M02〜M07のFinder、実Tauri IPC、OS dialog取消/権限エラー、
+実app-data recovery、WebView/日本語入力/VoiceOver、再起動後G-codeは未実施。
+ローカルCargoは未導入のままで、Rust成功の根拠はmacOS CIである。
+CIのDMG生成成功は、署名/公証、インストール済みアプリの実動作を証明しない。
+
+次の優先順位は(1)上記macOSゲート、(2)影響を受ける非アクティブ生成グラフの再計算と基本編集の残り、
+(3)STEPのCAD文書への明示的取込/書出し。65機能の未完範囲は既存台帳へ集約する。
+実AI推論、実Rhino接続、実プリンター送信/物理印刷は今回も実行していない。

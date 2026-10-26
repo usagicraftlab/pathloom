@@ -145,20 +145,7 @@ impl CadRuntime {
             let path = root.join(file);
             std::fs::write(path, content).map_err(|e| e.to_string())?;
         }
-        let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../.pathloom-runtime/python")
-            .join(if cfg!(windows) {
-                "Scripts/python.exe"
-            } else {
-                "bin/python"
-            });
-        let python = std::env::var_os("PATHLOOM_BREP_PYTHON").unwrap_or_else(|| {
-            if local.is_file() {
-                local.into_os_string()
-            } else {
-                "python3".into()
-            }
-        });
+        let python = crate::python_runtime::executable(app)?;
         let mut cmd = Command::new(python);
         cmd.arg("-u").arg(root.join("cad_runtime.py")).env_clear();
         for key in [
@@ -298,9 +285,10 @@ pub async fn cad_import_asset(
 ) -> Result<Value, String> {
     let runtime = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        runtime
-            .start(&app)?
-            .call(json!({"type":"import","asset":asset,"hash":hash}))
+        let session = runtime.start(&app)?;
+        let mut result = session.call(json!({"type":"import","asset":asset,"hash":hash}))?;
+        result["runtimeEpoch"] = json!(session.epoch);
+        Ok(result)
     })
     .await
     .map_err(|e| e.to_string())?

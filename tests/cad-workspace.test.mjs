@@ -16,6 +16,42 @@ import {
   adaptCommand,
 } from "../cad/commands/registry.js";
 import { solveSketch, qrSolve } from "../cad/sketch/solver.js";
+import {
+  createCommandSession,
+  operationForSession,
+  setRectangleMode,
+  sessionReady,
+} from "../cad/commands/session.js";
+
+test("rectangle modes create consistent native parameters without changing pinned command definitions", () => {
+  const command = commandById("C04"),
+    s = createCommandSession(command);
+  setRectangleMode(s, "twoCorners");
+  s.inputValues.rectangleA = [40, 30, 0];
+  s.inputValues.rectangleB = [10, 10, 0];
+  let p = operationForSession(s).parameters;
+  assert.deepEqual(p.anchor, [10, 10, 0]);
+  assert.equal(p.widthMm, 30);
+  assert.equal(p.heightMm, 20);
+  setRectangleMode(s, "threePoints");
+  s.inputValues.rectangleA = [0, 0, -10];
+  s.inputValues.rectangleB = [10, 0, -10];
+  s.inputValues.rectangleC = [4, 0, 10];
+  p = operationForSession(s).parameters;
+  assert.equal(p.widthMm, 10);
+  assert.equal(p.heightMm, 20);
+  assert.deepEqual(p.plane.yAxis, [0, 0, 1]);
+  assert.deepEqual(s.command, command);
+  assert.deepEqual(commandById("C04"), command);
+  setRectangleMode(s, "center");
+  assert.deepEqual(operationForSession(s).parameters.anchor, [5, 0, 0]);
+  const plane = { origin: [10, 20, 30], xAxis: [1, 0, 0], yAxis: [0, 0, 1] };
+  assert.deepEqual(
+    parseCoordinate("@1,2", { previous: [5, 6, 7], plane }),
+    [6, 6, 9],
+  );
+  assert.deepEqual(parseCoordinate("1,2", { plane }), [11, 20, 32]);
+});
 function feature(id, input = []) {
   return {
     id,
@@ -31,6 +67,16 @@ function feature(id, input = []) {
     diagnostics: [],
   };
 }
+test("raw command drafts block native evaluation until the input is repaired", () => {
+  const s = createCommandSession(commandById("C04"));
+  s.rawDraft.widthMm = "80c";
+  assert.equal(sessionReady(s), false);
+  assert.throws(() => operationForSession(s), /入力を修正/);
+  delete s.rawDraft.widthMm;
+  s.parameters.widthMm = 80;
+  assert.equal(sessionReady(s), true);
+  assert.equal(operationForSession(s).parameters.widthMm, 80);
+});
 test("CAD DAG invalidation follows only dependencies and rejects cycles", () => {
   const d = createCadDocument();
   d.features = [feature("a"), feature("b", ["e-a"]), feature("c")];
@@ -271,7 +317,11 @@ test("CAD curve binding retains negative and nonplanar XYZ in graph/library vali
     input.curve.points,
   );
   const forged = structuredClone(envelope.context.definition);
-  forged.inputs.push({ ...structuredClone(input), id: "forged-cad", meshes: [] });
+  forged.inputs.push({
+    ...structuredClone(input),
+    id: "forged-cad",
+    meshes: [],
+  });
   assert.throws(() => envelope.restore(forged), /local CAD binding/);
   const pending = structuredClone(d);
   pending.inputs.at(-1).cadBinding.status = "pending";
@@ -318,7 +368,6 @@ test("shape Library remaps typed references without rewriting parameter strings"
   assert.equal(snapshot.features[0].operation.id, "asset.snapshot");
   assert.equal(snapshot.entities[0].id, snapshot.selectedEntityIds[0]);
 });
-import { createCommandSession, sessionReady } from "../cad/commands/session.js";
 test("preselection never silently assigns the same solids to both Difference roles", () => {
   const selection = [
     { entityId: "one", entityKind: "solid" },

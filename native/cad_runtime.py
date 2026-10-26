@@ -121,7 +121,7 @@ class Runtime:
                 return self.publish(read_brep(data,root),root,asset_data=data)
             if type=='export':return dict(assets={self.cache[h]['hash']:dict(format='occt-brep',encoding='utf-8',data=self.cache[h]['data'],byteLength=len(self.cache[h]['data'].encode()),sourceKernelVersion='ocp-'+self.hello()['ocpVersion']) for h in msg['handles']})
             if type!='evaluate':raise CadError('CAD_SCHEMA_UNSUPPORTED','未知のmessage typeです。')
-            req=msg['request'];stamp={k:req.get(k) for k in STAMP};start=time.monotonic()
+            req=msg['request'];stamp={k:req.get(k) for k in STAMP};start=time.monotonic();owned=set(self.cache)
             try:
                 if req['protocolVersion']!=1 or req['operation']['version']!=1:raise CadError('CAD_SCHEMA_UNSUPPORTED','未対応の演算・protocol版です。')
                 op=req['operation']['id'];inputs={};selectors={};originals={}
@@ -150,6 +150,15 @@ class Runtime:
                             for new in builder.Generated(copied):generated.append((new,['side']+entry['semanticPath']))
                         sem['generated']=generated
                     pub=self.publish(s,root,sem)
+                    if op in ('solid.split','surface.split') or op=='solid.difference' and len(req['inputs'].get('arguments',[]))>1:
+                        role='arguments' if op=='solid.difference' else 'targets';index=sem['sourceIndex']
+                        source=req['inputs'][role][index];source_key=source.get('sourceKey') or source['geometryHash']
+                        pub['sourceKey']=source_key
+                        slot=op+'/'+source_key
+                        if op.endswith('.split'):slot+='/'+pub['geometryHash']
+                        # Exact equality is a safe continuation; traversal order or
+                        # geometric proximity never authorizes a changed partition.
+                        if any(o['slotKey']==slot for o in published):raise CadError('CAD_REFERENCE_AMBIGUOUS','同じ由来の分割結果を一意に識別できません。対象を分けて実行してください。',('reselectReference',))
                     if op in ('curve.explode','curve.extractBoundary','surface.explode','surface.extract'):
                         slot=op+'/'+pub['geometryHash']
                         if any(o['slotKey']==slot for o in published):slot=op+'/'+str(uuid.uuid4())
@@ -157,6 +166,7 @@ class Runtime:
                 status='empty' if published and all(x['summary']['empty'] for x in published) else 'ok'
                 return dict(**stamp,status=status,outputs=published,topologyHistory=[],diagnostics=[],metrics=dict(elapsedMs=(time.monotonic()-start)*1000,cacheHit=False))
             except Exception as e:
+                for handle in set(self.cache)-owned:self.cache.pop(handle,None)
                 code=e.code if isinstance(e,CadError) else 'CAD_KERNEL_FAILED';actions=e.actions if isinstance(e,CadError) else ('editParameters','showProblem','retry')
                 diag=dict(code=code,severity='error',featureId=req.get('featureId'),entityIds=[],subshapeRefs=[],causeFeatureIds=[],message=str(e),actions=[dict(id=a,label=a,targetFeatureId=req.get('featureId'),targetInputKey=None,targetParameterKey='radiusMm' if a=='editRadius' else 'joinLinearMm' if a=='editTolerance' else None,focusEntityIds=[]) for a in actions],details=getattr(e,'details',{}))
                 return dict(**stamp,status='failed',outputs=[],topologyHistory=[],diagnostics=[diag],metrics=dict(elapsedMs=(time.monotonic()-start)*1000,cacheHit=False))

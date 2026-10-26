@@ -27,10 +27,11 @@ still pending. CAD requires the separately provisioned runtime below.
 
 The [CAD master plan](docs/cad-master-plan.md),
 [roadmap](docs/cad-roadmap.md) and
-[development log](docs/cad-development-log.md) record the 2026-10-26 Phase 0 audit,
-including reproduced correctness defects, current test results and the macOS
-verification required before the next milestone. The existing command and
-acceptance ledgers remain the per-feature source of truth.
+[development log](docs/cad-development-log.md) record the 2026-10-26 Phase 0 audit
+and Phase 1 implementation: result freshness, multiple-target Difference, stable
+Split references, plane-aware Offset, basic drawing modes and draft/asset restore.
+They include current test results and the remaining macOS GUI acceptance gates.
+The existing command and acceptance ledgers remain the per-feature source of truth.
 
 ## AI components on the canvas
 
@@ -104,8 +105,12 @@ npm start
 ```
 
 `cad:setup` provisions an ignored Python 3.12 / cadquery-ocp 7.8.1.1 runtime under
-`.pathloom-runtime/`. You may instead set `PATHLOOM_BREP_PYTHON` to a compatible
-interpreter. The CAD Python environment is not embedded in the app bundle yet;
+`.pathloom-runtime/` and records its absolute interpreter path in application
+data (`cad-runtime.json`). Both the CAD daemon and STEP bridge use that path,
+including shell-independent launches. Run setup again if the checkout/runtime
+moves. `PATHLOOM_BREP_PYTHON` explicitly overrides it with a compatible interpreter.
+Finder launch still needs the macOS acceptance check.
+The CAD Python environment is not embedded in the app bundle yet;
 distribution machines need it provisioned. Standard STEP editing does not need
 NVIDIA USD BRep or `occt_to_usd`. Legacy USD assets remain readable through the
 compatibility path.

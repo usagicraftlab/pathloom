@@ -112,7 +112,7 @@ test('failure in final printable generation rolls back and is never reported as 
 test('idle viewport stops frame polling and camera changes still render',async({page})=>{
   await page.addInitScript(()=>{const request=window.requestAnimationFrame.bind(window);window.__frames=0;window.requestAnimationFrame=callback=>request(time=>{window.__frames++;callback(time)})});
   await start(page);await page.waitForTimeout(400);await page.evaluate(()=>window.__frames=0);await page.waitForTimeout(400);expect(await page.evaluate(()=>window.__frames)).toBeLessThan(4);
-  await page.getByRole('button',{name:'top view',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.Pathloom.viewState().axis)).toBe('top');expect(await page.evaluate(()=>window.__frames)).toBeGreaterThan(0);
+  await page.getByRole('button',{name:'top view',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.Pathloom.viewState().axis)).toBe('top');await expect.poll(()=>page.evaluate(()=>window.__frames)).toBeGreaterThan(0);
 });
 
 test('invalid numeric edits keep a clearly stale preview, block output, and recover on correction',async({page})=>{
