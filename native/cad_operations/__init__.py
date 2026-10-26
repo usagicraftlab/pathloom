@@ -280,7 +280,28 @@ def evaluate(op,p,inputs,tol,selectors=None):
             else:builder=BRepPrimAPI_MakeTorus(ax,positive(p['majorRadiusMm']),positive(p['minorRadiusMm']))
             result=builder.Shape()
             if op!='solid.torus' and not p['cap']:result=builder.Face()
-    elif op in ('solid.union','solid.difference','solid.intersection'):
+    elif op=='solid.difference':
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+        if set(p)-{'keepTools'} or set(inputs)-{'arguments','tools'} or selectors:
+            raise CadError('CAD_SCHEMA_UNSUPPORTED','Differenceは対象arguments／工具toolsの立体入力とkeepToolsだけに対応しています。')
+        if not isinstance(p.get('keepTools',False),bool):raise CadError('CAD_INPUT_TYPE','keepTools はtrue/falseで指定してください。')
+        args=inputs.get('arguments',[]);tools=inputs.get('tools',[])
+        if not args or not tools:raise CadError('CAD_INPUT_MISSING','対象と工具を指定してください。',('selectInput',))
+        for shape in args+tools:
+            solids=subshapes(shape,TopAbs_SOLID)
+            if len(solids)!=1 or len(subshapes(shape,TopAbs_FACE))!=len(subshapes(solids[0],TopAbs_FACE)):
+                raise CadError('CAD_INPUT_TYPE','Differenceの対象と工具には立体を指定してください。',('selectCompatibleInput',))
+        outputs=[]
+        for index,arg in enumerate(args):
+            result=BRepBuilderAPI_Copy(arg).Shape()
+            for tool in tools:
+                builder=BRepAlgoAPI_Cut(result,BRepBuilderAPI_Copy(tool).Shape());builder.Build()
+                if not builder.IsDone():raise CadError('CAD_KERNEL_FAILED','差分演算が成立しませんでした。')
+                result=builder.Shape()
+            # One ordered output per target, including empty/compound remainders.
+            outputs.append(('result' if len(args)==1 else f'argument/{index}',result,{}))
+        return outputs
+    elif op in ('solid.union','solid.intersection'):
         from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse,BRepAlgoAPI_Cut,BRepAlgoAPI_Common
         args=inputs.get('arguments',[]);tools=inputs.get('tools',[])
         if not args or (op!='solid.union' and not tools):raise CadError('CAD_INPUT_MISSING','対象と工具を指定してください。',('selectInput',))

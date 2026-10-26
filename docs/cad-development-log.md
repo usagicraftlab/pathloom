@@ -280,3 +280,118 @@ PR #26単体のbrowserは別runで19成功/2失敗だった。このrunの成功
 PR #26に残している。本作業で当該テストの変更や再試行による合格化は行っていない。
 macOS GUI/実Tauri IPC/OS保存・回復は本作業では実施していない。
 PR #25はユーザー承認までDraft・未マージを維持する。
+
+## 2026-10-27 JST — Issue #5 / P1-02 / AUD-002 複数対象Difference
+
+実装担当Aの範囲はIssue #5のみ。着手前にIssue本文、PR #25本文とIssue #4の完了報告を読み、
+PR #25のマージ `4a22c588b233d857101086235389c35565eac5b9` を確認した。
+この最新mainから `fix/5-aud-002` を新規作成。PR #2のDifference関連差分は参考として読み、
+cherry-pick/mergeせず、独立した実装とfixtureを作成して再実行した。
+本書の上のPR #25「未マージ」は当時の記録であり、この着手時点の状態ではない。
+
+### 契約・変更範囲
+
+- 対象ID：P1-02/AUD-002、D02、A17/A21、T19/T20。#4のrace17件もJS全体に含めて再実行。
+- 入力モード：`default` / `direct.v1`、独立したwhole-solidの `arguments` と全対象に適用する `tools`。
+  各対象から全工具を順に引き、対象の順序に対応する残形状を1出力ずつ返す。空結果もslotを保持し、
+  1対象の残形状が分断されれば全片をcompoundの正本に保持する。
+- 工具保持：`keepTools=false` が既定で、従来どおり表示上の工具bodyを消費し、正本/履歴は保持。
+  trueでは工具を残す。設定の再変更・工具再選択は工具bodyだけを再評価し、別featureの消費を尊重する。
+  消費した工具を複数対象の「Split元」としては扱わない。
+- nativeの順序付き出力をStoreで対象entity IDに対応付け、並び替えで出力entityを交換しない。
+  各出力bodyは対象bodyを継続する。D02の計算hashには対象/工具のentity参照も含め、
+  同じ正本の別entityへの変更が古いcacheをそのまま採用しないようにした。
+- 未対応のモード/パラメーター、subshape入力、重複refは明示拒否。同じbodyの履歴形状を
+  複数対象として選ぶ操作は演算前に拒否。nativeは立体入力を検査し、Booleanが返す
+  単一solidのwrapperは許可するが、複数solidのcompound入力は拒否する。
+- 共通ファイルはD02のregistry/default、sessionの検証呼出し、StoreのD02結果/工具処理、
+  workspaceのD02ラベル/checkbox、およびnativeのDifference分岐だけを変更。
+  補助処理は `cad/difference.js`、fixtureは新規3ファイルへ分離した。
+  `native/cad_runtime.py`、`cad/history.js`、Split分岐、binding UI、CI/配布設定は変更していない。
+  #6担当Bのブランチ・PR、およびMuse担当/Phase2以降には変更を加えていない。
+
+### 互換性
+
+command/operation ID・version・文書schema/version・単一対象の `result` slotは維持。
+既存のパラメーター `{}` は `keepTools=false` として扱い、既存featureにもcheckboxを表示する。
+成功時の `lastValid.differenceKeepTools` は工具の表示を再評価するための任意の補助値であり、
+正本形状の形式は変えていない。
+複数対象では誤った旧 `result` 1個から、対象entity別slotへ変わる。旧結果への下流参照を
+推測で別の対象に割り当てず、旧slotが失われた参照は既存の再選択診断に従う。
+旧保存ファイルの既存計算結果は読込時には強制更新せず、再計算でこの修正を適用する。
+一般的な履歴削除/抑制・全body/bindingの再構築は本Issueの完了主張に含めない。
+
+### 実測と環境
+
+Linux x86_64 / Node24.22.1、Node20.20.2 / Python3.12.14 / OCP7.8.1.1 /
+Chromium153.0.8010.0（ローカルのpackaged frontend）。
+
+| コマンド / 検査 | 結果 | 確認した範囲 |
+| --- | --- | --- |
+| 修正前mainの製品コードに新規 `test_cad_difference.py` だけを追加して実行 | 5検出・1成功/4失敗、subtestを含む失敗assertion7件、exit1 | 2対象に1出力しかない、複数工具/混合empty/未対応設定の問題を再現。後で正本往復fixtureの件数assertも強化した |
+| `python -B -m unittest discover -s native -p 'test_cad_difference.py' -v`（native修正直後） | exit0、5成功 | A-C500、B-C1000、合計1500、複数工具1000、非接触/空/混合、分断残形状800、入力正本不変、正本export/new Runtime import、未対応入力拒否 |
+| `npm test`（Node24.22.1、最終製品コード） | exit0、171成功/0失敗/0skip、約2.71秒 | 新規D02契約5件と既存全体。#4の17 race fixtureを含む |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs`（最終製品コード） | exit0、171成功/0失敗/0skip、約4.28秒 | 同じ全JSをNode20でも再実行 |
+| `python -B -m unittest discover -s native -p 'test*.py'`（最終製品コード） | exit0、42検出・40成功/任意USD2skip、約2.37秒 | pinned OCPで新規Difference5件と既存native全体。単一solid wrapperからのDifference連鎖も確認 |
+
+browserの実行コマンド：
+
+```sh
+PATHLOOM_FRONTEND_DIR=desktop-dist \
+PATHLOOM_BREP_PYTHON="$CODEX_PRIMARY_RUNTIME_PYTHON" \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE="$PWD/work/chromium-local/chromium" \
+npm run test:browser -- --max-failures=1
+```
+
+新規browser3件は、対象/工具選択、複数残形状、工具保持on/off、Undo/Redo、
+fresh-page v2再読込、単一500/非接触1000/空0/混合emptyの保存・再読込、
+対象並び替え時のentity ID保持、工具再選択後の旧工具復帰を扱う。
+実OCCTの演算と正本を使うが、Tauriイベント/OS保存ダイアログ/保存先はテストtransportに置き換える。
+
+初期の環境・fixture失敗も成功扱いせず記録する。
+
+- `npx playwright install chromium` は取得zipが破損扱いとなり失敗。
+  ignoredな `@sparticuz/chromium@153.0.0` を `--no-save --package-lock=false` で取得したが、
+  標準展開はこの環境のchownでEINVALとなった。ローカル専用archiveをNodeのBrotliとPythonの
+  所有者変更を行わないtar展開で復元した。依存定義/lock/製品設定は変更していない。
+- 最初の新規browser限定実行は1成功/1失敗/1未実行。fixtureが追加前のBoxのvalid表示を拾い、
+  作成中の仮slotを読み取っていた。履歴の件数増加と新featureの完了を待つよう修正した。
+- 次の限定実行は2成功/1失敗。数値配列の `.sort()` を文字列順で比較するfixtureの誤りを修正し、
+  `.sort((a,b)=>a-b)` とした。製品の結果は500と1000で正しかった。
+- その後の全browserは24成功/0失敗（約1.1分）。最後に同一bodyの重複対象拒否を追加したため、
+  最終製品コードに対して全JS/native/browserを再実行した。最終browser/CIの結果は下に追記する。
+
+### 未実施・次の開始地点
+
+ローカルRust/macOS GUI、実Tauri IPC、OSの保存/回復ダイアログ、配布物生成、
+実AI/Rhino/プリンターの実行は未実施。既存CIはPR作成後に別途確認し、
+未完了や失敗を全体成功として記録しない。
+次は#5単独Draft PRの照合とユーザー承認待ち。#6以降の実装には進まない。
+mainへのマージとIssueの手動クローズは行わない。
+
+### 最終ローカル確認
+
+上記browserコマンドを最終製品コードで再実行し、全24件成功/0失敗/0skip、約1.2分。
+新規Difference3件と既存CAD7件/操作回帰14件が含まれる。
+Node24/Node20の171件、native42検出・40成功/2skipも同じ最終製品コードでの結果である。
+ブラウザの標準インストール失敗、展開のchown失敗、初期fixtureの2回の失敗は上記の履歴として残す。
+Python側にBrotliモジュールがなかったため、archiveのBrotli復元はNode標準機能で行った。
+
+`git diff --check` はexit0。機能台帳65行の順序/列数とD02だけの行変更、資料の相対リンク9件、
+許可した12ファイルだけの変更を照合した。package/lock・native runtime・Split・history・CIは差分なし。
+
+### 実装headのGitHub CI
+
+実装head `616a8fb861b4dccd79227deea99d49ac2b98bd4a` に対する
+[PR #27](https://github.com/usagicraftlab/pathloom/pull/27) の
+[CI run 40408830985](https://github.com/usagicraftlab/pathloom/actions/runs/40408830985) は全3ジョブ成功。
+
+- javascript-and-browser / 121873528493：Node20の全171件成功・失敗0/skip0、
+  CIでインストールしたChromiumによるbrowser全24件成功（約2.0分）。
+- native-cad / 121873529001：OCP7.8.1.1、42検出・40成功/任意USD2skip（約1.26秒）。
+- rust-and-macos / 121873528902：frontend準備・コンパイル・Rust21件成功（テスト約0.37秒）。
+  .app/.dmg生成やGUI操作を行うworkflowではないため、それらの成功とは記録しない。
+
+この節の追記は開発ログだけで、製品コード・fixtureは上記実装headから変更していない。
+追記後headのCIは別runとしてPR本文・Issue #5に結果を記録する。
+Draftと未マージを維持し、Issue #5は手動クローズしない。

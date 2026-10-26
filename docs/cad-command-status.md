@@ -74,7 +74,7 @@ are not shown as fake working buttons.
 | B07 | ExtrudeSurface（ExtrudeSrf） | partial: shared Extrude | partial: exact fixtures | partial: 共通Extrude演算あり。専用登録/face入力の操作試験未完 | not-started: per-command sketch integration | partial: shared DAG; per-ID not complete | partial: entity/hash refs; mapping incomplete | partial: shared transactions | partial: shared exact assets + v2 | partial: typed diagnostics + retained lastValid | shared shape.extrude; surface input not-run | not-started: per-command UI exercise | 共通Extrude演算あり。専用登録/face入力の操作試験未完 |
 | B08 | Cap／CloseSolid（CreateSolid） | not-started | not-started | not-started | not-started | not-started | not-started | not-started | not-started | not-started | not-started | not-started | 未実装。対応済みとしない |
 | D01 | BooleanUnion | partial: registry/session | done: implemented operator; see Modes | partial: 基本設定のみ; 全主要モード未検証 | not-started: per-command sketch integration | partial: shared DAG; per-ID not complete | partial: entity/hash refs; mapping incomplete | partial: shared transactions | partial: shared exact assets + v2 | partial: typed diagnostics + retained lastValid | T19 | not-started: per-command UI exercise | 全主要モード・failure fixture・実Mac確認は未完 |
-| D02 | BooleanDifference | partial: registry/session | partial: single-target fixtures; AUD-002 | partial: 複数argumentsの処理に不具合を再現 | not-started: per-command sketch integration | partial: shared DAG; per-ID not complete | partial: entity/hash refs; mapping incomplete | partial: shared transactions | partial: shared exact assets + v2 | partial: typed diagnostics + retained lastValid | T19 / T20 / AUD-002 multi-target probe | not-started: per-command UI exercise | AUD-002: 2つ目以降の元形状を工具として減算。複数対象の契約・保持を修正 |
+| D02 | BooleanDifference | done: ordered targets/tools + keepTools checkbox | done: independent target cuts; real OCCT subset | done: whole-solid targets, multiple tools, retention on/off, empty/compound remainders; other modes rejected | not-started: per-command sketch integration | partial: target entity slots and body continuation; repeat/reorder verified | partial: explicit tool reselection verified; general topology repair pending | done: browser Undo/Redo subset | done: multi-target v2 save/fresh-page reopen; mixed empty save/reopen | partial: schema/type rejection; broader kernel failure UI pending | T19 / T20 / AUD-002; native5 + JS5 + browser3 | done: numeric-entry/role selection/retention subset | Issue #5 isolated branch: broader lifecycle, general topology repair and actual macOS GUI remain unverified; multi-solid compound inputs rejected, compound outputs retained |
 | D03 | BooleanIntersection | partial: registry/session | done: implemented operator; see Modes | partial: 基本設定のみ; 全主要モード未検証 | not-started: per-command sketch integration | partial: shared DAG; per-ID not complete | partial: entity/hash refs; mapping incomplete | partial: shared transactions | partial: shared exact assets + v2 | partial: typed diagnostics + retained lastValid | T19 / T20 | not-started: per-command UI exercise | 全主要モード・failure fixture・実Mac確認は未完 |
 | D04 | SplitBody | partial: registry/session | partial: exact OCCT | partial: 正確なSplitterあり。複数body binding修復UI・fixture未完 | not-started: per-command sketch integration | partial: shared DAG; per-ID not complete | partial: entity/hash refs; mapping incomplete | partial: shared transactions | partial: shared exact assets + v2 | partial: typed diagnostics + retained lastValid | AUD-003 repeat-slot probe; acceptance fixture pending | not-started: per-command UI exercise | AUD-003: 再計算ごとに新規slot UUID。由来・後段参照・binding修復UIが未完 |
 | D05 | FilletEdges（FilletEdge） | partial: registry/session | partial: exact fixtures | partial: 単一/複数edge指定。接線連鎖・高度mapping未完 | not-started: per-command sketch integration | done: numeric + browser DAG | done: semantic edge loss + explicit repair | partial: shared transactions | partial: shared exact assets + v2 | partial: typed diagnostics + retained lastValid | T11 / T12 / explicit browser repair | done: numeric-entry browser flow | 単一/複数edge指定。接線連鎖・高度mapping未完 |
@@ -99,3 +99,23 @@ queued pass. Imports are cached by the requested immutable asset hash.
 No command IDs, modes, geometry operators, body policies or save schemas change.
 This is shared result-integrity evidence, not completion of Difference/Split/Offset
 or any command's remaining modes. See the dated Issue #4 execution log.
+
+## Issue #5 — AUD-002 independent Difference targets
+
+The `fix/5-aud-002` branch starts at main `4a22c588` after PR #25 merged.
+Only D02 changes: each target is cut by every tool, yielding one ordered remainder
+per target, including empty results and disconnected compound remainders. The
+Store maps those ordered native outputs to target entity IDs and target bodies;
+the native runtime and Split implementation are unchanged.
+
+`keepTools` defaults to false (legacy consumption behavior); true preserves the
+tools. Toggling the setting or explicitly reselecting a tool restores only the
+appropriate tool bodies and respects other feature consumers. Unsupported modes,
+unknown parameters, subshape inputs and duplicate target refs are rejected; two
+historical entities of the same target body are rejected before evaluation.
+The runtime accepts whole solids, including the single-solid wrapper returned
+by OCCT Boolean operations. Multiple-solid compound inputs are unsupported.
+
+The dated [Issue #5 execution log](cad-development-log.md) distinguishes native
+geometry, JS contract checks, browser transport substitution and unrun OS checks.
+This is not completion of D04/Split, general body/binding lifecycle or all 65 IDs.
