@@ -27,6 +27,7 @@ def direction(v):
     if sum(x*x for x in a)<1e-24:raise CadError('CAD_INPUT_DEGENERATE','方向を零ベクトルにできません。')
     return gp_Dir(*a)
 def plane(p):
+    if not isinstance(p,dict) or not all(k in p for k in ('origin','xAxis','yAxis')):raise CadError('CAD_INPUT_TYPE','平面には原点・X軸・Y軸が必要です。')
     o=vec(p['origin']);x=vec(p['xAxis']);y=vec(p['yAxis'])
     if abs(sum(v*v for v in x)-1)>1e-6 or abs(sum(v*v for v in y)-1)>1e-6 or abs(sum(a*b for a,b in zip(x,y)))>1e-6:raise CadError('CAD_INPUT_DEGENERATE','作業平面の軸は直交する単位ベクトルが必要です。')
     return o,x,y
@@ -79,6 +80,15 @@ def evaluate(op,p,inputs,tol,selectors=None):
     for key in boolean_fields & p.keys():
         if not isinstance(p[key],bool):raise CadError('CAD_INPUT_TYPE',f'{key} はtrue/falseで指定してください。')
     if 'anchorMode' in p and p['anchorMode'] not in ('center','corner'):raise CadError('CAD_INPUT_TYPE','基準モードはcenterまたはcornerです。')
+    schemas={
+        'curve.offset':({'plane','distanceMm','joinStyle'},{'distanceMm','joinStyle'}),
+        'solid.difference':({'keepTools'},set()),
+    }
+    if op in schemas:
+        allowed,required=schemas[op]
+        if set(p)-allowed:raise CadError('CAD_SCHEMA_UNSUPPORTED','未対応の設定: '+', '.join(sorted(set(p)-allowed)))
+        if required-set(p):raise CadError('CAD_INPUT_MISSING','必要な設定: '+', '.join(sorted(required-set(p))))
+    if 'keepTools' in p and not isinstance(p['keepTools'],bool):raise CadError('CAD_INPUT_TYPE','keepTools はtrue/falseで指定してください。')
 
     if op=='point.create':
         from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
@@ -184,9 +194,20 @@ def evaluate(op,p,inputs,tol,selectors=None):
     elif op=='curve.offset':
         from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffset
         from OCP.GeomAbs import GeomAbs_Arc,GeomAbs_Intersection
-        source=input_one(inputs,'curve');distance=finite(p['distanceMm'])
+        from OCP.gp import gp_Pln, gp_Ax3
+        from OCP.Bnd import Bnd_Box
+        from OCP.BRepBndLib import BRepBndLib
+        source=input_one(inputs,'curve');distance=finite(p['distanceMm']);pl=p.get('plane',XY)
+        ax=axis2(pl);tr=gp_Trsf();tr.SetTransformation(gp_Ax3(ax))
+        local=BRepBuilderAPI_Transform(source,tr,True).Shape();bb=Bnd_Box();BRepBndLib.AddOptimal_s(local,bb,False,False)
+        if bb.IsVoid():raise CadError('CAD_INPUT_DEGENERATE','評価できる曲線がありません。')
+        xmin,ymin,zmin,xmax,ymax,zmax=bb.Get()
+        if max(abs(zmin),abs(zmax))>tol['kernelLinearMm']:raise CadError('CAD_INPUT_TYPE','曲線は指定した作業平面上にある必要があります。平面を選び直してください。',('editParameters','selectCompatibleInput'))
         if p['joinStyle'] not in ('round','miter'):raise CadError('CAD_SCHEMA_UNSUPPORTED','対応する角処理はround／miterです。')
-        builder=BRepOffsetAPI_MakeOffset(wire(source),GeomAbs_Arc if p['joinStyle']=='round' else GeomAbs_Intersection,False);builder.Perform(distance)
+        source_wire=wire(source)
+        support=BRepBuilderAPI_MakeFace(gp_Pln(ax.Location(),ax.Direction()),source_wire,True).Face()
+        builder=BRepOffsetAPI_MakeOffset(support,GeomAbs_Arc if p['joinStyle']=='round' else GeomAbs_Intersection,not source_wire.Closed())
+        builder.Perform(distance)
         if not builder.IsDone():raise CadError('CAD_KERNEL_FAILED','指定距離で曲線offsetが成立しません。')
         result=builder.Shape()
     elif op=='surface.corners':
@@ -234,14 +255,17 @@ def evaluate(op,p,inputs,tol,selectors=None):
     elif op in ('solid.split','surface.split'):
         from OCP.BRepAlgoAPI import BRepAlgoAPI_Splitter
         from OCP.TopTools import TopTools_ListOfShape
-        targets=TopTools_ListOfShape();cutters=TopTools_ListOfShape()
-        for shape in inputs.get('targets',[]):targets.Append(BRepBuilderAPI_Copy(shape).Shape())
+        targets=inputs.get('targets',[]);cutters=TopTools_ListOfShape()
         for shape in inputs.get('cutters',[]):cutters.Append(BRepBuilderAPI_Copy(shape).Shape())
-        if targets.IsEmpty() or cutters.IsEmpty():raise CadError('CAD_INPUT_MISSING','対象と切断形状を指定してください。')
-        b=BRepAlgoAPI_Splitter();b.SetArguments(targets);b.SetTools(cutters);b.Build()
-        if not b.IsDone():raise CadError('CAD_KERNEL_FAILED','形状を分割できません。')
-        result=b.Shape();parts=subshapes(result,TopAbs_SOLID if op=='solid.split' else TopAbs_FACE)
-        return [(str(__import__('uuid').uuid4()),part,{}) for part in parts]
+        if not targets or cutters.IsEmpty():raise CadError('CAD_INPUT_MISSING','対象と切断形状を指定してください。')
+        outputs=[]
+        for index,shape in enumerate(targets):
+            arguments=TopTools_ListOfShape();arguments.Append(BRepBuilderAPI_Copy(shape).Shape())
+            b=BRepAlgoAPI_Splitter();b.SetArguments(arguments);b.SetTools(cutters);b.Build()
+            if not b.IsDone():raise CadError('CAD_KERNEL_FAILED','形状を分割できません。')
+            parts=subshapes(b.Shape(),TopAbs_SOLID if op=='solid.split' else TopAbs_FACE)
+            outputs.extend(('partition',part,dict(sourceIndex=index)) for part in parts)
+        return outputs
     elif op=='shape.section':
         from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
         from OCP.gp import gp_Pln
@@ -284,6 +308,16 @@ def evaluate(op,p,inputs,tol,selectors=None):
         from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse,BRepAlgoAPI_Cut,BRepAlgoAPI_Common
         args=inputs.get('arguments',[]);tools=inputs.get('tools',[])
         if not args or (op!='solid.union' and not tools):raise CadError('CAD_INPUT_MISSING','対象と工具を指定してください。',('selectInput',))
+        if op=='solid.difference':
+            outputs=[]
+            for index,arg in enumerate(args):
+                result=BRepBuilderAPI_Copy(arg).Shape()
+                for tool in tools:
+                    builder=BRepAlgoAPI_Cut(result,BRepBuilderAPI_Copy(tool).Shape());builder.Build()
+                    if not builder.IsDone():raise CadError('CAD_KERNEL_FAILED','差分演算が成立しませんでした。')
+                    result=builder.Shape()
+                outputs.append(('result' if len(args)==1 else 'argument',result,dict(sourceIndex=index)))
+            return outputs
         result=BRepBuilderAPI_Copy(args[0]).Shape();rest=args[1:]+tools
         cls={'solid.union':BRepAlgoAPI_Fuse,'solid.difference':BRepAlgoAPI_Cut,'solid.intersection':BRepAlgoAPI_Common}[op]
         for b in rest:

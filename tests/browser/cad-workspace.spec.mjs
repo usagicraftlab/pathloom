@@ -2,6 +2,42 @@ import { test, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
+function sliceWithPython(args) {
+  return new Promise((resolveResult, reject) => {
+    const child = spawn(
+      process.env.PATHLOOM_BREP_PYTHON ||
+        resolve(".pathloom-runtime/python/bin/python"),
+      ["-B", "native/occt_brep_bridge.py"],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+    let stdout = "",
+      stderr = "";
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      try {
+        const result = JSON.parse(stdout);
+        if (result.success === false || code) throw new Error(result.error);
+        resolveResult(result.shape);
+      } catch (error) {
+        reject(new Error(`${error.message}: ${stderr.slice(-500)}`));
+      }
+    });
+    child.stdin.end(
+      JSON.stringify({
+        action: "slice",
+        brep: args.brep,
+        layerHeight: args.layerHeight,
+        tolerance: args.tolerance,
+      }),
+    );
+  });
+}
 // Real OCCT daemon behind browser IPC. Only the OS-specific Tauri transport is substituted.
 let daemon,
   queue = [],
@@ -40,6 +76,7 @@ test.beforeEach(async ({ page }) => {
       );
     });
   });
+  await page.exposeBinding("__cadSlice", (_, args) => sliceWithPython(args));
   await page.addInitScript(() => {
     const listeners = new Map();
     window.__saved = null;
@@ -52,6 +89,8 @@ test.beforeEach(async ({ page }) => {
       },
       core: {
         invoke: async (name, args = {}) => {
+          if (name === "slice_step_brep") return window.__cadSlice(args);
+          if (name === "cancel_cad_request") return;
           if (name === "cad_runtime_start" || name === "cad_runtime_restart") {
             const hello = await window.__cadKernel({ type: "hello" });
             return { ...hello, runtimeEpoch: 1 };
@@ -128,6 +167,356 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(() => {
   daemon?.kill();
   queue = [];
+});
+
+async function commitModel(page, count) {
+  await page.getByRole("button", { name: "確定", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(count);
+  await expect(page.locator(".model-history-entry").last()).toContainText(
+    "valid",
+  );
+}
+
+test("P1 Split preserves exact result references through recompute, explicit binding repair and Library insertion", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const { commandById } = await import("/cad/commands/registry.js");
+    const { createCommandSession } = await import("/cad/commands/session.js");
+    const { bindBody } = await import("/cad/generation-adapter.js");
+    const { packageShapes } = await import("/cad/shape-library.js");
+    const store = window.PathloomModel.store;
+    async function add(id, params, inputs = {}) {
+      const s = createCommandSession(commandById(id));
+      Object.assign(s.parameters, params);
+      s.inputs = inputs;
+      if (!(await store.add(s))) throw new Error(JSON.stringify(s.diagnostics));
+      return store.document.features.at(-1);
+    }
+    const box = await add("B01", { widthMm: 10, depthMm: 10, heightMm: 10 }),
+      boxId = box.outputSlots[0].entityId;
+    const binding = bindBody(store.document, store.getEntity(boxId));
+    const plane = await add("S01", {
+      plane: { origin: [5, 0, 0], xAxis: [0, 1, 0], yAxis: [0, 0, 1] },
+      anchorMode: "corner",
+      anchor: [5, -5, -5],
+      widthMm: 20,
+      heightMm: 20,
+    });
+    const split = await add(
+      "D04",
+      {},
+      {
+        targets: [{ entityId: boxId }],
+        cutters: [{ entityId: plane.outputSlots[0].entityId }],
+      },
+    );
+    const splitStatus = binding.status,
+      ids = split.outputSlots.map((s) => s.entityId).sort();
+    const move = await add(
+      "transform.move",
+      { translation: [0, 0, 1] },
+      { object: [{ entityId: ids[0] }] },
+    );
+    split.lastValid = null;
+    await store.edit(split.id, {});
+    const retained =
+      JSON.stringify(ids) ===
+      JSON.stringify(split.outputSlots.map((s) => s.entityId).sort());
+    store.rebindOutput(binding.id, move.outputSlots[0].entityId);
+    const entry = packageShapes(
+      await store.snapshot(),
+      [move.outputSlots[0].entityId],
+      { withHistory: true },
+    );
+    const inserted = await store.insertLibrary(entry);
+    const insertedFeature = store.getFeature(
+      store.getEntity(inserted[0]).producer.featureId,
+    );
+    const statuses = store.document.features.map((f) => f.status);
+    return {
+      splitStatus,
+      retained,
+      bindingStatus: binding.status,
+      moveStatus: move.status,
+      insertedStatus: insertedFeature.status,
+      statuses,
+      volumes: split.outputSlots.map(
+        (s) => store.getEntity(s.entityId).displayCache.volumeMm3,
+      ),
+    };
+  });
+  expect(result.splitStatus).toBe("split");
+  expect(result.retained).toBe(true);
+  expect(result.moveStatus).toBe("valid");
+  expect(result.bindingStatus).toBe("ready");
+  expect(result.insertedStatus).toBe("valid");
+  expect(result.statuses.every((s) => s === "valid")).toBe(true);
+  result.volumes.forEach((v) => expect(v).toBeCloseTo(500, 4));
+});
+
+test("P1 basic rectangle modes save exact 2-corner and free 3-point geometry", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByLabel("長方形の作図モード").selectOption("twoCorners");
+  await page.getByLabel("作図点 1 XYZ").fill("[40,30,0]");
+  await page.getByLabel("作図点 2 XYZ").fill("[10,10,0]");
+  await commitModel(page, 1);
+  expect(
+    await page.evaluate(
+      () => window.PathloomModel.store.document.entities[0].bbox,
+    ),
+  ).toEqual({ min: [10, 10, 0], max: [40, 30, 0] });
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByLabel("長方形の作図モード").selectOption("threePoints");
+  for (const [i, p] of [
+    [0, 0, -10],
+    [10, 0, -10],
+    [4, 0, 10],
+  ].entries())
+    await page.getByLabel(`作図点 ${i + 1} XYZ`).fill(JSON.stringify(p));
+  await commitModel(page, 2);
+  expect(
+    await page.evaluate(
+      () => window.PathloomModel.store.document.entities.at(-1).bbox,
+    ),
+  ).toEqual({ min: [0, 0, -10], max: [10, 0, 10] });
+  await page.locator("#modelUndo").click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(1);
+  await page.locator("#modelRedo").click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(2);
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__saved?.cadDocument.features.length),
+    )
+    .toBe(2);
+  await page.evaluate(() => document.querySelector("#projectOpen").click());
+  await expect(page.locator(".model-history-entry")).toHaveCount(2);
+  expect(
+    await page.evaluate(() =>
+      window.PathloomModel.store.document.features.map((f) => f.command.mode),
+    ),
+  ).toEqual(["twoCorners", "threePoints"]);
+  await page.locator("#modeModel").click();
+  expect(
+    await page.evaluate(
+      () => window.PathloomModel.store.document.entities.at(-1).bbox.min[2],
+    ),
+  ).toBe(-10);
+});
+
+test("P1 coordinate Polyline, Circle radius, Move XYZ and text shortcuts preserve the intended shape", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Polyline", exact: true }).click();
+  for (const text of ["0,0,-5", "@10,0,2", "@0,10,0"]) {
+    await page.locator("#modelCoordinate").fill(text);
+    await page.locator("#modelCoordinate").press("Enter");
+  }
+  await page.locator("#modelCoordinate").blur();
+  await page.keyboard.press("Backspace");
+  await page.locator("#modelCoordinate").fill("@0,8,0");
+  await page.locator("#modelCoordinate").press("Enter");
+  await commitModel(page, 1);
+  expect(
+    await page.evaluate(
+      () => window.PathloomModel.store.document.features[0].parameters.points,
+    ),
+  ).toEqual([
+    [0, 0, -5],
+    [10, 0, -3],
+    [10, 8, -3],
+  ]);
+  await page.getByRole("button", { name: "Circle", exact: true }).click();
+  for (const text of ["-10,5,2", "@4,0,0"]) {
+    await page.locator("#modelCoordinate").fill(text);
+    await page.locator("#modelCoordinate").press("Enter");
+  }
+  await commitModel(page, 2);
+  await page.locator(".model-history-entry").last().click();
+  await page.getByRole("button", { name: "Move", exact: true }).click();
+  await page.getByLabel("移動 X mm", { exact: true }).fill("1cm");
+  await page.getByLabel("移動 Z mm", { exact: true }).fill("-2");
+  await page.getByLabel("移動 Y mm", { exact: true }).focus();
+  await page.keyboard.press("Delete");
+  await expect(page.locator(".model-history-entry")).toHaveCount(2);
+  await page.getByLabel("移動 Y mm", { exact: true }).fill("0");
+  await commitModel(page, 3);
+  const bbox = await page.evaluate(
+    () => window.PathloomModel.store.document.entities.at(-1).bbox,
+  );
+  expect(bbox.min[0]).toBeCloseTo(-4);
+  expect(bbox.max[0]).toBeCloseTo(4);
+  expect(bbox.min[2]).toBeCloseTo(0);
+});
+
+test("P1 exact history updates connected toolpaths and G-code; failures keep independent graphs and recover", async ({
+  page,
+}) => {
+  test.setTimeout(120000);
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await commitModel(page, 1);
+  await page.locator(".model-history-entry").last().click();
+  await page.getByRole("button", { name: "Extrude", exact: true }).click();
+  await page.getByLabel("蓋を作る", { exact: true }).check();
+  await commitModel(page, 2);
+  await page.locator(".model-history-entry").last().click();
+  await page.getByRole("button", { name: "Fillet Edges", exact: true }).click();
+  const edge = await page
+    .locator('[aria-label="CAD input edges"] option')
+    .evaluateAll(
+      (options) =>
+        options.find((o) => o.textContent.includes("side/corner/11")).value,
+    );
+  await page.getByLabel("CAD input edges", { exact: true }).selectOption(edge);
+  await commitModel(page, 3);
+  await page.locator(".model-history-entry").last().click();
+  await page
+    .getByRole("button", { name: "結果のプロパティ・生成接続", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "生成で使用（現在のbody結果）", exact: true })
+    .click();
+  await expect(page.locator("#cadStatus")).toContainText("layers");
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__saved?.cadDocument.outputBindings.length),
+    )
+    .toBe(1);
+  await page.evaluate(async () => {
+    const { geometryDefinition, appendComponent } = await import(
+      "/cad-pipeline.js"
+    );
+    const { DEFAULT_DEFINITION } = await import("/cad-kernel.js");
+    const { generateCad } = await import("/cad-kernel.js");
+    const { connectGeometry, OUTPUT_NODE } = await import("/cad-graph.js");
+    const p = structuredClone(window.__saved),
+      owner = p.sources.find((s) => s.generator);
+    const input = owner.generator.inputs.find((i) => i.cadBinding);
+    const independent = structuredClone(owner);
+    independent.id = "P1Independent";
+    independent.label = "Independent";
+    independent.generatorGroup = "P1Independent";
+    independent.liveSource = "P1Independent";
+    delete independent.generatorRef;
+    independent.generator = geometryDefinition(DEFAULT_DEFINITION);
+    independent.generator.inputs.find((i) => i.id === "layerHeight").value = 1;
+    independent.paths = generateCad(independent.generator).paths;
+    let d = geometryDefinition(DEFAULT_DEFINITION);
+    d.inputs.push(input);
+    d = appendComponent(d, "slice-step");
+    d.steps.at(-1).params.layerHeight = 1;
+    d = connectGeometry(d, d.steps.at(-1).id, OUTPUT_NODE);
+    owner.generator = d;
+    p.settings.printHeight = 1;
+    p.sources.push(independent);
+    p.instances.push([
+      "P1Independent-1",
+      { ...p.instances[0][1], source: independent.id, order: 2, x: 75, y: 0 },
+    ]);
+    await window.__cadStorage({ key: "project", content: JSON.stringify(p) });
+  });
+  await page.evaluate(() => document.querySelector("#projectOpen").click());
+  await expect(page.locator("#cadStatus")).toContainText("25 layers", {
+    timeout: 20000,
+  });
+  await page.locator("#modeModel").click();
+  await page.locator(".model-history-entry").first().click();
+  await page.getByLabel("幅 mm", { exact: true }).fill("80");
+  await page
+    .getByRole("button", { name: "設定変更を確定", exact: true })
+    .click();
+  await expect(page.locator(".model-history-entry").last()).toContainText(
+    "valid",
+  );
+  await expect(page.locator("#cadStatus")).toContainText("25 layers", {
+    timeout: 20000,
+  });
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.__saved?.cadDocument.features[0].parameters.widthMm,
+      ),
+    )
+    .toBe(80);
+  const width = await page.evaluate(() => {
+    const s = window.__saved.sources.find((s) =>
+      s.generator?.inputs.some((i) => i.cadBinding),
+    );
+    const xs = s.paths.flatMap((p) => p.points.map((v) => v[0]));
+    return Math.max(...xs) - Math.min(...xs);
+  });
+  expect(width).toBeCloseTo(80, 3);
+  expect(await page.evaluate(() => window.Pathloom.generateGcode())).toContain(
+    "End of Pathloom output",
+  );
+  await page.getByLabel("幅 mm", { exact: true }).fill("-1");
+  await page
+    .getByRole("button", { name: "設定変更を確定", exact: true })
+    .click();
+  await expect(page.locator(".model-history-entry").first()).toContainText(
+    "failed",
+  );
+  await expect(page.locator(".model-history-entry").last()).toContainText(
+    "blocked",
+  );
+  expect(
+    await page.evaluate(() => {
+      try {
+        window.Pathloom.generateGcode();
+        return false;
+      } catch {
+        return true;
+      }
+    }),
+  ).toBe(true);
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__saved?.cadDocument.features[0].status),
+    )
+    .toBe("failed");
+  expect(
+    await page.evaluate(
+      () =>
+        window.__saved.sources.find((s) => s.id === "P1Independent")
+          .generationError || null,
+    ),
+  ).toBeNull();
+  await page.getByLabel("幅 mm", { exact: true }).fill("80");
+  await page
+    .getByRole("button", { name: "設定変更を確定", exact: true })
+    .click();
+  await expect(page.locator(".model-history-entry").last()).toContainText(
+    "valid",
+  );
+  await expect(page.locator("#cadStatus")).toContainText("25 layers", {
+    timeout: 20000,
+  });
+  expect(await page.evaluate(() => window.Pathloom.generateGcode())).toContain(
+    "End of Pathloom output",
+  );
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__saved?.cadDocument.features[0].status),
+    )
+    .toBe("valid");
+  const id = await page.evaluate(() => window.PathloomModel.store.document.id);
+  await page.evaluate(async () => {
+    const p = structuredClone(window.__saved);
+    Object.values(p.cadDocument.assets)[0].data += "corrupt";
+    await window.__cadStorage({ key: "project", content: JSON.stringify(p) });
+  });
+  await page.evaluate(() => document.querySelector("#projectOpen").click());
+  await expect(page.locator("#toast")).toContainText("CAD_ASSET_MISSING");
+  expect(
+    await page.evaluate(() => window.PathloomModel.store.document.id),
+  ).toBe(id);
 });
 test("A01/A03/T01: real center rectangle, dimension edit, Undo, portable save and reopen", async ({
   page,

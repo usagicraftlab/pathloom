@@ -67,3 +67,9 @@ jobs:
       - run: npm ci
       - run: npm run desktop:prepare
       - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: npm run mac:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pathloom-macos-arm64
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error

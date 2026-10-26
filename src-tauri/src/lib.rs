@@ -4,6 +4,7 @@ mod codex_bridge;
 mod grasshopper_brep;
 mod printer;
 mod project_files;
+mod python_runtime;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -144,22 +145,7 @@ fn run_editable_cad(app: &tauri::AppHandle, request: &Value) -> Result<Value, St
     )
     .map_err(|error| error.to_string())?;
     std::fs::rename(&staged_script, &script).map_err(|error| error.to_string())?;
-    let local = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../.pathloom-runtime/python")
-        .join(if cfg!(windows) {
-            "Scripts/python.exe"
-        } else {
-            "bin/python"
-        });
-    let python = std::env::var_os("PATHLOOM_BREP_PYTHON").unwrap_or_else(|| {
-        if local.is_file() {
-            local.into_os_string()
-        } else if cfg!(windows) {
-            "python".into()
-        } else {
-            "python3".into()
-        }
-    });
+    let python = python_runtime::executable(app)?;
     let mut command = Command::new(python);
     command.arg(script);
     let output = cad_process::run(

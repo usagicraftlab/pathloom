@@ -59,11 +59,9 @@ export class NativeCadClient {
     };
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        this.cancel(request.requestId);
-        reject(
-          new Error(
-            "CAD_RESOURCE_LIMIT: CAD処理が時間内に応答しませんでした。",
-          ),
+        this.cancel(
+          request.requestId,
+          "CAD_RESOURCE_LIMIT: CAD処理が時間内に応答しませんでした。",
         );
       }, 65000);
       this.jobs.set(request.requestId, { resolve, reject, timeout, request });
@@ -78,22 +76,40 @@ export class NativeCadClient {
   }
   async importAsset(hash, asset) {
     await this.start();
-    return this.invoke("cad_import_asset", { hash, asset });
+    try {
+      const result = await this.invoke("cad_import_asset", { hash, asset });
+      if (
+        Number.isInteger(result.runtimeEpoch) &&
+        result.runtimeEpoch !== this.runtimeEpoch
+      ) {
+        this.ready = null;
+        await this.start();
+      }
+      return result;
+    } catch (error) {
+      this.ready = null;
+      throw error;
+    }
   }
   async exportAssets(handles) {
     await this.start();
-    return (await this.invoke("cad_export_assets", { handles })).assets;
+    try {
+      return (await this.invoke("cad_export_assets", { handles })).assets;
+    } catch (error) {
+      this.ready = null;
+      throw error;
+    }
   }
   release(handles) {
     if (handles.length)
       return this.invoke("cad_release_handles", { handles }).catch(() => {});
   }
-  cancel(requestId) {
+  cancel(requestId, reason = "CAD_CANCELLED") {
     const job = this.jobs.get(requestId);
     if (job) {
       clearTimeout(job.timeout);
       this.jobs.delete(requestId);
-      job.reject(new Error("CAD_CANCELLED"));
+      job.reject(new Error(reason));
     }
     this.ready = null;
     return this.invoke("cad_cancel", { requestId }).catch(() => {});

@@ -47,6 +47,7 @@ export class CadStore {
     this.queued = false;
   }
   notify() {
+    this.resolveBindings();
     this.changed(this.document);
   }
   cancelJobs() {
@@ -75,6 +76,11 @@ export class CadStore {
     return this.document.features.find((f) => f.id === featureId);
   }
   async handle(entity) {
+    const document = this.document,
+      epoch = this.epoch;
+    await this.native.start();
+    if (document !== this.document || epoch !== this.epoch)
+      throw new Error("CAD_CANCELLED");
     let entry = this.handles.get(entity.geometry.assetHash);
     if (entry?.epoch === this.native.runtimeEpoch) return entry.value;
     const asset = this.document.assets[entity.geometry.assetHash];
@@ -86,6 +92,10 @@ export class CadStore {
       entity.geometry.assetHash,
       asset,
     );
+    if (document !== this.document || epoch !== this.epoch) {
+      this.native.release([result.handle]);
+      throw new Error("CAD_CANCELLED");
+    }
     this.handles.set(entity.geometry.assetHash, {
       value: result,
       epoch: this.native.runtimeEpoch,
@@ -136,6 +146,7 @@ export class CadStore {
         prepared[key].push({
           handle: native.handle,
           geometryHash: native.geometryHash,
+          sourceKey: ref.entityId,
           selector,
         });
         inputHashes.push(e.geometry.assetHash);
@@ -144,11 +155,19 @@ export class CadStore {
     return { prepared, inputHashes };
   }
   async preview(session) {
+    const document = this.document,
+      epoch = this.epoch,
+      sequence = ++session.previewSequence;
+    const current = () =>
+      document === this.document &&
+      epoch === this.epoch &&
+      sequence === session.previewSequence &&
+      session.state !== "cancelled";
     const { operationForSession } = await import("./commands/session.js");
+    if (!current()) return null;
     const operation = operationForSession(session);
     const { prepared, inputHashes } = await this.resolve(operation.inputs);
-    const sequence = ++session.previewSequence,
-      epoch = this.epoch;
+    if (!current()) return null;
     const requestedHash = await sha256({
       operation: operation.operation,
       parameters: operation.parameters,
@@ -158,6 +177,7 @@ export class CadStore {
         ...session.toleranceOverrides,
       },
     });
+    if (!current()) return null;
     session.state = "previewing";
     const result = await this.native.evaluate({
       documentId: this.document.id,
@@ -177,9 +197,20 @@ export class CadStore {
       },
     });
     if (
-      epoch !== this.epoch ||
-      sequence !== session.previewSequence ||
-      session.state === "cancelled"
+      !current() ||
+      canonical(inputHashes) !==
+        canonical(
+          references(operation.inputs).map(
+            (ref) => this.getEntity(ref.entityId)?.geometry.assetHash,
+          ),
+        ) ||
+      references(operation.inputs).some(
+        (ref) =>
+          !["valid", "warning", "empty"].includes(
+            this.getFeature(this.getEntity(ref.entityId)?.producer.featureId)
+              ?.status,
+          ),
+      )
     ) {
       this.native.release(result.outputs.map((o) => o.handle));
       return null;
@@ -191,6 +222,8 @@ export class CadStore {
     return result;
   }
   async add(session) {
+    const document = this.document,
+      epoch = this.epoch;
     const before = checkpoint(this.document),
       { operationForSession } = await import("./commands/session.js");
     const operation = operationForSession(session);
@@ -203,7 +236,7 @@ export class CadStore {
       command: {
         id: session.command.id,
         version: session.command.version,
-        mode: session.command.mode,
+        mode: session.drawingMode || session.command.mode,
         inputs: clone(session.inputValues || {}),
       },
       name: session.command.displayName,
@@ -219,7 +252,13 @@ export class CadStore {
       diagnostics: [],
       lastValid: null,
     };
-    const sourceRefs = references(f.inputs).filter((r) => !r.kind);
+    const primaryInputs =
+      f.operation.id === "solid.difference"
+        ? f.inputs.arguments
+        : ["solid.split", "surface.split"].includes(f.operation.id)
+          ? f.inputs.targets
+          : references(f.inputs);
+    const sourceRefs = (primaryInputs || []).filter((r) => !r.kind);
     if (f.resultPolicy === "replace" && sourceRefs.length === 1) {
       const source = this.getEntity(sourceRefs[0].entityId);
       if (source) f.outputSlots[0].bodyId = source.bodyId;
@@ -229,6 +268,7 @@ export class CadStore {
     try {
       await this.recompute();
     } catch (error) {
+      if (document !== this.document || epoch !== this.epoch) return false;
       f.status = "failed";
       f.diagnostics = [
         diagnostic("CAD_RUNTIME_MISSING", error.message, f.id, [
@@ -236,9 +276,20 @@ export class CadStore {
         ]),
       ];
     }
+    if (
+      document !== this.document ||
+      epoch !== this.epoch ||
+      this.getFeature(f.id) !== f
+    )
+      return false;
     if (!["valid", "warning", "empty"].includes(f.status)) {
       const failure = clone(f);
-      this.document = before;
+      // A failed new feature must not roll back unrelated edits made while the
+      // kernel was busy. The exact result is adopted only after validation.
+      this.document.features = this.document.features.filter(
+        (feature) => feature !== f,
+      );
+      this.document.documentRevision++;
       session.state = "repairing";
       session.diagnostics = failure.diagnostics;
       session.result = null;
@@ -348,43 +399,69 @@ export class CadStore {
       this.queued = true;
       return this.recomputing;
     }
-    this.recomputing = this.runRecompute();
-    try {
-      await this.recomputing;
-    } finally {
-      this.recomputing = null;
-      if (this.queued) {
+    this.recomputing = (async () => {
+      do {
         this.queued = false;
-        return this.recompute();
-      }
-    }
+        await this.runRecompute();
+      } while (this.queued);
+    })().finally(() => {
+      this.recomputing = null;
+    });
+    return this.recomputing;
   }
   async runRecompute() {
-    const epoch = this.epoch;
+    const epoch = this.epoch,
+      document = this.document;
     const kernel = await this.native.start();
+    if (epoch !== this.epoch || document !== this.document) return;
     this.document.kernel.version = kernel.occtVersion ?? null;
     this.document.kernel.bindingVersion = kernel.ocpVersion;
     for (const feature of topologicalFeatures(this.document)) {
-      if (epoch !== this.epoch) return;
+      if (epoch !== this.epoch || document !== this.document) return;
       if (!["dirty", "blocked", "running"].includes(feature.status)) continue;
       const revision = feature.featureRevision;
-      let outputs = [];
+      const operation = clone(feature.operation),
+        parameters = clone(feature.parameters),
+        inputs = clone(feature.inputs);
+      const current = () =>
+        epoch === this.epoch &&
+        document === this.document &&
+        this.getFeature(feature.id) === feature &&
+        feature.featureRevision === revision;
+      let outputs = [],
+        adopted = false;
       try {
-        const { prepared, inputHashes } = await this.resolve(feature.inputs);
+        const { prepared, inputHashes } = await this.resolve(inputs);
+        if (!current()) continue;
+        const inputsCurrent = () =>
+          current() &&
+          canonical(inputHashes) ===
+            canonical(
+              references(inputs).map(
+                (ref) => this.getEntity(ref.entityId)?.geometry.assetHash,
+              ),
+            ) &&
+          references(inputs).every((ref) =>
+            ["valid", "warning", "empty"].includes(
+              this.getFeature(this.getEntity(ref.entityId)?.producer.featureId)
+                ?.status,
+            ),
+          );
         const tolerances = {
           ...this.document.tolerances,
           ...feature.toleranceOverrides,
         };
         const hash = await sha256({
-          operation: feature.operation,
-          parameters: feature.parameters,
+          operation,
+          parameters,
           inputs: prepared
             ? Object.fromEntries(
                 Object.entries(prepared).map(([k, v]) => [
                   k,
-                  v.map(({ geometryHash, selector }) => ({
+                  v.map(({ geometryHash, selector, sourceKey }) => ({
                     geometryHash,
                     selector,
+                    sourceKey,
                   })),
                 ]),
               )
@@ -392,6 +469,7 @@ export class CadStore {
           tolerances,
           kernel: this.document.kernel,
         });
+        if (!inputsCurrent()) continue;
         feature.requestedHash = hash;
         if (
           feature.lastValid?.resultHash === hash &&
@@ -428,47 +506,76 @@ export class CadStore {
           previewSequence: 0,
           requestedHash: hash,
           intent: "recompute",
-          operation: clone(feature.operation),
-          parameters: clone(feature.parameters),
+          operation,
+          parameters,
           inputs: prepared,
           tolerances,
         });
         outputs = result.outputs || [];
-        const current = this.getFeature(feature.id);
-        const nowHashes = references(feature.inputs).map(
-          (r) => this.getEntity(r.entityId)?.geometry.assetHash,
-        );
-        if (
-          epoch !== this.epoch ||
-          !current ||
-          current.featureRevision !== revision ||
-          current.requestedHash !== hash ||
-          canonical(nowHashes) !== canonical(inputHashes)
-        ) {
-          this.native.release(outputs.map((o) => o.handle));
-          continue;
-        }
+        const resultCurrent = () =>
+          inputsCurrent() && feature.requestedHash === hash;
+        if (!resultCurrent()) continue;
         feature.diagnostics = result.diagnostics || [];
         if (!["ok", "warning", "empty"].includes(result.status)) {
           feature.status =
             result.status === "cancelled" ? "cancelled" : "failed";
           continue;
         }
-        this.document.kernel.version =
-          (await this.native.start()).occtVersion ?? null;
-        Object.assign(
-          this.document.assets,
-          await this.native.exportAssets(outputs.map((o) => o.handle)),
+        const runtime = await this.native.start();
+        if (!resultCurrent()) continue;
+        const assets = await this.native.exportAssets(
+          outputs.map((o) => o.handle),
         );
+        // No document mutation after an await until the entire result is current.
+        if (
+          !resultCurrent() ||
+          runtime.runtimeEpoch !== this.native.runtimeEpoch
+        )
+          continue;
+        this.document.kernel.version = runtime.occtVersion ?? null;
+        Object.assign(this.document.assets, assets);
         const oldSlots = new Map(feature.outputSlots.map((s) => [s.key, s]));
         feature.outputSlots = [];
         const snapshots = [];
         for (const output of outputs) {
-          const slot = oldSlots.get(output.slotKey) || {
-            key: output.slotKey,
-            entityId: id(),
-            bodyId: id(),
-          };
+          const exactLegacySlots = ["solid.split", "surface.split"].includes(
+            operation.id,
+          )
+            ? [...oldSlots.values()].filter(
+                (s) =>
+                  /^[0-9a-f-]{36}$/.test(s.key) &&
+                  this.getEntity(s.entityId)?.geometry.assetHash ===
+                    output.geometryHash,
+              )
+            : [];
+          const legacySlot =
+            exactLegacySlots.length === 1 ? exactLegacySlots[0] : null;
+          const singleInitialSlot =
+            outputs.length === 1 &&
+            oldSlots.has("result") &&
+            !this.getEntity(oldSlots.get("result").entityId)
+              ? oldSlots.get("result")
+              : null;
+          const slot = oldSlots.get(output.slotKey) ||
+            (legacySlot && { ...legacySlot, key: output.slotKey }) ||
+            (singleInitialSlot && {
+              ...singleInitialSlot,
+              key: output.slotKey,
+            }) || {
+              key: output.slotKey,
+              entityId: id(),
+              bodyId: id(),
+            };
+          if (
+            output.sourceKey &&
+            (operation.id === "solid.difference" ||
+              (["solid.split", "surface.split"].includes(operation.id) &&
+                outputs.filter((o) => o.sourceKey === output.sourceKey)
+                  .length === 1))
+          )
+            slot.bodyId =
+              this.getEntity(output.sourceKey)?.bodyId || slot.bodyId;
+          if (output.sourceKey) slot.sourceEntityId = output.sourceKey;
           feature.outputSlots.push(slot);
           const old = this.getEntity(slot.entityId);
           const e = {
@@ -545,26 +652,44 @@ export class CadStore {
           (e) => e.producer.featureId !== feature.id || currentIds.has(e.id),
         );
         if (feature.resultPolicy === "replace")
-          for (const ref of references(feature.inputs)) {
-            const input = this.getEntity(ref.entityId);
-            if (input && !ref.kind) {
-              const body = this.document.bodies.find(
-                (b) => b.id === input.bodyId,
-              );
+          for (const [inputKey, inputRefs] of Object.entries(feature.inputs))
+            for (const ref of inputRefs) {
               if (
-                body &&
-                !feature.outputSlots.some((s) => s.bodyId === body.id)
-              ) {
-                body.tipEntityId = null;
-                if (feature.outputSlots.length > 1) {
-                  body.status = "split";
-                  body.splitIntoBodyIds = feature.outputSlots.map(
-                    (s) => s.bodyId,
+                operation.id === "solid.difference" &&
+                parameters.keepTools &&
+                inputKey === "tools"
+              )
+                continue;
+              if (
+                ["solid.split", "surface.split"].includes(operation.id) &&
+                inputKey === "cutters"
+              )
+                continue;
+              const input = this.getEntity(ref.entityId);
+              if (input && !ref.kind) {
+                const body = this.document.bodies.find(
+                  (b) => b.id === input.bodyId,
+                );
+                if (
+                  body &&
+                  !feature.outputSlots.some((s) => s.bodyId === body.id)
+                ) {
+                  body.tipEntityId = null;
+                  const parts = outputs.filter(
+                    (o) => o.sourceKey === ref.entityId,
                   );
+                  const splitSlots = parts.length
+                    ? feature.outputSlots.filter((s) =>
+                        parts.some((o) => o.slotKey === s.key),
+                      )
+                    : feature.outputSlots;
+                  if (splitSlots.length > 1) {
+                    body.status = "split";
+                    body.splitIntoBodyIds = splitSlots.map((s) => s.bodyId);
+                  }
                 }
               }
             }
-          }
         feature.status =
           result.status === "empty"
             ? "empty"
@@ -577,14 +702,10 @@ export class CadStore {
           entitySnapshots: snapshots,
           inputRevisionHashes: inputHashes,
         };
+        adopted = true;
         this.resolveBindings();
       } catch (error) {
-        if (
-          epoch !== this.epoch ||
-          this.getFeature(feature.id) !== feature ||
-          feature.featureRevision !== revision
-        )
-          continue;
+        if (!current()) continue;
         const code =
           error.diagnostic?.code ||
           [
@@ -608,8 +729,10 @@ export class CadStore {
             ]),
         ];
       } finally {
+        if (!adopted && outputs.length)
+          this.native.release(outputs.map((o) => o.handle));
         if (this.activeFeature === feature.id) this.activeFeature = null;
-        this.notify();
+        if (document === this.document && epoch === this.epoch) this.notify();
       }
     }
   }
@@ -657,6 +780,9 @@ export class CadStore {
     return this.recompute();
   }
   async insertLibrary(entry) {
+    const baseDocument = this.document,
+      baseRevision = this.document.documentRevision,
+      epoch = this.epoch;
     const before = checkpoint(this.document),
       patch = insertShapes(this.document, entry);
     for (const [hash, asset] of Object.entries(patch.assets))
@@ -688,6 +814,16 @@ export class CadStore {
       this.native.release(imported.map(([, o]) => o.handle));
       throw error;
     }
+    if (
+      this.document !== baseDocument ||
+      this.document.documentRevision !== baseRevision ||
+      this.epoch !== epoch
+    ) {
+      this.native.release(imported.map(([, o]) => o.handle));
+      throw new Error(
+        "Library読込中に文書が変更されました。もう一度挿入してください。",
+      );
+    }
     this.document = candidate;
     for (const [hash, value] of imported)
       this.handles.set(hash, { value, epoch: this.native.runtimeEpoch });
@@ -714,16 +850,66 @@ export class CadStore {
             )
           : this.getEntity(b.source.entityId);
       const f = entity && this.getFeature(entity.producer.featureId);
-      b.status = !entity
-        ? "missing"
-        : !["valid", "warning"].includes(f?.status)
-          ? "pending"
-          : b.expectedKind === "curve" && entity.kind !== "curve"
-            ? "type-changed"
-            : "ready";
+      const body = this.document.bodies.find(
+        (body) => body.id === b.source.bodyId,
+      );
+      b.candidateBodyIds =
+        body?.status === "split"
+          ? body.splitIntoBodyIds.filter((id) =>
+              this.document.bodies.some(
+                (body) => body.id === id && body.status === "ready",
+              ),
+            )
+          : [];
+      b.status = b.candidateBodyIds.length
+        ? "split"
+        : !entity
+          ? "missing"
+          : f?.status === "empty" || entity.displayCache?.empty
+            ? "empty"
+            : !["valid", "warning"].includes(f?.status)
+              ? "pending"
+              : b.expectedKind === "curve" && entity.kind !== "curve"
+                ? "type-changed"
+                : "ready";
       b.resolvedEntityId = entity?.id || null;
       b.resolvedResultHash = f?.resultHash || null;
     }
+  }
+  rebindOutput(bindingId, entityId) {
+    const binding = this.document.outputBindings.find(
+        (b) => b.id === bindingId,
+      ),
+      entity = this.getEntity(entityId);
+    if (
+      !binding ||
+      !entity ||
+      !["valid", "warning"].includes(
+        this.getFeature(entity.producer.featureId)?.status,
+      )
+    )
+      throw new Error("確定した形状を選択してください");
+    if (
+      binding.expectedKind === "curve"
+        ? entity.kind !== "curve"
+        : !entity.displayCache?.preview?.meshes.length
+    )
+      throw new Error("生成参照と同じ種類の形状を選択してください");
+    const before = checkpoint(this.document);
+    binding.source = { mode: "body-result", bodyId: entity.bodyId };
+    this.document.documentRevision++;
+    this.transactions.record(before, this.document, "生成参照を修復");
+    this.notify();
+  }
+  discardSketchDraft(featureId) {
+    const f = this.getFeature(featureId),
+      sketch = this.document.sketches.find((s) => s.id === f?.sketchId);
+    if (!sketch?.draft) return;
+    const before = checkpoint(this.document);
+    delete sketch.draft;
+    this.document.documentRevision++;
+    this.transactions.record(before, this.document, "拘束の下書きを取り消す");
+    this.notify();
   }
   async snapshot() {
     const strip = (e) => {
@@ -767,6 +953,12 @@ export class CadStore {
     return validateCadDocument(doc);
   }
   async prepareRestore(raw) {
+    const base = {
+      document: this.document,
+      revision: this.document.documentRevision,
+      draftStamp: canonical(this.document.draftSessions),
+      epoch: this.epoch,
+    };
     const next = clone(raw);
     validateCadDocument(next);
     for (const f of next.features)
@@ -798,6 +990,7 @@ export class CadStore {
       throw error;
     }
     return {
+      base,
       document: next,
       handles: new Map(
         [...prepared].map(([hash, value]) => [
@@ -807,7 +1000,25 @@ export class CadStore {
       ),
     };
   }
+  assertRestoreCurrent(prepared) {
+    if (!prepared?.base) return;
+    const b = prepared.base;
+    if (
+      this.document !== b.document ||
+      this.document.documentRevision !== b.revision ||
+      this.epoch !== b.epoch ||
+      canonical(this.document.draftSessions) !== b.draftStamp
+    ) {
+      this.native.release(
+        [...prepared.handles.values()].map((entry) => entry.value.handle),
+      );
+      throw new Error(
+        "読込中に編集中の文書が変更されました。保存してから開き直してください。",
+      );
+    }
+  }
   commitRestore(prepared) {
+    this.assertRestoreCurrent(prepared);
     this.native.cancelAll();
     this.epoch++;
     this.handles = prepared.handles;

@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { CadStore } from "../cad/store.js";
 import { commandById } from "../cad/commands/registry.js";
+import { createCadDocument } from "../cad/document.js";
 import {
   createCommandSession,
   dispatchSession,
@@ -181,4 +182,94 @@ test("explicit cancel retains lastValid and does not automatically restart the j
   assert.equal(store.document.entities[0].geometry.assetHash, "initial");
   assert.ok(store.document.features[0].lastValid);
   assert.equal(native.pending.length, 0);
+});
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+async function committedLine() {
+  const native = fakeNative(),
+    store = new CadStore(native);
+  const added = store.add(createCommandSession(commandById("C02")));
+  await waiting(native);
+  complete(native.pending.shift(), "initial");
+  await added;
+  return { native, store, feature: store.document.features[0] };
+}
+function delayExport(native) {
+  const entered = deferred(),
+    released = deferred(),
+    original = native.exportAssets;
+  native.exportAssets = async (handles) => {
+    const assets = await original(handles);
+    if (handles.includes("obsolete")) {
+      entered.resolve();
+      await released.promise;
+    }
+    return assets;
+  };
+  return { entered: entered.promise, release: released.resolve };
+}
+test("AUD-001 edits during asset export discard old geometry and drain the latest edit", async () => {
+  const { native, store, feature } = await committedLine(),
+    gate = delayExport(native);
+  const first = store.edit(feature.id, {
+    ...feature.parameters,
+    end: [70, 0, 0],
+  });
+  await waiting(native);
+  complete(native.pending.shift(), "obsolete");
+  await gate.entered;
+  const latest = store.edit(feature.id, {
+    ...feature.parameters,
+    end: [80, 0, 0],
+  });
+  gate.release();
+  await waiting(native);
+  assert.equal(native.pending[0].request.parameters.end[0], 80);
+  assert.ok(native.released.includes("obsolete"));
+  assert.equal(store.document.assets.obsolete, undefined);
+  complete(native.pending.shift(), "latest");
+  await latest;
+  await first;
+  assert.equal(feature.status, "valid");
+  assert.equal(feature.resultHash, feature.requestedHash);
+  assert.equal(store.document.entities[0].geometry.assetHash, "latest");
+});
+for (const action of ["undo", "delete", "restore"]) {
+  test(`AUD-001 ${action} during export cannot apply the previous document result`, async () => {
+    const { native, store, feature } = await committedLine(),
+      gate = delayExport(native);
+    const editing = store.edit(feature.id, {
+      ...feature.parameters,
+      end: [70, 0, 0],
+    });
+    await waiting(native);
+    complete(native.pending.shift(), "obsolete");
+    await gate.entered;
+    if (action === "undo") store.transactions.undo();
+    else if (action === "delete") store.remove(feature.id);
+    else store.commitRestore(await store.prepareRestore(createCadDocument()));
+    gate.release();
+    await editing;
+    assert.ok(native.released.includes("obsolete"));
+    assert.equal(store.document.assets.obsolete, undefined);
+    if (action === "undo") {
+      assert.equal(store.document.features[0].parameters.end[0], 20);
+      assert.equal(store.document.entities[0].geometry.assetHash, "initial");
+    } else assert.equal(store.document.entities.length, 0);
+  });
+}
+test("a prepared Open cannot replace edits made while its exact assets were loading", async () => {
+  const { store } = await committedLine(),
+    original = store.document;
+  const prepared = await store.prepareRestore(createCadDocument());
+  store.document.documentRevision++;
+  assert.throws(() => store.commitRestore(prepared), /読込中/);
+  assert.equal(store.document, original);
+  assert.equal(store.document.features.length, 1);
 });

@@ -28,7 +28,8 @@ export function parseCoordinate(text, { previous = null, plane = null } = {}) {
   if (p.length === 2) {
     if (plane)
       p = plane.origin.map(
-        (v, i) => v + p[0] * plane.xAxis[i] + p[1] * plane.yAxis[i],
+        (v, i) =>
+          (relative ? 0 : v) + p[0] * plane.xAxis[i] + p[1] * plane.yAxis[i],
       );
     else p.push(0);
   }
