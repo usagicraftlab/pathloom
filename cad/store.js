@@ -25,6 +25,12 @@ import {
   replacementRefs,
   reconcileDifferenceTools,
 } from "./difference.js";
+import {
+  isSplit,
+  splitSlots,
+  applySplitBodies,
+  restoreSplitInputs,
+} from "./split-bindings.js";
 const checkpoint = (doc) => {
   const { assets, ...rest } = doc;
   return { ...clone(rest), assets };
@@ -106,7 +112,7 @@ export class CadStore {
     entity.displayCache = result.summary;
     return result;
   }
-  async resolve(inputs) {
+  async resolve(inputs, { split = false } = {}) {
     const prepared = {},
       inputHashes = [];
     for (const [key, refs] of Object.entries(inputs)) {
@@ -114,7 +120,11 @@ export class CadStore {
       for (const ref of Array.isArray(refs) ? refs : [refs]) {
         const e = this.getEntity(ref.entityId);
         const f = e && this.getFeature(e.producer.featureId);
-        if (!e || !["valid", "warning", "empty"].includes(f?.status)) {
+        if (
+          ref.unresolved ||
+          !e ||
+          !["valid", "warning", "empty"].includes(f?.status)
+        ) {
           const d = diagnostic(
             "CAD_UPSTREAM_BLOCKED",
             "上流の形状が未解決です。",
@@ -151,6 +161,7 @@ export class CadStore {
           handle: native.handle,
           geometryHash: native.geometryHash,
           selector,
+          ...(split && key === "targets" ? { sourceKey: e.id } : {}),
         });
         inputHashes.push(inputHash);
       }
@@ -171,7 +182,9 @@ export class CadStore {
     const operation = operationForSession(session);
     if (operation.operation.id === "solid.difference")
       validateDifferenceTargets(this.document, operation.inputs);
-    const { prepared, inputHashes } = await this.resolve(operation.inputs);
+    const { prepared, inputHashes } = await this.resolve(operation.inputs, {
+      split: isSplit(operation.operation.id),
+    });
     if (!current()) return null;
     const requestedHash = await sha256({
       operation: operation.operation,
@@ -361,13 +374,20 @@ export class CadStore {
   }
   suppress(featureId, value) {
     const before = checkpoint(this.document);
+    const feature = this.getFeature(featureId);
+    if (value && isSplit(feature?.operation.id))
+      restoreSplitInputs(this.document, feature);
     suppressFeature(this.document, featureId, value);
+    if (isSplit(feature?.operation.id)) this.resolveBindings();
     this.transactions.record(before, this.document, "抑制を変更");
     this.notify();
     return this.recompute();
   }
   remove(featureId, { dependents = false } = {}) {
     const before = checkpoint(this.document);
+    const feature = this.getFeature(featureId);
+    if (isSplit(feature?.operation.id))
+      restoreSplitInputs(this.document, feature);
     const doomed = new Set([featureId]);
     if (dependents) {
       const { features } = this.document;
@@ -409,6 +429,7 @@ export class CadStore {
     );
     this.document.documentRevision++;
     this.transactions.record(before, this.document, "履歴を削除");
+    if (isSplit(feature?.operation.id)) this.resolveBindings();
     if (doomed.has(this.activeFeature)) {
       this.native.cancelAll();
       this.handles.clear();
@@ -465,7 +486,9 @@ export class CadStore {
       try {
         if (operation.id === "solid.difference")
           validateDifferenceTargets(this.document, inputs);
-        const { prepared, inputHashes } = await this.resolve(inputs);
+        const { prepared, inputHashes } = await this.resolve(inputs, {
+          split: isSplit(operation.id),
+        });
         if (!current()) continue;
         const inputsCurrent = () =>
           current() &&
@@ -495,9 +518,10 @@ export class CadStore {
             ? Object.fromEntries(
                 Object.entries(prepared).map(([k, v]) => [
                   k,
-                  v.map(({ geometryHash, selector }) => ({
+                  v.map(({ geometryHash, selector, sourceKey }) => ({
                     geometryHash,
                     selector,
+                    ...(sourceKey ? { sourceKey } : {}),
                   })),
                 ]),
               )
@@ -526,6 +550,7 @@ export class CadStore {
               body.status = "ready";
             }
           }
+          if (isSplit(operation.id)) applySplitBodies(this.document, feature);
           this.resolveBindings();
           this.notify();
           continue;
@@ -574,16 +599,20 @@ export class CadStore {
         if (operation.id === "solid.difference")
           outputs = differenceOutputs(outputs, inputs);
         this.document.kernel.version = runtime.occtVersion ?? null;
+        const nextSplitSlots = isSplit(operation.id)
+          ? splitSlots(this.document, feature, outputs)
+          : null;
         Object.assign(this.document.assets, assets);
         const oldSlots = new Map(feature.outputSlots.map((s) => [s.key, s]));
         feature.outputSlots = [];
         const snapshots = [];
-        for (const output of outputs) {
-          const slot = oldSlots.get(output.slotKey) || {
-            key: output.slotKey,
-            entityId: id(),
-            bodyId: id(),
-          };
+        for (const [index, output] of outputs.entries()) {
+          const slot = nextSplitSlots?.[index] ||
+            oldSlots.get(output.slotKey) || {
+              key: output.slotKey,
+              entityId: id(),
+              bodyId: id(),
+            };
           if (operation.id === "solid.difference")
             slot.bodyId =
               this.getEntity(output.differenceTargetId)?.bodyId || slot.bodyId;
@@ -638,15 +667,40 @@ export class CadStore {
             (e) => e.producer.featureId === feature.id && !currentIds.has(e.id),
           );
         for (const e of retired) {
-          const body = this.document.bodies.find((b) => b.tipEntityId === e.id);
+          const body = this.document.bodies.find((b) =>
+            isSplit(operation.id) ? b.id === e.bodyId : b.tipEntityId === e.id,
+          );
           if (body) {
             body.tipEntityId = null;
             body.status = "missing";
+            if (isSplit(operation.id)) {
+              const oldSlot = [...oldSlots.values()].find(
+                (slot) => slot.entityId === e.id,
+              );
+              const sourceEntityId =
+                oldSlot?.sourceEntityId ||
+                (inputs.targets.length === 1
+                  ? inputs.targets[0].entityId
+                  : null);
+              body.splitOrigin = {
+                featureId: feature.id,
+                entityId: sourceEntityId,
+              };
+            }
           }
           for (const downstream of this.document.features)
             for (const ref of references(downstream.inputs))
               if (ref.entityId === e.id) {
                 ref.unresolved = true;
+                if (isSplit(operation.id)) {
+                  ref.splitOrigin = clone(body?.splitOrigin);
+                  ref.candidateEntityIds = feature.outputSlots
+                    .filter(
+                      (slot) =>
+                        slot.sourceEntityId === body?.splitOrigin?.entityId,
+                    )
+                    .map((slot) => slot.entityId);
+                }
                 downstream.status = "blocked";
                 downstream.diagnostics = [
                   diagnostic(
@@ -662,7 +716,8 @@ export class CadStore {
         this.document.entities = this.document.entities.filter(
           (e) => e.producer.featureId !== feature.id || currentIds.has(e.id),
         );
-        if (feature.resultPolicy === "replace")
+        if (isSplit(operation.id)) applySplitBodies(this.document, feature);
+        else if (feature.resultPolicy === "replace")
           for (const ref of replacementRefs(feature)) {
             const input = this.getEntity(ref.entityId);
             if (input && !ref.kind) {
@@ -834,6 +889,10 @@ export class CadStore {
   }
   resolveBindings() {
     for (const b of this.document.outputBindings) {
+      const body =
+        b.source.mode === "body-result"
+          ? this.document.bodies.find((body) => body.id === b.source.bodyId)
+          : null;
       const entity =
         b.source.mode === "body-result"
           ? this.getEntity(
@@ -842,16 +901,59 @@ export class CadStore {
             )
           : this.getEntity(b.source.entityId);
       const f = entity && this.getFeature(entity.producer.featureId);
-      b.status = !entity
-        ? "missing"
-        : !["valid", "warning"].includes(f?.status)
-          ? "pending"
-          : b.expectedKind === "curve" && entity.kind !== "curve"
-            ? "type-changed"
-            : "ready";
+      b.candidateBodyIds = [
+        ...new Set([
+          ...(body?.status === "split" ? body.splitIntoBodyIds : []),
+          ...(body?.replacementBodyIds || []),
+        ]),
+      ].filter((id) =>
+        this.document.bodies.some(
+          (body) => body.id === id && body.status === "ready",
+        ),
+      );
+      b.status = b.candidateBodyIds.length
+        ? "split"
+        : !entity
+          ? "missing"
+          : !["valid", "warning"].includes(f?.status)
+            ? "pending"
+            : b.expectedKind === "curve" && entity.kind !== "curve"
+              ? "type-changed"
+              : "ready";
       b.resolvedEntityId = entity?.id || null;
       b.resolvedResultHash = f?.resultHash || null;
     }
+  }
+  rebindOutput(bindingId, entityId) {
+    const binding = this.document.outputBindings.find(
+      (binding) => binding.id === bindingId,
+    );
+    const entity = this.getEntity(entityId);
+    const body = this.document.bodies.find(
+      (body) => body.id === entity?.bodyId,
+    );
+    if (
+      !binding ||
+      !entity ||
+      body?.tipEntityId !== entity.id ||
+      !["valid", "warning"].includes(
+        this.getFeature(entity.producer.featureId)?.status,
+      )
+    )
+      throw new Error("確定した現在のbody結果を選択してください");
+    if (
+      binding.expectedKind === "curve"
+        ? entity.kind !== "curve"
+        : !["surface", "shell", "solid", "compound"].includes(entity.kind) ||
+          !entity.displayCache?.preview?.meshes?.length
+    )
+      throw new Error("生成参照と同じ種類の形状を選択してください");
+    const before = checkpoint(this.document);
+    binding.source = { mode: "body-result", bodyId: body.id };
+    this.document.documentRevision++;
+    this.resolveBindings();
+    this.transactions.record(before, this.document, "生成参照を修復");
+    this.notify();
   }
   async snapshot() {
     const strip = (e) => {
@@ -941,6 +1043,7 @@ export class CadStore {
     this.handles = prepared.handles;
     this.document = prepared.document;
     this.transactions.clear();
+    this.resolveBindings();
   }
   async restore(raw) {
     const prepared = await this.prepareRestore(raw);

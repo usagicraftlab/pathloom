@@ -129,6 +129,245 @@ test.afterEach(() => {
   daemon?.kill();
   queue = [];
 });
+
+test("AUD-003: D04 exact rerun, changed/count split, v2 reopen and explicit reference/binding repair", async ({
+  page,
+}) => {
+  await expect
+    .poll(() => page.evaluate(() => !!window.Pathloom.viewState().position))
+    .toBe(true);
+  const setup = await page.evaluate(async () => {
+    const { commandById } = await import("/cad/commands/registry.js");
+    const { createCommandSession } = await import("/cad/commands/session.js");
+    const store = window.PathloomModel.store;
+    async function add(command, parameters) {
+      const session = createCommandSession(commandById(command));
+      Object.assign(session.parameters, parameters);
+      if (!(await store.add(session)))
+        throw new Error(JSON.stringify(session.diagnostics));
+      return store.document.features.at(-1);
+    }
+    const box = await add("B01", { widthMm: 10, depthMm: 10, heightMm: 10 });
+    const points = (x) => [
+      [x, -10, -10],
+      [x, 20, -10],
+      [x, 20, 20],
+      [x, -10, 20],
+    ];
+    const cutter = await add("S02", { points: points(5) });
+    const second = await add("S02", { points: points(5) });
+    return {
+      box: box.outputSlots[0].entityId,
+      cutter: cutter.outputSlots[0].entityId,
+      cutterFeature: cutter.id,
+      second: second.outputSlots[0].entityId,
+    };
+  });
+  await page.getByRole("button", { name: "Split Body", exact: true }).click();
+  await page
+    .getByRole("listbox", { name: "CAD input targets", exact: true })
+    .selectOption({
+      value: JSON.stringify({ entityId: setup.box, role: "targets" }),
+    });
+  await page
+    .getByRole("listbox", { name: "CAD input cutters", exact: true })
+    .selectOption({
+      value: JSON.stringify({ entityId: setup.cutter, role: "cutters" }),
+    });
+  await page.getByRole("button", { name: "確定", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(4);
+  await expect(page.locator(".model-history-entry").last()).toContainText(
+    "valid",
+  );
+  await expect(page.locator("#modelStatus")).toContainText(
+    "形状を確定しました",
+  );
+  const initial = await page.evaluate(async () => {
+    const store = window.PathloomModel.store;
+    const split = store.document.features.at(-1);
+    const slots = structuredClone(split.outputSlots);
+    const { bindBody } = await import("/cad/generation-adapter.js");
+    const binding = bindBody(
+      store.document,
+      store.getEntity(slots[1].entityId),
+    );
+    const { commandById } = await import("/cad/commands/registry.js");
+    const { createCommandSession } = await import("/cad/commands/session.js");
+    const section = createCommandSession(commandById("E14"));
+    section.inputs.objects = [{ entityId: slots[1].entityId }];
+    section.parameters.plane.origin = [0, 0, 5];
+    if (!(await store.add(section)))
+      throw new Error(JSON.stringify(section.diagnostics));
+    const dependent = store.document.features.at(-1);
+    const { markDirty } = await import("/cad/history.js");
+    split.lastValid.resultHash = "force-kernel-rerun";
+    markDirty(store.document, [split.id]);
+    await store.recompute();
+    return {
+      slots,
+      after: split.outputSlots,
+      split: split.id,
+      dependent: dependent.id,
+      dependentStatus: dependent.status,
+      binding: structuredClone(binding),
+      volumes: split.outputSlots.map(
+        (slot) => store.getEntity(slot.entityId).displayCache.volumeMm3,
+      ),
+    };
+  });
+  expect(initial.after).toEqual(initial.slots);
+  expect(initial.volumes).toHaveLength(2);
+  for (const volume of initial.volumes) expect(volume).toBeCloseTo(500, 6);
+  expect(initial.dependentStatus).toBe("valid");
+  expect(initial.binding.status).toBe("ready");
+  await page.evaluate(async ({ cutterFeature }) => {
+    const store = window.PathloomModel.store;
+    await store.edit(cutterFeature, {
+      points: [
+        [7, -10, -10],
+        [7, 20, -10],
+        [7, 20, 20],
+        [7, -10, 20],
+      ],
+    });
+  }, setup);
+  await expect(page.locator(".model-history-entry").last()).toContainText(
+    "blocked",
+  );
+  expect(
+    await page.evaluate(() => {
+      const b = window.PathloomModel.store.document.outputBindings[0];
+      return {
+        status: b.status,
+        entity: b.resolvedEntityId,
+        candidates: b.candidateBodyIds.length,
+      };
+    }),
+  ).toEqual({ status: "split", entity: null, candidates: 2 });
+  await expect(page.locator("#cadStatus")).toContainText("layers");
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect.poll(() => page.evaluate(() => window.__saved?.version)).toBe(2);
+  expect(
+    await page.evaluate(() => window.__saved.cadDocument.draftSessions),
+  ).toEqual([]);
+  // Autosave can prompt after reload. Make it deterministic, then explicitly
+  // discard recovery before opening the saved project; recovery races are #10.
+  await page.evaluate(() =>
+    window.__cadStorage({
+      key: "recovery",
+      content: JSON.stringify(window.__saved.cadDocument),
+    }),
+  );
+  await page.reload();
+  await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
+  await page.evaluate(() => document.querySelector("#modeModel").click());
+  await page
+    .getByRole("button", { name: "回復データを破棄", exact: true })
+    .click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
+  await page.evaluate(() => document.querySelector("#projectOpen").click());
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.PathloomModel.store.document.features.length),
+    )
+    .toBe(5);
+  expect(
+    await page.evaluate(
+      () => window.PathloomModel.store.document.outputBindings[0].status,
+    ),
+  ).toBe("split");
+  const three = await page.evaluate(
+    async ({ setup, initial }) => {
+      const store = window.PathloomModel.store;
+      const split = store.getFeature(initial.split);
+      const before = structuredClone(split.outputSlots);
+      await store.repair(split.id, "cutters", [
+        { entityId: setup.cutter },
+        { entityId: setup.second },
+      ]);
+      return {
+        slots: split.outputSlots,
+        common: split.outputSlots.filter((s) =>
+          before.some((b) => b.entityId === s.entityId),
+        ).length,
+        inconsistent: split.outputSlots.filter((s) =>
+          before.some(
+            (b) =>
+              (b.entityId === s.entityId || b.bodyId === s.bodyId) &&
+              b.key !== s.key,
+          ),
+        ),
+        dependentStatus: store.getFeature(initial.dependent).status,
+      };
+    },
+    { setup, initial },
+  );
+  expect(three.slots).toHaveLength(3);
+  // Reading B-rep assets can change OCCT serialization of a later boolean.
+  // Such results may remain blocked; exact identity is the only safe reuse.
+  expect(three.common).toBeLessThanOrEqual(1);
+  expect(three.inconsistent).toEqual([]);
+  expect(three.dependentStatus).toBe("blocked");
+  await page.locator(".model-history-entry").last().click();
+  await page
+    .getByRole("listbox", { name: "CAD input objects", exact: true })
+    .selectOption({
+      value: JSON.stringify({
+        entityId: three.slots[0].entityId,
+        role: "objects",
+      }),
+    });
+  await expect(page.locator(".model-history-entry").last()).toContainText(
+    "valid",
+  );
+  // Restore the saved selection through the same workspace restore path used by Open.
+  await page.evaluate(async (entityId) => {
+    const workspace = window.PathloomModel;
+    const doc = await workspace.snapshot();
+    doc.uiState.selection = [{ entityId }];
+    workspace.restorePrepared(await workspace.prepareRestore(doc));
+  }, three.slots[0].entityId);
+  await page
+    .getByRole("button", {
+      name: `「${initial.binding.name}」の生成参照をこの形状へ変更`,
+      exact: true,
+    })
+    .click();
+  expect(
+    await page.evaluate(() => {
+      const binding = window.PathloomModel.store.document.outputBindings[0];
+      return {
+        id: binding.id,
+        status: binding.status,
+        entity: binding.resolvedEntityId,
+      };
+    }),
+  ).toEqual({
+    id: initial.binding.id,
+    status: "ready",
+    entity: three.slots[0].entityId,
+  });
+  const library = await page.evaluate(async (entityId) => {
+    const store = window.PathloomModel.store;
+    const { packageShapes } = await import("/cad/shape-library.js");
+    const entry = packageShapes(store.document, [entityId]);
+    const originalHash = store.getEntity(entityId).geometry.assetHash;
+    const ids = [];
+    for (let i = 0; i < 2; i++) ids.push(...(await store.insertLibrary(entry)));
+    return {
+      ids,
+      retained: ids.every((id) => !!store.getEntity(id)),
+      exact: ids.every(
+        (id) => store.getEntity(id)?.geometry.assetHash === originalHash,
+      ),
+      bindingStatus: store.document.outputBindings[0].status,
+    };
+  }, three.slots[0].entityId);
+  expect(new Set(library.ids).size).toBe(2);
+  expect(library.retained).toBe(true);
+  expect(library.exact).toBe(true);
+  expect(library.bindingStatus).toBe("ready");
+});
 test("A01/A03/T01: real center rectangle, dimension edit, Undo, portable save and reopen", async ({
   page,
 }) => {

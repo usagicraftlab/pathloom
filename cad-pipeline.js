@@ -132,7 +132,7 @@ export function validatePipeline(raw){
     if(input.exposed!==undefined&&typeof input.exposed!=='boolean')throw new Error('Invalid input exposure');
     if(input.printSetting!==undefined&&(input.type!=='number'||!['printWidth','printHeight','printSpeed','travelSpeed','nozzleTemperature','bedTemperature','fanSpeed'].includes(input.printSetting)))throw new Error('Invalid print setting reference');
     inputs.set(input.id,input);
-    if(input.cadBinding!==undefined){const b=input.cadBinding;if(!b||typeof b.id!=='string'||!['ready','pending','missing','type-changed'].includes(b.status)||typeof b.assetHash!=='string'||!Number.isFinite(b.sampling?.toleranceMm)||b.sampling.toleranceMm<=0)throw new Error('Invalid CAD binding')}
+    if(input.cadBinding!==undefined){const b=input.cadBinding;if(!b||typeof b.id!=='string'||!['ready','pending','missing','split','type-changed'].includes(b.status)||typeof b.assetHash!=='string'||!Number.isFinite(b.sampling?.toleranceMm)||b.sampling.toleranceMm<=0)throw new Error('Invalid CAD binding')}
     if(input.type==='curve'){
       const curve=input.curve;
       if(!curve||!['control','polyline'].includes(curve.type)||typeof curve.closed!=='boolean'||!Array.isArray(curve.points)||curve.points.length<2||curve.points.length>(input.cadBinding?300000:256)||curve.points.some(p=>!Array.isArray(p)||!(input.cadBinding?[2,3]:[2]).includes(p.length)||p.some(v=>!finite(v)||!input.cadBinding&&Math.abs(v)>500)))throw new Error(`Invalid curve: ${input.name}`);
