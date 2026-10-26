@@ -4,8 +4,9 @@ Current audit: [2026-10-26 execution log](cad-development-log.md).
 This file owns the A/T/R acceptance states; the log owns dated execution results.
 The statuses below are the 2026-10-21 fixture checkpoint, not a claim that every
 condition was rerun or completed in Phase 0. In particular, AUD-001 exposes an
-additional asynchronous result-application gap beyond R01-R03, and AUD-002 shows
-that T19/T20 do not cover multiple Difference arguments.
+additional asynchronous result-application gap beyond R01-R03. AUD-002 exposed
+the missing multiple-Difference-target coverage; the isolated Issue #5 evidence
+below extends T19/T20 without declaring other Boolean modes complete.
 
 2026-10-21 JST. `passed` is scoped to the listed fixture, not a declaration of full application completion. Native geometry is real OCP; job races substitute transport only. Full macOS execution has not been performed.
 
@@ -27,11 +28,11 @@ that T19/T20 do not cover multiple Difference arguments.
 | A14 | partial | T24 negative nonplanar exact shape + native asset round-trip + browser creation; all edit modes pending |
 | A15 | not-run | Self-intersection warning / continuation policy needs implementation |
 | A16 | partial | typed Fillet failures + lastValid + parameter/target repair; failure location diagnosis incomplete |
-| A17 | partial | T19/T20 real Boolean empty and unchanged numerical results; UI empty messaging pending |
+| A17 | partial | Issue #5: real Difference single500/multiple1500/noncontact1000/empty0/mixed-empty results; browser checks empty history state and persistence. Broader empty-result explanation UI remains pending |
 | A18 | partial | Untrim/Offset/Reverse operators exist; actual Trim->Untrim scenario not implemented |
 | A19 | partial | Real exact-asset Library/history insertion and recovery browser flow; broader open-face/multi-shape OS cases pending |
 | A20 | partial | Typed ID remap unit test + real rectangle history insertion; multi-feature dependent closure E2E pending |
-| A21 | partial | browser v2 exact assets/reopen + native T25 subset; other environment/macOS portability untested |
+| A21 | partial | Issue #5 adds two independent Difference remainders, target IDs, tool retention, fresh-page v2 reopen and mixed-empty round-trip; native new-Runtime exact-asset import. Other environment/macOS portability untested |
 | A22 | partial | legacy JS/Python/browser regression suite; real GH/OS integration untested |
 | A23 | partial | Issue #4: document/feature/input/epoch guards through asset export; transport races17 pass, real OCCT width70→80 probe and existing browser21 pass. Actual macOS drag/load remains untested |
 | A24 | partial | explicit B-rep generation input binding browser + vault/XYZ unit tests; branch isolation/recompute preservation pending |
@@ -56,8 +57,8 @@ that T19/T20 do not cover multiple Difference arguments.
 | T16 | not-run | 未実装または未検証。合格としない。 |
 | T17 | not-run | 未実装または未検証。合格としない。 |
 | T18 | not-run | 未実装または未検証。合格としない。 |
-| T19 | passed | real Boolean volumes1500/500/500; result kind checked |
-| T20 | passed | real disjoint intersection empty; difference1000 unchanged |
+| T19 | passed | Existing union/difference/intersection1500/500/500 retained; Issue #5 real Difference arguments A/B with tool C yields500+1000=1500, multiple tools total1000, immutable inputs and disconnected remainder800; browser two outputs, Undo/Redo, retention and save/reopen |
+| T20 | passed | Existing disjoint intersection empty retained; Issue #5 real Difference noncontact1000, self-subtraction empty0, mixed empty/nonempty and all-targets-empty; browser empty state and mixed-empty save/reopen |
 | T21 | passed | real native inward shell, removed top, volume8000-18*18*19 |
 | T22 | partial | finite-domain Untrim kernel test; Trim itself pending |
 | T23 | not-run | 未実装または未検証。合格としない。 |
@@ -73,6 +74,18 @@ that T19/T20 do not cover multiple Difference arguments.
 | R08 | partial | Browser recovery restores real assets and history; failed feature + lastValid saved in v2; complete failed-draft restart matrix pending |
 | R09 | partial | existing representative JS fixtures + browser regressions; complete legacy asset matrix pending |
 | R10 | partial | split marks source body split/pending; explicit binding candidate UI pending |
+
+## 2026-10-27 JST — Issue #5 scope
+
+The Issue #5 branch adds five native real-OCP tests, five JS contract/policy tests
+and three packaged-browser scenarios. Native inputs are independent whole-solid
+targets and shared tools; supported setting is boolean `keepTools` (default false).
+JS fixtures check roles, unsupported modes, target identity and tool consumers;
+they are not geometry evidence. Browser scenarios run the real Python/OCP daemon;
+Tauri transport, OS dialogs and project storage are substituted. See the exact
+commands, counts and initial fixture failures in [the execution log](cad-development-log.md).
+Actual macOS GUI/IPC/save dialogs, distribution and printer integration were not
+executed. D04/Split and the other assigned Issues retain their existing states.
 
 ## 2026-10-21 checkpoint results (historical)
 

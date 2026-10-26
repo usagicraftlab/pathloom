@@ -19,6 +19,12 @@ import {
 import { createTransactions } from "./transactions.js";
 import { resolveSubshape } from "./references.js";
 import { diagnostic } from "./diagnostics.js";
+import {
+  differenceOutputs,
+  validateDifferenceTargets,
+  replacementRefs,
+  reconcileDifferenceTools,
+} from "./difference.js";
 const checkpoint = (doc) => {
   const { assets, ...rest } = doc;
   return { ...clone(rest), assets };
@@ -163,6 +169,8 @@ export class CadStore {
     const { operationForSession } = await import("./commands/session.js");
     if (!current()) return null;
     const operation = operationForSession(session);
+    if (operation.operation.id === "solid.difference")
+      validateDifferenceTargets(this.document, operation.inputs);
     const { prepared, inputHashes } = await this.resolve(operation.inputs);
     if (!current()) return null;
     const requestedHash = await sha256({
@@ -327,10 +335,29 @@ export class CadStore {
   }
   repair(featureId, key, refs) {
     const before = checkpoint(this.document);
+    const document = this.document,
+      epoch = this.epoch,
+      feature = this.getFeature(featureId),
+      previousTools =
+        feature?.operation.id === "solid.difference"
+          ? clone(feature.inputs.tools || [])
+          : null;
     reselectReference(this.document, featureId, key, refs);
     this.transactions.record(before, this.document, "参照を修復");
     this.notify();
-    return this.recompute();
+    return this.recompute().then(() => {
+      if (
+        previousTools &&
+        document === this.document &&
+        epoch === this.epoch &&
+        feature === this.getFeature(featureId) &&
+        ["valid", "warning", "empty"].includes(feature.status)
+      ) {
+        reconcileDifferenceTools(this.document, previousTools);
+        this.resolveBindings();
+        this.notify();
+      }
+    });
   }
   suppress(featureId, value) {
     const before = checkpoint(this.document);
@@ -436,6 +463,8 @@ export class CadStore {
       let outputs = [],
         adopted = false;
       try {
+        if (operation.id === "solid.difference")
+          validateDifferenceTargets(this.document, inputs);
         const { prepared, inputHashes } = await this.resolve(inputs);
         if (!current()) continue;
         const inputsCurrent = () =>
@@ -459,6 +488,9 @@ export class CadStore {
         const hash = await sha256({
           operation,
           parameters,
+          ...(operation.id === "solid.difference"
+            ? { differenceInputs: inputs }
+            : {}),
           inputs: prepared
             ? Object.fromEntries(
                 Object.entries(prepared).map(([k, v]) => [
@@ -539,6 +571,8 @@ export class CadStore {
           runtime.runtimeEpoch !== this.native.runtimeEpoch
         )
           continue;
+        if (operation.id === "solid.difference")
+          outputs = differenceOutputs(outputs, inputs);
         this.document.kernel.version = runtime.occtVersion ?? null;
         Object.assign(this.document.assets, assets);
         const oldSlots = new Map(feature.outputSlots.map((s) => [s.key, s]));
@@ -550,6 +584,9 @@ export class CadStore {
             entityId: id(),
             bodyId: id(),
           };
+          if (operation.id === "solid.difference")
+            slot.bodyId =
+              this.getEntity(output.differenceTargetId)?.bodyId || slot.bodyId;
           feature.outputSlots.push(slot);
           const old = this.getEntity(slot.entityId);
           const e = {
@@ -626,7 +663,7 @@ export class CadStore {
           (e) => e.producer.featureId !== feature.id || currentIds.has(e.id),
         );
         if (feature.resultPolicy === "replace")
-          for (const ref of references(feature.inputs)) {
+          for (const ref of replacementRefs(feature)) {
             const input = this.getEntity(ref.entityId);
             if (input && !ref.kind) {
               const body = this.document.bodies.find(
@@ -637,11 +674,17 @@ export class CadStore {
                 !feature.outputSlots.some((s) => s.bodyId === body.id)
               ) {
                 body.tipEntityId = null;
-                if (feature.outputSlots.length > 1) {
+                if (
+                  feature.outputSlots.length > 1 &&
+                  operation.id !== "solid.difference"
+                ) {
                   body.status = "split";
                   body.splitIntoBodyIds = feature.outputSlots.map(
                     (s) => s.bodyId,
                   );
+                } else if (operation.id === "solid.difference") {
+                  body.status = "ready";
+                  body.splitIntoBodyIds = [];
                 }
               }
             }
@@ -657,7 +700,12 @@ export class CadStore {
           resultHash: hash,
           entitySnapshots: snapshots,
           inputRevisionHashes: inputHashes,
+          ...(operation.id === "solid.difference"
+            ? { differenceKeepTools: parameters.keepTools === true }
+            : {}),
         };
+        if (operation.id === "solid.difference")
+          reconcileDifferenceTools(this.document);
         adopted = true;
         this.resolveBindings();
       } catch (error) {

@@ -1,5 +1,6 @@
 import { clone, id } from "../document.js";
 import { adaptCommand } from "./registry.js";
+import { validateDifference } from "../difference.js";
 export function createCommandSession(
   command,
   { selection = [], parameters = null, featureId = null } = {},
@@ -73,6 +74,7 @@ export function dispatchSession(s, event) {
   return s;
 }
 export function operationForSession(s) {
+  validateDifference(s.command, s.parameters, s.inputs);
   if (!sessionReady(s)) throw new Error("必要な形状を選択してください");
   return {
     operation: s.command.baseOperation,

@@ -51,6 +51,7 @@ const labels = {
   axis: "軸（原点・方向）",
   angleRad: "角度 rad",
   anchorMode: "基準モード",
+  keepTools: "工具を保持する",
 };
 export function initModelWorkspace(api) {
   let library = [],
@@ -167,7 +168,11 @@ export function initModelWorkspace(api) {
     const f = selectedFeature && store.getFeature(selectedFeature);
     const params =
       session?.parameters ||
-      (f?.operation.id === "asset.snapshot" ? null : f?.parameters);
+      (f?.operation.id === "asset.snapshot"
+        ? null
+        : f?.operation.id === "solid.difference"
+          ? { keepTools: false, ...f.parameters }
+          : f?.parameters);
     if (!params) {
       const e = store.getEntity(selection[0]?.entityId);
       if (e) {
@@ -491,7 +496,12 @@ export function initModelWorkspace(api) {
       ["entity", "subshape"].includes(s.kind),
     )) {
       const label = document.createElement("label");
-      label.textContent = `${slot.key} · ${slot.kind === "subshape" ? "面/edge" : "形状"}（順序を保持）`;
+      const roleLabel =
+        (session?.command.baseOperation.id || f?.operation.id) ===
+        "solid.difference"
+          ? slot.prompt
+          : slot.key;
+      label.textContent = `${roleLabel} · ${slot.kind === "subshape" ? "面/edge" : "形状"}（順序を保持）`;
       const select = document.createElement("select");
       select.multiple = slot.maxCount !== 1;
       select.size =

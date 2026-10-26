@@ -351,14 +351,31 @@ for (const [id, name, op] of [
     id,
     name,
     op,
-    {},
+    op === "solid.difference" ? { keepTools: false } : {},
     op === "solid.union"
       ? [input("arguments", ["solid"], 2, null)]
       : [
           input("arguments", ["solid"], 1, null),
           input("tools", ["solid"], 1, null),
         ],
-    { resultPolicy: "replace" },
+    {
+      resultPolicy: "replace",
+      ...(op === "solid.difference"
+        ? {
+            description: "各対象から全工具を差し引き、対象ごとの残形状を保持",
+            inputs: [
+              {
+                ...input("arguments", ["solid"], 1, null),
+                prompt: "対象（それぞれから工具を引く）",
+              },
+              {
+                ...input("tools", ["solid"], 1, null),
+                prompt: "工具（全対象に適用）",
+              },
+            ],
+          }
+        : {}),
+    },
   );
 add(
   "D05",
