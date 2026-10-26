@@ -236,3 +236,13 @@ executable欠落で失敗した。ignoredなvenvのinterpreter linkを復旧し�
 OCP7.8.1.1を確認後にプローブを成功させた。Chromium153.0.8010.0は既存のignoredな
 `@sparticuz/chromium` archiveから再展開した。これらは環境復旧であり製品変更ではない。
 macOS GUI、実Tauri IPC、OS保存/回復、Rustはこのブランチのローカル環境では未実行。
+
+Issue #4のhead `33a3b33629ed7126eb8ca065829793c82e04dcc1` に対する
+[Draft PR #25](https://github.com/usagicraftlab/pathloom/pull/25)の
+[CI run 40330298899](https://github.com/usagicraftlab/pathloom/actions/runs/40330298899)を確認した。
+
+- javascript-and-browser / 121597620816：失敗。Node20で52報告中34成功/18失敗、
+  `ReferenceError: navigator is not defined`（#3）。後続Python準備/Chromium/browserはskip。
+  全166件を実行・成功した結果ではない。
+- native-cad / 121597621275：成功。指定OCP7.8.1.1、37件中35成功/2 optional USD skip、約1.68秒。
+- rust-and-macos / 121597621311：確認時はcargo test進行中。完了・成功としては記録しない。
