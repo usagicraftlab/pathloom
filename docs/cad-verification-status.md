@@ -1,5 +1,12 @@
 # CAD acceptance and fixture ledger
 
+Current audit: [2026-10-26 execution log](cad-development-log.md).
+This file owns the A/T/R acceptance states; the log owns dated execution results.
+The statuses below are the 2026-10-21 fixture checkpoint, not a claim that every
+condition was rerun or completed in Phase 0. In particular, AUD-001 exposes an
+additional asynchronous result-application gap beyond R01-R03, and AUD-002 shows
+that T19/T20 do not cover multiple Difference arguments.
+
 2026-10-21 JST. `passed` is scoped to the listed fixture, not a declaration of full application completion. Native geometry is real OCP; job races substitute transport only. Full macOS execution has not been performed.
 
 | ID | Status | Evidence / remaining scope |
@@ -67,7 +74,15 @@
 | R09 | partial | existing representative JS fixtures + browser regressions; complete legacy asset matrix pending |
 | R10 | partial | split marks source body split/pending; explicit binding candidate UI pending |
 
-## Current test results
+## 2026-10-21 checkpoint results (historical)
+
+For the latest run, use [cad-development-log.md](cad-development-log.md).
+Phase 0 reran JS (155 passed) and pinned OCP (35 passed, 2 skipped);
+browser assertions and Rust compilation/tests were blocked by the local environment.
+Subsequent PR CI compiled the full Rust crate on macOS arm64 and passed 21 tests;
+Node 20 JS failed with `navigator is not defined` (AUD-007), so CI browser tests
+were skipped. See the development log for the run, versions and exact scope.
+Do not carry the historical browser/Rust successes forward as current evidence.
 
 - JavaScript: 155 passed (including transport-race tests, not geometry proofs).
 - Python: 37 discovered, 35 passed, 2 optional NVIDIA USD tests skipped.

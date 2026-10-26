@@ -25,6 +25,13 @@ implemented subsets, numeric evidence, missing modes and local-Mac checks.
 Advanced surface matching/network construction and several editing commands are
 still pending. CAD requires the separately provisioned runtime below.
 
+The [CAD master plan](docs/cad-master-plan.md),
+[roadmap](docs/cad-roadmap.md) and
+[development log](docs/cad-development-log.md) record the 2026-10-26 Phase 0 audit,
+including reproduced correctness defects, current test results and the macOS
+verification required before the next milestone. The existing command and
+acceptance ledgers remain the per-feature source of truth.
+
 ## AI components on the canvas
 
 - Click blank space on the Processing node canvas, or use **✦ New AI Component**.
