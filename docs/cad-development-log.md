@@ -203,3 +203,80 @@ PY
 Phase 0のPRは資料だけを含み、上記4件とPR CIで発見したAUD-007は未修正のままPhase 1へ引き継ぐ。
 未実施のmacOS項目はロードマップM01〜M07を参照。実AI推論、実Rhinoセッション、
 プリンター送信・印刷は実施していない。mainへのマージは行わない。
+
+## 2026-10-26 JST — Issue #4 / P1-01 単独ブランチの実行結果
+
+対象：`fix/4-aud-001`。基準main `716a155fad5b50a2e1501bb08f078456dfb862c1`。
+PR #2の統合ブランチの成功数は流用せず、切り出したStoreと回帰fixtureで再実行した。
+Linux x86_64 / Node24.22.1、Node20.20.2 / Python3.12.14 / pinned OCP7.8.1.1。
+
+| コマンド / 検査 | 結果 | 確認した範囲 |
+| --- | --- | --- |
+| `node --test tests/cad-jobs.test.mjs` | exit0、17成功/0失敗/0skip | export中の70→80、Undo/削除/Open/上流変更、無関係revision、初期化/import/native epoch競合、古い上流依存jobのevaluate/export失敗、handle解放 |
+| `npm test`（Node24） | exit0、166成功/0失敗/0skip、約2.27秒 | 既存JS全体＋#4の11追加fixture。transport raceは形状数値の証拠と区別 |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/cad-jobs.test.mjs` | exit0、17成功/0失敗/0skip | #4の競合fixtureをNode20で再検証 |
+| Node20の全JSおよびCAD関連2ファイル | 全体は50報告中32成功/18失敗、2ファイルは16報告中15成功/1失敗、exit1 | いずれも#3の`navigator is not defined`でモジュール読込が失敗。最初の#4 fixture15件時点の実行であり、全166件を実行した結果ではない。#3は本ブランチで修正しない |
+| 下記packaged frontend browser | exit0、21成功/0失敗/0skip、約55.2秒 | 実OCCTの既存CAD7＋操作/AI/出力14。Tauri transport/OS保存/cancelは置換。後から加えた古いエラー応答のguardはJS fixtureで確認 |
+| 本ログPhase0のAUD-001実OCCTプローブを同じstdinコードで再実行 | exit0、`parameterWidth=80 / actualWidth=80 / status=valid / requestedHash≠null / snapshotStatus=valid` | Python daemonの実長方形。遅延はexport応答だけに注入 |
+| 新しいexport競合fixtureを基準mainの`cad/`に適用して実行 | 意図した失敗、exit1、成功0/失敗1 | 旧実装では80の最新再計算がキューに現れず`0 !== 1`。修正後に同fixtureが成功することを確認 |
+| `git diff --check`・資料相対リンク/台帳列数・Issue外ファイルの差分検査 | 成功。製品変更1ファイル、race fixture1ファイル、資料3ファイル。相対リンク7件/65行を照合 | 変更範囲の照合 |
+
+browserコマンド：
+
+```sh
+PATHLOOM_FRONTEND_DIR=desktop-dist \
+PATHLOOM_BREP_PYTHON=.pathloom-runtime/python/bin/python \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/tmp/pathloom-chromium \
+npm run test:browser -- --max-failures=1
+```
+
+テスト環境の初回試行では、前セッションの一時Python executableとChromiumが消えており、
+実OCCTプローブは`spawn ENOENT`、browserはlaunch不能だった。`cad:setup`も既存venv内の
+executable欠落で失敗した。ignoredなvenvのinterpreter linkを復旧し、`cad:setup`を再実行して
+OCP7.8.1.1を確認後にプローブを成功させた。Chromium153.0.8010.0は既存のignoredな
+`@sparticuz/chromium` archiveから再展開した。これらは環境復旧であり製品変更ではない。
+macOS GUI、実Tauri IPC、OS保存/回復、Rustはこのブランチのローカル環境では未実行。
+
+Issue #4のhead `33a3b33629ed7126eb8ca065829793c82e04dcc1` に対する
+[Draft PR #25](https://github.com/usagicraftlab/pathloom/pull/25)の
+[CI run 40330298899](https://github.com/usagicraftlab/pathloom/actions/runs/40330298899)を確認した。
+
+- javascript-and-browser / 121597620816：失敗。Node20で52報告中34成功/18失敗、
+  `ReferenceError: navigator is not defined`（#3）。後続Python準備/Chromium/browserはskip。
+  全166件を実行・成功した結果ではない。
+- native-cad / 121597621275：成功。指定OCP7.8.1.1、37件中35成功/2 optional USD skip、約1.68秒。
+- rust-and-macos / 121597621311：確認時はcargo test進行中。完了・成功としては記録しない。
+
+## 2026-10-26 JST — Issue #4：#3先行反映後のrebaseと全JS再検証
+
+ユーザー指定の反映順に従い、PR #26（#3）のmain取り込みを確認してから、
+`fix/4-aud-001`の2コミットをmain `f87a19562c62d5f76f1e3b2ee5237ccbfe383b23`上へrebaseした。
+PR #26のマージとIssue #3のクローズはGitHub上の状態として確認したもので、
+この分離・検証作業からマージ操作やIssueの手動クローズは実行していない。
+
+再検証したheadは`9ea12d6bf1867dfa85d1e188ba2e65dce95d0e10`。
+旧`33a3b336`→`03dc4e51`、旧`935765ca`→`9ea12d6b`へ載せ替えた。
+mainとの差分は従来の5ファイル・+434/-61のままで、
+旧headと比較した製品・テスト・既存資料の内容は不変。mainから継承したClipper補完だけが異なる。
+本節の追記は検証記録だけの変更である。
+
+| コマンド / 検査 | 結果 | 範囲 |
+| --- | --- | --- |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | exit0、166成功/0失敗/0skip、約3.57秒 | #3反映後の全JS。#4の17競合fixtureを含む |
+| `node --test tests/*.test.mjs`（Node24.22.1） | exit0、166成功/0失敗/0skip、約2.58秒 | 同じ全JSを別の対応Node版で再実行 |
+| `git diff --check`、rebase前後の内容比較 | exit0。旧headとの差分は`vendor/clipper/clipper-env.js`のみ | #3はmainから継承し、#4自身の差分へ混ぜない |
+
+Node20全体の保留は解除した。上の旧失敗記録は#3反映前の履歴として残す。
+rebase後の[CI run 40333257982](https://github.com/usagicraftlab/pathloom/actions/runs/40333257982)
+は全3ジョブが成功した。
+
+- javascript-and-browser / 121607940046：Node20の全166件成功、browser全21件成功。
+- native-cad / 121607940281：37件検出、35成功/2 optional USD skip、約1.69秒。
+- rust-and-macos / 121607940191：Rust21件成功、frontend準備・コンパイル・単体テスト成功。
+  このPRはmacOS .app/.dmg生成ステップを追加していない。
+
+PR #26単体のbrowserは別runで19成功/2失敗だった。このrunの成功を過去の失敗の
+原因解明や修正完了の証拠に置き換えず、コマンド保存通知とidle viewport描画の失敗記録は
+PR #26に残している。本作業で当該テストの変更や再試行による合格化は行っていない。
+macOS GUI/実Tauri IPC/OS保存・回復は本作業では実施していない。
+PR #25はユーザー承認までDraft・未マージを維持する。
