@@ -395,3 +395,24 @@ Python側にBrotliモジュールがなかったため、archiveのBrotli復元�
 この節の追記は開発ログだけで、製品コード・fixtureは上記実装headから変更していない。
 追記後headのCIは別runとしてPR本文・Issue #5に結果を記録する。
 Draftと未マージを維持し、Issue #5は手動クローズしない。
+
+### Issue #7（P1-04 / AUD-004）平面指定の処理・検証（2026-10-27、担当：Muse）
+
+PR #2（分離元）の #7 相当差分を棚卸しし、最新mainから `fix/7-aud-004` へ分離した。
+PR #2 の同ファイルにある他Issue分（Difference／Split 等）は持ち込んでいない。
+
+- `plane()` に構造検証を追加：原点・X軸・Y軸が欠けた平面は `CAD_INPUT_TYPE`。
+- `curve.offset` の設定スキーマを検証：対応は plane／distanceMm／joinStyle のみ。
+  未知設定は `CAD_SCHEMA_UNSUPPORTED`、必須欠落は `CAD_INPUT_MISSING`（黙って無視しない）。
+- Offset 本体が指定平面を実際に使うよう変更：曲線を指定平面の局所座標へ変換し、
+  平面からのずれが許容誤差を超える場合は `CAD_INPUT_TYPE`（回復操作つき）。
+  平面の法線方向と開曲線の扱いも平面基準に統一した。
+- fixture を `native/test_cad_offset.py` に新設（3件）：
+  XY／XZ／YZ／任意平面での数値結果、距離符号（+1→208、-1→192）、round（200+2π）／miter の差、
+  零軸（CAD_INPUT_DEGENERATE）、平面不一致・非平面曲線（CAD_INPUT_TYPE）、未知設定（CAD_SCHEMA_UNSUPPORTED）、
+  開曲線の法線方向と開いた結果の保持。
+- ローカル検証（Python 3.12 / cadquery-ocp 7.8.1.1、実OCCT）：
+  新規3件成功。native 全体は45検出・43成功/任意USD2skip で回帰なし。
+  修正を外した main 相当では新規 fixture が3件中2件失敗し、不具合の再現を確認した。
+- 汎用CAD全体への平面制約は追加していない（制約は Offset の入力検証の範囲のみ）。
+- GitHub CI の結果は PR 本文へ別途記録する。macOS GUI／実Tauri は未実施。

@@ -27,6 +27,7 @@ def direction(v):
     if sum(x*x for x in a)<1e-24:raise CadError('CAD_INPUT_DEGENERATE','方向を零ベクトルにできません。')
     return gp_Dir(*a)
 def plane(p):
+    if not isinstance(p,dict) or not all(k in p for k in ('origin','xAxis','yAxis')):raise CadError('CAD_INPUT_TYPE','平面には原点・X軸・Y軸が必要です。')
     o=vec(p['origin']);x=vec(p['xAxis']);y=vec(p['yAxis'])
     if abs(sum(v*v for v in x)-1)>1e-6 or abs(sum(v*v for v in y)-1)>1e-6 or abs(sum(a*b for a,b in zip(x,y)))>1e-6:raise CadError('CAD_INPUT_DEGENERATE','作業平面の軸は直交する単位ベクトルが必要です。')
     return o,x,y
@@ -79,6 +80,9 @@ def evaluate(op,p,inputs,tol,selectors=None):
     for key in boolean_fields & p.keys():
         if not isinstance(p[key],bool):raise CadError('CAD_INPUT_TYPE',f'{key} はtrue/falseで指定してください。')
     if 'anchorMode' in p and p['anchorMode'] not in ('center','corner'):raise CadError('CAD_INPUT_TYPE','基準モードはcenterまたはcornerです。')
+    if op=='curve.offset':
+        if set(p)-{'plane','distanceMm','joinStyle'}:raise CadError('CAD_SCHEMA_UNSUPPORTED','未対応の設定: '+', '.join(sorted(set(p)-{'plane','distanceMm','joinStyle'})))
+        if {'distanceMm','joinStyle'}-set(p):raise CadError('CAD_INPUT_MISSING','必要な設定: '+', '.join(sorted({'distanceMm','joinStyle'}-set(p))))
 
     if op=='point.create':
         from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
@@ -184,9 +188,20 @@ def evaluate(op,p,inputs,tol,selectors=None):
     elif op=='curve.offset':
         from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffset
         from OCP.GeomAbs import GeomAbs_Arc,GeomAbs_Intersection
-        source=input_one(inputs,'curve');distance=finite(p['distanceMm'])
+        from OCP.gp import gp_Pln, gp_Ax3
+        from OCP.Bnd import Bnd_Box
+        from OCP.BRepBndLib import BRepBndLib
+        source=input_one(inputs,'curve');distance=finite(p['distanceMm']);pl=p.get('plane',XY)
+        ax=axis2(pl);tr=gp_Trsf();tr.SetTransformation(gp_Ax3(ax))
+        local=BRepBuilderAPI_Transform(source,tr,True).Shape();bb=Bnd_Box();BRepBndLib.AddOptimal_s(local,bb,False,False)
+        if bb.IsVoid():raise CadError('CAD_INPUT_DEGENERATE','評価できる曲線がありません。')
+        xmin,ymin,zmin,xmax,ymax,zmax=bb.Get()
+        if max(abs(zmin),abs(zmax))>tol['kernelLinearMm']:raise CadError('CAD_INPUT_TYPE','曲線は指定した作業平面上にある必要があります。平面を選び直してください。',('editParameters','selectCompatibleInput'))
         if p['joinStyle'] not in ('round','miter'):raise CadError('CAD_SCHEMA_UNSUPPORTED','対応する角処理はround／miterです。')
-        builder=BRepOffsetAPI_MakeOffset(wire(source),GeomAbs_Arc if p['joinStyle']=='round' else GeomAbs_Intersection,False);builder.Perform(distance)
+        source_wire=wire(source)
+        support=BRepBuilderAPI_MakeFace(gp_Pln(ax.Location(),ax.Direction()),source_wire,True).Face()
+        builder=BRepOffsetAPI_MakeOffset(support,GeomAbs_Arc if p['joinStyle']=='round' else GeomAbs_Intersection,not source_wire.Closed())
+        builder.Perform(distance)
         if not builder.IsDone():raise CadError('CAD_KERNEL_FAILED','指定距離で曲線offsetが成立しません。')
         result=builder.Shape()
     elif op=='surface.corners':
