@@ -47,10 +47,13 @@
 | L12 | AUD-002〜004追加プローブ | 3件とも再現成立・未修正 | 実Runtimeによる演算。初回と指定版で再現 |
 | L13 | mainのGitHub combined statuses / commit workflow取得 | `statuses=[]` / `workflow_runs=[]` | 成功/失敗は未確認。workflow取得ツールはPR起動分・先頭ページに限定される。push CIが存在しないとは結論しない |
 | L14 | 資料内の2つの再現コードを抽出して実行、相対リンク・65行台帳の列数・`git diff --check`を検査 | 成功 | 記載コードでもAUD-001〜004を再現。変更差分はMarkdownのみ |
+| L15 | `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | 失敗・exit 1、41報告中23成功・18失敗 | PR CIのAUD-007をローカル同版でも再現。Clipperの`navigator is not defined`。一部モジュールが読込失敗のため155件すべてを実行した結果ではない |
 
 L03とL05は同じ37テストの環境を変えた実行であり、74件の独立した受け入れ条件には数えない。
 過去の台帳の「ブラウザ21成功」「Rust Session抽出4成功」は2026-10-21時点の記録である。
-今回はブラウザもRustも合格確認できていない。
+このローカル実行ではブラウザもRustも合格確認できていない。
+
+上記はローカル結果。その後のPR CIでRust crateの合格が得られたため、次節に分けて記録する。
 
 L08で使用したコマンド（`PATHLOOM_BREP_PYTHON`は当時のホストPython、以後は指定版を使用）：
 
@@ -64,6 +67,27 @@ npm run test:browser -- --max-failures=1
 既存CAD browser fixtureは実Python daemonを呼ぶが、Tauri IPC・OS保存はmockで、
 `cad_cancel`はno-op。実行できてもRust監督・macOS保存/復旧の証拠にはならない。
 既存21件の内訳はCAD 7、既存操作/AI/出力回帰14（パラメータ化を含む）。
+
+### PR作成後のCI結果と追加発見
+
+[PR #1](https://github.com/usagicraftlab/pathloom/pull/1)のhead
+`c3ff84ca77ef8d88728174a541ec259702f5a405`に対する
+[run 40303764151](https://github.com/usagicraftlab/pathloom/actions/runs/40303764151)。
+製品コード・依存・CI設定は監査基準mainと同一。下記ジョブの完了後ログを読み取った。
+
+| ジョブ / ID | 結果 | 確認できたこと / 限界 |
+| --- | --- | --- |
+| native-cad / 121507711501 | 成功 | 指定OCP 7.8.1.1、37件中35成功・2skip。約1.43秒 |
+| rust-and-macos / 121507711545 | 成功 | macOS arm64、Rust 1.99.1。`cargo test --manifest-path src-tauri/Cargo.toml --locked`でcrate全体をコンパイル、21成功・失敗0・ignored0。CAD Session4件/プロセス監督5件等を含む。GUI IPC、.app/.dmg生成、Finder起動は実行しないジョブ |
+| javascript-and-browser / 121507711865 | 失敗 | Node 20.20.2、`npm test`で41報告中23成功・18失敗。`navigator is not defined`。後続のPython準備/Chromium導入/browserはskip |
+
+**AUD-007（P1）**：`cad-components.js`→`vendor/clipper/clipper-browser.js`がブラウザ版ClipperをESMとして読み、
+`clipper-env.js`は`self`のみ補完する。`clipper.js:95`の`navigator`参照がNode 20で失敗する。
+Node 24のローカルでは`typeof navigator === 'object'`であり、同じエラーを検出できなかった。
+対応宣言`Node >=20`と既存CIに合わせ、P1-00で読込環境を修正する。Phase 0では修正しない。
+
+このCIは全体合格ではない。macOSのRust単体成功とmacOS GUI/OS統合の未確認を区別する。
+mainの過去CIについてのL13の「未確認」も、今回のPR CI成功/失敗と混同しない。
 
 ### 追加プローブの観測値と原因
 
@@ -176,6 +200,6 @@ PY
 ### 監査後の扱い
 
 一時ログ/プローブはignoredな`work/cad-phase0/`に置いた。再開に必要な結果とコードは本書に残している。
-Phase 0のPRは資料だけを含み、上記4件は未修正のままPhase 1へ引き継ぐ。
+Phase 0のPRは資料だけを含み、上記4件とPR CIで発見したAUD-007は未修正のままPhase 1へ引き継ぐ。
 未実施のmacOS項目はロードマップM01〜M07を参照。実AI推論、実Rhinoセッション、
 プリンター送信・印刷は実施していない。mainへのマージは行わない。

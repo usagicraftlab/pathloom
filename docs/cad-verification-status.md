@@ -79,6 +79,9 @@ that T19/T20 do not cover multiple Difference arguments.
 For the latest run, use [cad-development-log.md](cad-development-log.md).
 Phase 0 reran JS (155 passed) and pinned OCP (35 passed, 2 skipped);
 browser assertions and Rust compilation/tests were blocked by the local environment.
+Subsequent PR CI compiled the full Rust crate on macOS arm64 and passed 21 tests;
+Node 20 JS failed with `navigator is not defined` (AUD-007), so CI browser tests
+were skipped. See the development log for the run, versions and exact scope.
 Do not carry the historical browser/Rust successes forward as current evidence.
 
 - JavaScript: 155 passed (including transport-race tests, not geometry proofs).

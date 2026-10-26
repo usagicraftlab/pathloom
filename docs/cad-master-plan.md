@@ -11,8 +11,9 @@ Tauri 2、Three.js、Python/OCPによるOpen CASCADE、既存のCAD履歴と生�
 Rhino版への移行、SolidCraftへの全面置換は行わない。既存のRhino/GH入力連携は互換機能として残す。
 
 **現状は正確な形状処理の土台と部分的な操作経路がある段階で、基本CAD操作の完成とは判定できない。**
-既存テストは通る一方、設定と実形状の不一致、複数対象の差分演算、分割後の参照維持、
-Offsetの入力検証に問題を再現した。Phase 1はこれらの修正と、一連の操作の検証を先に行う。
+Node 24の既存テストは通る一方、設定と実形状の不一致、複数対象の差分演算、分割後の参照維持、
+Offsetの入力検証に問題を再現した。PRのNode 20 CIでも既存テストの読込エラーを確認した。
+Phase 1は検証基盤の復旧、これらの修正、一連の操作の検証を先に行う。
 
 Phase 0では調査・テスト・資料統合のみを行った。製品コード、保存形式、依存定義、
 CI設定の変更はない。PRを作成してレビューに渡し、mainへはマージしない。
@@ -47,11 +48,11 @@ CI設定の変更はない。PRを作成してレビューに渡し、mainへは
 
 | 経路 | 実装の根拠 | 今回確認できた範囲と残る境界 |
 | --- | --- | --- |
-| 起動・配布用フロントエンド | `package.json`、`src-tauri/tauri.conf.json`、`scripts/frontend-assets.mjs`、`prepare-desktop.mjs` | Tauri 2。共通manifestでルートJS・`cad/`・vendorを配布。`desktop:prepare`成功。Tauri本体の起動・ビルドは未実行 |
+| 起動・配布用フロントエンド | `package.json`、`src-tauri/tauri.conf.json`、`scripts/frontend-assets.mjs`、`prepare-desktop.mjs` | Tauri 2。共通manifestでルートJS・`cad/`・vendorを配布。`desktop:prepare`成功。Tauri GUIの起動・配布物ビルドは未実行 |
 | 共有Three.jsビュー | `app.js` → `initModelWorkspace`、`cad/view-adapter.js`、`workspace-ui.js` | CAD左端＋既存3工程、メッシュ/曲線/頂点の描画・選択処理が存在。今回のブラウザ描画・操作検証は環境ブロック |
 | CAD UI→文書・履歴 | `cad/commands/{registry,session,input}.js` → `cad/store.js`、`document.js`、`history.js` | コマンド定義、mm/角度/座標、DAG、Undo/Redo、lastValid。JSテスト成功。終盤の非同期適用にAUD-001 |
 | フロント→Tauri/Rust | `cad/native-client.js` → `src-tauri/src/lib.rs`のinvoke登録 → `cad_runtime.rs` | `cad_runtime_start/status/restart`、`cad_evaluate/cancel`、asset import/export/releaseを照合。結果は`cad-job-result`。実Tauri通信は未実行 |
-| Rust→常駐Python/OCP | `src-tauri/src/cad_runtime.rs` → `native/cad_runtime.py` → `native/cad_operations/__init__.py` | Pythonスクリプトをapp cacheへ展開。JSONL、直列化、epoch、60秒監視、256 MiB応答上限、stderr排出。Python常駐プロセスの実通信はテスト成功。Rust監督処理は今回未実行 |
+| Rust→常駐Python/OCP | `src-tauri/src/cad_runtime.rs` → `native/cad_runtime.py` → `native/cad_operations/__init__.py` | Pythonスクリプトをapp cacheへ展開。JSONL、直列化、epoch、60秒監視、256 MiB応答上限、stderr排出。Python常駐プロセスの実通信、macOS CIでRust Session/プロセス監督の単体テスト成功。GUIからの実Tauri通信は未確認 |
 | 既存STEP読込・面編集・Z断面 | `step-import.js`、`lib.rs::run_editable_cad`、`cad_process.rs` → `native/occt_brep_bridge.py` | 常駐CADとは別の既存プロセス経路。25秒制限。実OCCTの読込・平面の面移動・スライスをPythonで確認。旧USDは任意互換経路 |
 | CAD→生成ノード | `cad/generation-adapter.js`、`workspace-ui.js::updateBindings` → `cad-ui.js`、`app.js::syncCadBinding` | 明示的body-result binding。Curveは0.02 mmでサンプル化、B-repは正本を保持して渡す。自動配線しない。非アクティブな生成グラフの自動再計算は未完 |
 | 生成→出力 | `cad-pipeline.js`、`toolpath-data.js`、`app.js::generateGcode` | 現行binding/hash、生成失敗、印刷座標・設定を出力時に検証。既存JS回帰テスト成功。CAD寸法変更からG-codeまでの全経路は未確認 |
@@ -97,8 +98,9 @@ Python/OCPは.appに同梱されていない。JSONL・cacheの上限はOCCTプ�
 | AUD-002 / P1 | 実OCCTで再現 | D02の`arguments`は複数可だがnativeは`args[0]`から`args[1:]+tools`を順に引く。離れた元Box2個と工具1個で、各元形状を切る結果の合計1,500 mm³に対し500 mm³のみ返る | 2つ目以降の元形状が切削工具扱いになる。複数元形状の契約を確定し、結果を保持する。未対応なら入力段階で明示的に拒否する |
 | AUD-003 / P1 | 実OCCT出力＋適用コードで確認 | `solid.split`/`surface.split`は出力slotへ毎回新規UUIDを付ける。同一Boxの同一分割を2回実行して2出力のslot一致0。Storeはslotをentity/body IDへ対応させる | 再計算で出力の由来が継承されず後段参照が失われる設計。勝手な近傍/順番再接続を避け、対応根拠と明示的修復を実装する |
 | AUD-004 / P1 | 実OCCTで再現 | E06は`plane`設定を持つがnative Offsetは参照も検証もしない。両軸が零の不正平面でも正常結果、診断なし、XY方向に1 mm Offset | 指定条件と実際の演算条件が食い違う。対応平面の検証・演算への反映、未対応条件の型付き診断が必要 |
+| AUD-007 / P1・検証基盤 | PR CI・同版ローカルで再現 | Node 20.20.2の`npm test`が`vendor/clipper/clipper.js:95`の`navigator is not defined`で失敗。41報告中23成功・18失敗。Node 24では155成功。`clipper-env.js`はselfのみ補完 | `engines >=20`とCIのNode 20でテストが動かない。P1-00でNode向け読込の契約を整え、browserチェックまで進める。製品の描画不具合とは区別 |
 | AUD-005 / P1 | コード・既存台帳で確認 | 多くの入力は汎用JSON/既定値の経路で、専用モード、拘束編集、参照修復、分岐隔離、CAD→生成→G-codeの連続した受け入れが不足 | 65機能の一括追加より、Phase 1で基本操作の縦経路を完成させる。過去のブラウザ成功を今回の確認に流用しない |
-| AUD-006 / P2（Phase 1で実機ゲート） | 構成確認・実機未検証 | Pythonは別配備。Rust/Tauri監督、Finder起動時の探索、.app/.dmg、OS保存/回復を今回は実行できない | 開発用起動と配布物を別々に検証する。ブラウザmockやPython単体成功からmacOS動作を推定しない |
+| AUD-006 / P2（Phase 1で実機ゲート） | 構成確認・GUI実機未検証 | Pythonは別配備。Finder起動時の探索、実GUI経由のIPC、.app/.dmg、OSダイアログ/全体回復は未実行。Rust crateはmacOS CIでコンパイル/単体テスト成功 | 開発用起動と配布物を別々に検証する。CI単体テストからGUI/配布物の動作を推定しない |
 
 再現方法・コマンド・実測値は[開発ログ](cad-development-log.md)に集約する。
 
@@ -114,13 +116,18 @@ Python/OCPは.appに同梱されていない。JSONL・cacheの上限はOCCTプ�
 
 ## 8. 検証状況とmacOSの境界
 
-今回の結果はJS **155成功**、指定版Python/OCP **37件中35成功・2スキップ**。
+ローカルNode 24の結果はJS **155成功**、指定版Python/OCP **37件中35成功・2スキップ**。
 追加4プローブは不具合の再現成立であり、修正成功ではない。
-ブラウザはChromium取得/起動の環境エラーでassertion未実行、RustはCargo未導入で未実行。
+ローカルブラウザはChromium取得/起動の環境エラーでassertion未実行、ローカルRustはCargo未導入で未実行。
 既存の2026-10-21の「ブラウザ21成功」「Rust抽出4成功」は過去記録として残し、今回の成功数には含めない。
 
-Linuxでも実行可能だが今回は環境ブロックとなったブラウザ/Rust検証と、macOS実機が必要な検証を区別する。
+PR作成後の[CI run 40303764151](https://github.com/usagicraftlab/pathloom/actions/runs/40303764151)では、
+native CADは35成功・2skip、macOS arm64のRust crateはコンパイルと21単体テストが成功した。
+一方、Node 20のJSチェックはAUD-007で失敗し、後続browserはskip。CI全体の合格ではない。
+Node 20.20.2の失敗はローカルでも再現した。テストモジュールの読込失敗を含む41報告であり、155件をすべて実行できたわけではない。
+
+Linuxでも実行可能だが環境ブロック/前段失敗となったブラウザ検証と、macOS GUI実機が必要な検証を区別する。
 macOS固有の実行項目M01〜M07は[ロードマップ](cad-roadmap.md)に置く。
-ソースにCIジョブはあるが、mainのリモートCI成功も今回確認できていない。
+監査基準main自体の過去のリモートCI成功は未確認。上記は製品コードが同じPhase 0 PRで今回得た結果である。
 
 次の実装範囲と受け入れ条件は[ロードマップのPhase 1タスク](cad-roadmap.md)を参照する。
