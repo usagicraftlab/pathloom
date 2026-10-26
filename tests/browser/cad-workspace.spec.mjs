@@ -41,9 +41,10 @@ function sliceWithPython(args) {
 // Real OCCT daemon behind browser IPC. Only the OS-specific Tauri transport is substituted.
 let daemon,
   queue = [],
-  serial = 0;
-test.beforeEach(async ({ page }) => {
-  page.on("dialog", (dialog) => dialog.accept());
+  serial = 0,
+  runtimeEpoch = 0;
+function launchDaemon() {
+  runtimeEpoch++;
   daemon = spawn(
     process.env.PATHLOOM_BREP_PYTHON ||
       resolve(".pathloom-runtime/python/bin/python"),
@@ -59,6 +60,21 @@ test.beforeEach(async ({ page }) => {
       ? task.resolve(reply.result)
       : task.reject(new Error(reply.error.message));
   });
+}
+async function stopDaemon() {
+  const child = daemon;
+  daemon = null;
+  if (!child) return;
+  await new Promise((done) => {
+    child.once("close", done);
+    child.kill();
+  });
+  for (const task of queue.splice(0))
+    task.reject(new Error("CAD daemon stopped"));
+}
+test.beforeEach(async ({ page }) => {
+  page.on("dialog", (dialog) => dialog.accept());
+  launchDaemon();
   const storage = new Map();
   await page.exposeBinding("__cadStorage", (_, args) => {
     if (args.discard) storage.delete(args.key);
@@ -68,13 +84,22 @@ test.beforeEach(async ({ page }) => {
       (["library", "commands"].includes(args.key) ? "[]" : null)
     );
   });
+  await page.exposeBinding("__restartCadDaemon", async () => {
+    const previous = daemon.pid;
+    await stopDaemon();
+    launchDaemon();
+    return { previous, current: daemon.pid };
+  });
   await page.exposeBinding("__cadKernel", async (_, message) => {
-    return new Promise((resolve, reject) => {
+    const result = await new Promise((resolve, reject) => {
       queue.push({ resolve, reject });
       daemon.stdin.write(
         JSON.stringify({ ...message, id: String(++serial) }) + "\n",
       );
     });
+    return ["hello", "import"].includes(message.type)
+      ? { ...result, runtimeEpoch }
+      : result;
   });
   await page.exposeBinding("__cadSlice", (_, args) => sliceWithPython(args));
   await page.addInitScript(() => {
@@ -92,8 +117,9 @@ test.beforeEach(async ({ page }) => {
           if (name === "slice_step_brep") return window.__cadSlice(args);
           if (name === "cancel_cad_request") return;
           if (name === "cad_runtime_start" || name === "cad_runtime_restart") {
-            const hello = await window.__cadKernel({ type: "hello" });
-            return { ...hello, runtimeEpoch: 1 };
+            if (name === "cad_runtime_restart")
+              await window.__restartCadDaemon();
+            return window.__cadKernel({ type: "hello" });
           }
           if (name === "cad_evaluate") {
             const result = await window.__cadKernel({
@@ -164,10 +190,7 @@ test.beforeEach(async ({ page }) => {
   await page.locator("#modeModel").click();
   await expect(page.locator("#modelStatus")).toContainText("正確な形状");
 });
-test.afterEach(() => {
-  daemon?.kill();
-  queue = [];
-});
+test.afterEach(stopDaemon);
 
 async function commitModel(page, count) {
   await page.getByRole("button", { name: "確定", exact: true }).click();
@@ -176,6 +199,337 @@ async function commitModel(page, count) {
     "valid",
   );
 }
+
+test("P1 incomplete v2 work survives a fresh Python process; v1 stays unchanged until Save", async ({
+  page,
+}) => {
+  const expected = await page.evaluate(async () => {
+    const { commandById } = await import("/cad/commands/registry.js");
+    const { createCommandSession } = await import("/cad/commands/session.js");
+    const store = window.PathloomModel.store;
+    async function add(id, params, inputs = {}) {
+      const s = createCommandSession(commandById(id));
+      Object.assign(s.parameters, params);
+      s.inputs = inputs;
+      if (!(await store.add(s))) throw new Error(JSON.stringify(s.diagnostics));
+      return store.document.features.at(-1);
+    }
+    const line = await add("C03", {
+      points: [
+        [0, 0, -5],
+        [10, 0, -2],
+        [10, 10, 1],
+      ],
+      closed: false,
+    });
+    await add(
+      "S05",
+      { direction: [0, 0, 1], distanceMm: 10, cap: false },
+      { profile: [{ entityId: line.outputSlots[0].entityId }] },
+    );
+    await add("C09", {
+      poles: [
+        [0, 0, -5],
+        [10, 5, 0],
+        [20, 5, 4],
+        [30, 0, 0],
+      ],
+      weights: [1, 2, 2, 1],
+    });
+    const rect = await add("C04", {});
+    await store.edit(rect.id, { widthMm: -1 });
+    return store.document.entities.map((e) => ({
+      id: e.id,
+      hash: e.geometry.assetHash,
+      closure: e.closure,
+      bbox: e.bbox,
+    }));
+  });
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByLabel("幅 mm", { exact: true }).fill("80c");
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          window.__saved?.cadDocument.draftSessions.at(-1)?.rawDraft.widthMm,
+      ),
+    )
+    .toBe("80c");
+  const before = await page.evaluate(() => structuredClone(window.__saved));
+  expect(before.cadDocument.features.at(-1).status).toBe("failed");
+  expect(before.cadDocument.features.at(-1).lastValid).toBeTruthy();
+  const pids = await page.evaluate(async () => {
+    await window.__cadStorage({ key: "recovery", discard: true });
+    return window.__restartCadDaemon();
+  });
+  expect(pids.current).not.toBe(pids.previous);
+  await page.reload();
+  await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
+  await page.evaluate(() => document.querySelector("#projectOpen").click());
+  await expect(page.locator(".model-history-entry")).toHaveCount(4);
+  await page.locator("#modeModel").click();
+  await expect(page.getByLabel("幅 mm", { exact: true })).toHaveValue("80c");
+  expect(
+    await page
+      .getByLabel("幅 mm", { exact: true })
+      .evaluate((e) => e.checkValidity()),
+  ).toBe(false);
+  const restored = await page.evaluate(() =>
+    window.PathloomModel.store.document.entities.map((e) => ({
+      id: e.id,
+      hash: e.geometry.assetHash,
+      closure: e.closure,
+      bbox: e.bbox,
+    })),
+  );
+  expect(restored).toEqual(expected);
+  expect(
+    await page.evaluate(
+      () => window.PathloomModel.store.document.features.at(-1).status,
+    ),
+  ).toBe("failed");
+  await page.getByRole("button", { name: "確定", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(4);
+  await page.getByLabel("幅 mm", { exact: true }).fill("80");
+  await commitModel(page, 5);
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__saved?.cadDocument.features.length),
+    )
+    .toBe(5);
+  expect(
+    await page.evaluate(() => window.__saved.cadDocument.draftSessions.length),
+  ).toBe(0);
+  const legacy = await page.evaluate(async () => {
+    const p = structuredClone(window.__saved);
+    p.version = 1;
+    delete p.cadDocument;
+    const content = JSON.stringify(p);
+    await window.__cadStorage({ key: "project", content });
+    document.querySelector("#projectOpen").click();
+    return content;
+  });
+  await expect(page.locator(".model-history-entry")).toHaveCount(0);
+  await expect(page.locator("#projectName")).toContainText("次回保存はv2");
+  await expect(page.locator("#cadStatus")).toContainText("layers");
+  expect(
+    await page.evaluate(() => window.__cadStorage({ key: "project" })),
+  ).toBe(legacy);
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window
+          .__cadStorage({ key: "project" })
+          .then(JSON.parse)
+          .then((p) => p.version),
+      ),
+    )
+    .toBe(2);
+});
+
+test("P1 viewport preselection, postselection, endpoint and rectangle center snapping use exact points", async ({
+  page,
+}) => {
+  async function line(start, end, count) {
+    await page.getByRole("button", { name: "Line", exact: true }).click();
+    await page
+      .getByLabel("始点 XYZ", { exact: true })
+      .fill(JSON.stringify(start));
+    await page
+      .getByLabel("終点 XYZ", { exact: true })
+      .fill(JSON.stringify(end));
+    await commitModel(page, count);
+  }
+  async function at(point) {
+    return page.evaluate(async (point) => {
+      const THREE = await import("/vendor/three/three.module.js"),
+        state = window.Pathloom.viewState(),
+        r = document.querySelector("#threeCanvas").getBoundingClientRect();
+      const camera = new THREE.PerspectiveCamera(
+        36,
+        r.width / r.height,
+        0.1,
+        1200,
+      );
+      camera.position.fromArray(state.position);
+      camera.up.set(0, 0, 1);
+      camera.lookAt(new THREE.Vector3(...state.target));
+      camera.updateMatrixWorld();
+      const p = new THREE.Vector3(...point).project(camera);
+      return {
+        x: r.left + ((p.x + 1) * r.width) / 2,
+        y: r.top + ((1 - p.y) * r.height) / 2,
+      };
+    }, point);
+  }
+  async function pick(point, shift = false) {
+    const p = await at(point);
+    if (shift) await page.keyboard.down("Shift");
+    await page.mouse.click(p.x, p.y);
+    if (shift) await page.keyboard.up("Shift");
+  }
+  await line([-30, 0, 0], [0, 0, 0], 1);
+  await line([0, 0, 0], [30, 0, 0], 2);
+  await pick([-15, 0, 0]);
+  await pick([15, 0, 0], true);
+  expect(
+    await page.evaluate(
+      () => window.PathloomModel.store.document.uiState.selection.length,
+    ),
+  ).toBe(2);
+  await page.getByRole("button", { name: "Join Curves", exact: true }).click();
+  await commitModel(page, 3);
+  await line([-30, 25, 0], [0, 25, 0], 4);
+  await line([0, 25, 0], [30, 25, 0], 5);
+  await page.getByRole("button", { name: "Join Curves", exact: true }).click();
+  await pick([-15, 25, 0]);
+  await pick([15, 25, 0], true);
+  await commitModel(page, 6);
+  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await page.getByLabel("基準点 XYZ", { exact: true }).fill("[0,-25,0]");
+  await page.getByLabel("幅 mm", { exact: true }).fill("20");
+  await page.getByLabel("高さ mm", { exact: true }).fill("10");
+  await commitModel(page, 7);
+  await page.getByRole("button", { name: "Line", exact: true }).click();
+  let p = await at([30, 25, 0]);
+  await page.mouse.move(p.x + 2, p.y + 1);
+  await expect(page.locator("#modelStatus")).toContainText("端点にスナップ");
+  await page.mouse.click(p.x + 2, p.y + 1);
+  p = await at([0, -25, 0]);
+  await page.mouse.move(p.x + 2, p.y + 1);
+  await expect(page.locator("#modelStatus")).toContainText("中心にスナップ");
+  await page.mouse.click(p.x + 2, p.y + 1);
+  await commitModel(page, 8);
+  expect(
+    await page.evaluate(
+      () => window.PathloomModel.store.document.features.at(-1).parameters,
+    ),
+  ).toMatchObject({ start: [30, 25, 0], end: [0, -25, 0] });
+  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await page.locator("#modelCoordinate").fill("0,0,0");
+  await page.locator("#modelCoordinate").press("Enter");
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".model-history-entry")).toHaveCount(8);
+});
+
+test("P1 Difference keeps both target bodies, toggles tools, and survives Undo and reopen", async ({
+  page,
+}) => {
+  const result = await page.evaluate(async () => {
+    const { commandById } = await import("/cad/commands/registry.js");
+    const { createCommandSession } = await import("/cad/commands/session.js");
+    const { deriveVisibleEntities } = await import("/cad/document.js");
+    const store = window.PathloomModel.store;
+    async function add(id, params, inputs = {}) {
+      const s = createCommandSession(commandById(id));
+      Object.assign(s.parameters, params);
+      s.inputs = inputs;
+      if (!(await store.add(s))) throw new Error(JSON.stringify(s.diagnostics));
+      return store.document.features.at(-1);
+    }
+    const a = await add("B01", {
+        anchorMode: "corner",
+        anchor: [0, 0, 0],
+        widthMm: 10,
+        depthMm: 10,
+        heightMm: 10,
+      }),
+      b = await add("B01", {
+        anchorMode: "corner",
+        anchor: [20, 0, 0],
+        widthMm: 10,
+        depthMm: 10,
+        heightMm: 10,
+      }),
+      tool = await add("B01", {
+        anchorMode: "corner",
+        anchor: [5, 0, 0],
+        widthMm: 10,
+        depthMm: 10,
+        heightMm: 10,
+      });
+    const entities = [a, b, tool].map((f) =>
+        store.getEntity(f.outputSlots[0].entityId),
+      ),
+      ref = (e) => ({ entityId: e.id }),
+      cut = await add(
+        "D02",
+        { keepTools: true },
+        { arguments: entities.slice(0, 2).map(ref), tools: [ref(entities[2])] },
+      );
+    const bodyIds = cut.outputSlots.map((s) => s.bodyId).sort(),
+      volumes = cut.outputSlots
+        .map((s) => store.getEntity(s.entityId).displayCache.volumeMm3)
+        .sort((a, b) => a - b);
+    const visible = () =>
+      deriveVisibleEntities(store.document).some(
+        (e) => e.id === entities[2].id,
+      );
+    const initial = visible();
+    await store.edit(cut.id, { keepTools: false });
+    const hidden = !visible();
+    await store.edit(cut.id, { keepTools: true });
+    const restored = visible();
+    store.transactions.undo();
+    await store.recompute();
+    const undone = !visible();
+    store.transactions.redo();
+    await store.recompute();
+    const redone = visible();
+    return {
+      bodyIds,
+      expectedBodyIds: entities
+        .slice(0, 2)
+        .map((e) => e.bodyId)
+        .sort(),
+      volumes,
+      initial,
+      hidden,
+      restored,
+      undone,
+      redone,
+    };
+  });
+  expect(result.bodyIds).toEqual(result.expectedBodyIds);
+  expect(result.volumes[0]).toBeCloseTo(500, 5);
+  expect(result.volumes[1]).toBeCloseTo(1000, 5);
+  expect(result).toMatchObject({
+    initial: true,
+    hidden: true,
+    restored: true,
+    undone: true,
+    redone: true,
+  });
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__saved?.cadDocument.features.length),
+    )
+    .toBe(4);
+  await page.evaluate(() => {
+    window.__previousCad = window.PathloomModel.store.document;
+    document.querySelector("#projectOpen").click();
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.PathloomModel.store.document !== window.__previousCad,
+      ),
+    )
+    .toBe(true);
+  expect(
+    await page.evaluate(() =>
+      window.PathloomModel.store.document.features
+        .at(-1)
+        .outputSlots.map((s) => s.bodyId)
+        .sort(),
+    ),
+  ).toEqual(result.bodyIds);
+});
 
 test("P1 Split preserves exact result references through recompute, explicit binding repair and Library insertion", async ({
   page,
@@ -234,16 +588,38 @@ test("P1 Split preserves exact result references through recompute, explicit bin
       store.getEntity(inserted[0]).producer.featureId,
     );
     const statuses = store.document.features.map((f) => f.status);
+    const volumes = split.outputSlots.map(
+      (s) => store.getEntity(s.entityId).displayCache.volumeMm3,
+    );
+    await store.edit(plane.id, {
+      ...plane.parameters,
+      plane: { ...plane.parameters.plane, origin: [15, 0, 0] },
+      anchor: [15, -5, -5],
+    });
+    const changed = {
+      count: split.outputSlots.length,
+      move: move.status,
+      binding: binding.status,
+      oldIdsRemoved: ids.every((id) => !store.getEntity(id)),
+      independent: insertedFeature.status,
+    };
+    await store.restore(await store.snapshot());
+    const reopened = store.getFeature(move.id).status;
+    await store.repair(move.id, "object", [
+      { entityId: store.getFeature(split.id).outputSlots[0].entityId },
+    ]);
     return {
       splitStatus,
       retained,
-      bindingStatus: binding.status,
-      moveStatus: move.status,
+      bindingStatus: store.document.outputBindings.find(
+        (b) => b.id === binding.id,
+      ).status,
+      moveStatus: store.getFeature(move.id).status,
       insertedStatus: insertedFeature.status,
       statuses,
-      volumes: split.outputSlots.map(
-        (s) => store.getEntity(s.entityId).displayCache.volumeMm3,
-      ),
+      volumes,
+      changed,
+      reopened,
     };
   });
   expect(result.splitStatus).toBe("split");
@@ -253,6 +629,14 @@ test("P1 Split preserves exact result references through recompute, explicit bin
   expect(result.insertedStatus).toBe("valid");
   expect(result.statuses.every((s) => s === "valid")).toBe(true);
   result.volumes.forEach((v) => expect(v).toBeCloseTo(500, 4));
+  expect(result.changed).toMatchObject({
+    count: 1,
+    move: "blocked",
+    binding: "pending",
+    oldIdsRemoved: true,
+    independent: "valid",
+  });
+  expect(result.reopened).toBe("blocked");
 });
 
 test("P1 basic rectangle modes save exact 2-corner and free 3-point geometry", async ({

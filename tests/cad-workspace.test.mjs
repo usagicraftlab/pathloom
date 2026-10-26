@@ -67,6 +67,16 @@ function feature(id, input = []) {
     diagnostics: [],
   };
 }
+test("raw command drafts block native evaluation until the input is repaired", () => {
+  const s = createCommandSession(commandById("C04"));
+  s.rawDraft.widthMm = "80c";
+  assert.equal(sessionReady(s), false);
+  assert.throws(() => operationForSession(s), /入力を修正/);
+  delete s.rawDraft.widthMm;
+  s.parameters.widthMm = 80;
+  assert.equal(sessionReady(s), true);
+  assert.equal(operationForSession(s).parameters.widthMm, 80);
+});
 test("CAD DAG invalidation follows only dependencies and rejects cycles", () => {
   const d = createCadDocument();
   d.features = [feature("a"), feature("b", ["e-a"]), feature("c")];

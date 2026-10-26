@@ -40,3 +40,56 @@ export function reselectReference(doc, id, inputKey, refs) {
   markDirty(doc, [id]);
   doc.documentRevision++;
 }
+
+// Body visibility is derived from the ordered history, including cached results.
+// Replaying it also restores tools/inputs when a replacement is changed or removed.
+export function rebuildBodyResults(doc) {
+  const entities = new Map(doc.entities.map((e) => [e.id, e]));
+  const bodies = new Map(doc.bodies.map((b) => [b.id, b]));
+  for (const body of bodies.values()) {
+    body.tipEntityId = null;
+    body.status = "missing";
+    body.splitIntoBodyIds = [];
+  }
+  for (const f of topologicalFeatures(doc)) {
+    if (f.status === "suppressed") continue;
+    const outputs = f.outputSlots.filter((s) => entities.has(s.entityId));
+    if (!outputs.length && f.status !== "empty") continue;
+    for (const slot of outputs) {
+      let body = bodies.get(slot.bodyId);
+      if (!body) {
+        body = { id: slot.bodyId, name: f.name, splitIntoBodyIds: [] };
+        bodies.set(body.id, body);
+        doc.bodies.push(body);
+      }
+      body.tipEntityId = slot.entityId;
+      body.status = "ready";
+      body.splitIntoBodyIds = [];
+    }
+    if (f.resultPolicy !== "replace") continue;
+    for (const [key, refs] of Object.entries(f.inputs)) {
+      if (
+        (f.operation.id === "solid.difference" &&
+          key === "tools" &&
+          f.parameters.keepTools) ||
+        (["solid.split", "surface.split"].includes(f.operation.id) &&
+          key === "cutters")
+      )
+        continue;
+      for (const ref of refs) {
+        if (ref.kind) continue;
+        const input = entities.get(ref.entityId),
+          body = bodies.get(input?.bodyId);
+        if (!body || outputs.some((s) => s.bodyId === body.id)) continue;
+        body.tipEntityId = null;
+        const parts = outputs.filter((s) => s.sourceEntityId === ref.entityId);
+        const candidates = parts.length
+          ? parts
+          : outputs.filter((s) => !s.sourceEntityId);
+        body.status = candidates.length > 1 ? "split" : "missing";
+        body.splitIntoBodyIds =
+          candidates.length > 1 ? candidates.map((s) => s.bodyId) : [];
+      }
+    }
+  }
+}

@@ -264,6 +264,43 @@ for (const action of ["undo", "delete", "restore"]) {
     } else assert.equal(store.document.entities.length, 0);
   });
 }
+test("AUD-001 an upstream edit during dependent export cannot publish the previous input geometry", async () => {
+  const { native, store, feature: upstream } = await committedLine();
+  const session = createCommandSession(commandById("transform.move"));
+  session.inputs.object = [{ entityId: upstream.outputSlots[0].entityId }];
+  const adding = store.add(session);
+  await waiting(native);
+  complete(native.pending.shift(), "derived-initial");
+  assert.equal(await adding, true);
+  const dependent = store.document.features.at(-1),
+    gate = delayExport(native);
+  const first = store.edit(dependent.id, { translation: [2, 0, 0] });
+  await waiting(native);
+  complete(native.pending.shift(), "obsolete");
+  await gate.entered;
+  const latest = store.edit(upstream.id, {
+    ...upstream.parameters,
+    end: [80, 0, 0],
+  });
+  gate.release();
+  await waiting(native);
+  assert.equal(native.pending[0].request.featureId, upstream.id);
+  complete(native.pending.shift(), "upstream80");
+  await waiting(native);
+  assert.equal(
+    native.pending[0].request.inputs.object[0].geometryHash,
+    "upstream80",
+  );
+  complete(native.pending.shift(), "derived-latest");
+  await Promise.all([first, latest]);
+  assert.equal(dependent.status, "valid");
+  assert.ok(native.released.includes("obsolete"));
+  assert.equal(store.document.assets.obsolete, undefined);
+  assert.equal(
+    store.getEntity(dependent.outputSlots[0].entityId).geometry.assetHash,
+    "derived-latest",
+  );
+});
 test("a prepared Open cannot replace edits made while its exact assets were loading", async () => {
   const { store } = await committedLine(),
     original = store.document;

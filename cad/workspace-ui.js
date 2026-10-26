@@ -135,6 +135,21 @@ export function initModelWorkspace(api) {
       queueAutosave();
     }
   }
+  function restoreRawInput(input, key) {
+    if (session?.rawDraft?.[key] !== undefined) {
+      input.value = session.rawDraft[key];
+      input.setCustomValidity("未確定の入力を修正してください");
+    }
+  }
+  function retainInvalidInput(input, key, error) {
+    input.setCustomValidity(error.message);
+    if (session) {
+      session.rawDraft[key] = input.value;
+      session.previewSequence++;
+      session.result = null;
+      saveDraft();
+    }
+  }
   function cancel() {
     clearTimeout(previewTimer);
     if (session) {
@@ -421,6 +436,7 @@ export function initModelWorkspace(api) {
           label.textContent = `作図点 ${i + 1} XYZ`;
           input.setAttribute("aria-label", label.textContent);
           input.value = JSON.stringify(session.inputValues[key]);
+          restoreRawInput(input, key);
           input.oninput = () => {
             try {
               const p = input.value.trim().startsWith("[")
@@ -435,13 +451,14 @@ export function initModelWorkspace(api) {
               )
                 throw new Error("XYZを指定してください");
               session.inputValues[key] = p;
+              delete session.rawDraft[key];
               session.previewSequence++;
               session.result = null;
               saveDraft();
               queuePreview();
               input.setCustomValidity("");
             } catch (error) {
-              input.setCustomValidity(error.message);
+              retainInvalidInput(input, key, error);
             }
           };
           label.append(input);
@@ -470,6 +487,8 @@ export function initModelWorkspace(api) {
           label.textContent = `移動 ${axis} mm`;
           input.setAttribute("aria-label", label.textContent);
           input.value = value[i];
+          const rawKey = `translation.${i}`;
+          restoreRawInput(input, rawKey);
           input.oninput = () => {
             try {
               const vector = [
@@ -478,6 +497,7 @@ export function initModelWorkspace(api) {
               vector[i] = parseScalar(input.value);
               draft.translation = vector;
               if (session) {
+                delete session.rawDraft[rawKey];
                 dispatchSession(session, {
                   type: "setting.change",
                   key: "translation",
@@ -488,7 +508,7 @@ export function initModelWorkspace(api) {
               }
               input.setCustomValidity("");
             } catch (error) {
-              input.setCustomValidity(error.message);
+              retainInvalidInput(input, rawKey, error);
             }
           };
           label.append(input);
@@ -525,6 +545,7 @@ export function initModelWorkspace(api) {
             : value === null
               ? "null"
               : String(value);
+      restoreRawInput(input, key);
       input.addEventListener("input", () => {
         try {
           const v =
@@ -544,17 +565,14 @@ export function initModelWorkspace(api) {
                   : input.value;
           draft[key] = v;
           if (session) {
+            delete session.rawDraft[key];
             dispatchSession(session, { type: "setting.change", key, value: v });
             saveDraft();
             queuePreview();
           }
           input.setCustomValidity("");
         } catch (error) {
-          input.setCustomValidity(error.message);
-          if (session) {
-            session.rawDraft[key] = input.value;
-            saveDraft();
-          }
+          retainInvalidInput(input, key, error);
         }
       });
       label.append(input);
@@ -573,12 +591,14 @@ export function initModelWorkspace(api) {
         session?.toleranceOverrides?.joinLinearMm ??
         f?.toleranceOverrides?.joinLinearMm ??
         store.document.tolerances.joinLinearMm;
+      restoreRawInput(input, "tolerance.joinLinearMm");
       input.oninput = () => {
         try {
           const v = parseScalar(input.value);
           if (v <= 0) throw new Error("正の許容差を指定してください");
           input.setCustomValidity("");
           if (session) {
+            delete session.rawDraft["tolerance.joinLinearMm"];
             session.toleranceOverrides ??= {};
             session.toleranceOverrides.joinLinearMm = v;
             session.previewSequence++;
@@ -586,7 +606,7 @@ export function initModelWorkspace(api) {
             queuePreview();
           } else draftTolerance.joinLinearMm = v;
         } catch (error) {
-          input.setCustomValidity(error.message);
+          retainInvalidInput(input, "tolerance.joinLinearMm", error);
         }
       };
       label.append(input);
@@ -603,6 +623,7 @@ export function initModelWorkspace(api) {
           ? JSON.stringify(session.inputValues[slot.key])
           : "";
         input.setAttribute("aria-label", `CAD point ${slot.key}`);
+        restoreRawInput(input, slot.key);
         input.onchange = () => {
           try {
             const p = input.value.trim().startsWith("[")
@@ -617,12 +638,14 @@ export function initModelWorkspace(api) {
             )
               throw new Error("XYZを指定してください");
             session.inputValues[slot.key] = p;
+            delete session.rawDraft[slot.key];
+            input.setCustomValidity("");
             session.previewSequence++;
             saveDraft();
             queuePreview();
             render({ keepProperties: true });
           } catch (error) {
-            report(error);
+            retainInvalidInput(input, slot.key, error);
           }
         };
         label.append(input);
@@ -1154,6 +1177,8 @@ export function initModelWorkspace(api) {
     if (slots.length) {
       const slot = slots[pointStep++ % slots.length];
       session.inputValues[slot.key] = p;
+      delete session.rawDraft[slot.key];
+      lastPoint = p;
       session.previewSequence++;
       saveDraft();
       properties();
@@ -1169,7 +1194,9 @@ export function initModelWorkspace(api) {
     } else if (op === "curve.rectangle") {
       if (session.drawingMode && session.drawingMode !== "center") {
         const keys = rectanglePointKeys(session);
-        session.inputValues[keys[pointStep++ % keys.length]] = p;
+        const key = keys[pointStep++ % keys.length];
+        session.inputValues[key] = p;
+        delete session.rawDraft[key];
       } else {
         if (pointStep++ % 2 === 0) params.anchor = p;
         else {
@@ -1321,6 +1348,21 @@ export function initModelWorkspace(api) {
         const feature = store.getFeature(e.producer.featureId);
         if (feature?.parameters.center)
           candidates.push({ point: feature.parameters.center, label: "中心" });
+        if (feature?.operation.id === "curve.rectangle") {
+          const p = feature.parameters;
+          candidates.push({
+            point: p.anchor.map(
+              (n, i) =>
+                n +
+                (p.anchorMode === "center"
+                  ? 0
+                  : (p.widthMm * p.plane.xAxis[i] +
+                      p.heightMm * p.plane.yAxis[i]) /
+                    2),
+            ),
+            label: "中心",
+          });
+        }
         for (const candidate of candidates) {
           const p = new THREE.Vector3(...candidate.point).project(camera);
           const distance = Math.hypot(

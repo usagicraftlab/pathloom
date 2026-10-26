@@ -15,6 +15,7 @@ import {
   applyFeatureEdit,
   reselectReference,
   suppressFeature,
+  rebuildBodyResults,
 } from "./history.js";
 import { createTransactions } from "./transactions.js";
 import { resolveSubshape } from "./references.js";
@@ -608,19 +609,6 @@ export class CadStore {
           if (old) Object.assign(old, e);
           else this.document.entities.push(e);
           snapshots.push(clone(e));
-          let body = this.document.bodies.find((b) => b.id === slot.bodyId);
-          if (!body) {
-            body = {
-              id: slot.bodyId,
-              name: feature.name,
-              tipEntityId: e.id,
-              splitIntoBodyIds: [],
-              status: "ready",
-            };
-            this.document.bodies.push(body);
-          }
-          body.tipEntityId = e.id;
-          body.status = "ready";
         }
         const currentIds = new Set(feature.outputSlots.map((s) => s.entityId)),
           retired = this.document.entities.filter(
@@ -651,45 +639,7 @@ export class CadStore {
         this.document.entities = this.document.entities.filter(
           (e) => e.producer.featureId !== feature.id || currentIds.has(e.id),
         );
-        if (feature.resultPolicy === "replace")
-          for (const [inputKey, inputRefs] of Object.entries(feature.inputs))
-            for (const ref of inputRefs) {
-              if (
-                operation.id === "solid.difference" &&
-                parameters.keepTools &&
-                inputKey === "tools"
-              )
-                continue;
-              if (
-                ["solid.split", "surface.split"].includes(operation.id) &&
-                inputKey === "cutters"
-              )
-                continue;
-              const input = this.getEntity(ref.entityId);
-              if (input && !ref.kind) {
-                const body = this.document.bodies.find(
-                  (b) => b.id === input.bodyId,
-                );
-                if (
-                  body &&
-                  !feature.outputSlots.some((s) => s.bodyId === body.id)
-                ) {
-                  body.tipEntityId = null;
-                  const parts = outputs.filter(
-                    (o) => o.sourceKey === ref.entityId,
-                  );
-                  const splitSlots = parts.length
-                    ? feature.outputSlots.filter((s) =>
-                        parts.some((o) => o.slotKey === s.key),
-                      )
-                    : feature.outputSlots;
-                  if (splitSlots.length > 1) {
-                    body.status = "split";
-                    body.splitIntoBodyIds = splitSlots.map((s) => s.bodyId);
-                  }
-                }
-              }
-            }
+
         feature.status =
           result.status === "empty"
             ? "empty"
@@ -841,6 +791,7 @@ export class CadStore {
     return patch.selectedEntityIds;
   }
   resolveBindings() {
+    rebuildBodyResults(this.document);
     for (const b of this.document.outputBindings) {
       const entity =
         b.source.mode === "body-result"

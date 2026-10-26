@@ -41,6 +41,7 @@ export function createCommandSession(
   };
 }
 export function sessionReady(s) {
+  if (Object.keys(s.rawDraft || {}).length) return false;
   return s.command.inputs.every((slot) => {
     if (slot.kind === "point")
       return !!slot.default || Array.isArray(s.inputValues?.[slot.key]);
@@ -73,6 +74,8 @@ export function dispatchSession(s, event) {
   return s;
 }
 export function operationForSession(s) {
+  if (Object.keys(s.rawDraft || {}).length)
+    throw new Error("未確定の入力を修正してください");
   if (!sessionReady(s)) throw new Error("必要な形状を選択してください");
   let command = s.command,
     parameters = s.parameters;

@@ -2,14 +2,15 @@
 
 更新日：2026-10-26 JST。基準SHA・方針・問題の根拠は[cad-master-plan.md](cad-master-plan.md)、
 実行結果は[cad-development-log.md](cad-development-log.md)。
-本書は今後の実装計画であり、Phase 0で機能修正や後続Phaseの実装は行っていない。
+Phase 0は資料作成のみ。その後のユーザー許可によりPhase 1の実装と自動検証へ進んだ。
+[PR #1](https://github.com/usagicraftlab/pathloom/pull/1)はmainへマージ済み。Phase 1は[PR #2](https://github.com/usagicraftlab/pathloom/pull/2)で管理する。
 
 ## Phaseと既存仕様の対応
 
 | Phase | 目的 | 対応する既存仕様 | 現在の状態 / 終了条件 |
 | --- | --- | --- | --- |
-| 0 | 現況・接続・テスト・問題の監査、資料統合 | 旧P0の現況再確認 | 資料作成済み。環境ブロック・実機未確認を明示してPRレビューへ渡す |
-| 1 | 基本操作と形状/設定/履歴/保存の整合性 | 旧P1/P2の完成確認＋基盤修正 | 未着手。下記P1-00〜08の対象経路と実機ゲートを満たす |
+| 0 | 現況・接続・テスト・問題の監査、資料統合 | 旧P0の現況再確認 | 完了・mainへマージ済み。基準mainの問題と未実施項目を記録 |
+| 1 | 基本操作と形状/設定/履歴/保存の整合性 | 旧P1/P2の完成確認＋基盤修正 | 実装・自動検証を実施。P1-08のGUI/OS実機ゲートは未完 |
 | 2 | 日常的な曲線・立体編集、CAD入出力 | 旧P3、既存STEP経路の接続 | 未着手。基本編集を組み合わせ、開形状を含め保存・再開・生成まで利用できる |
 | 3 | 面作成・面編集と高度な立体編集 | 旧P4、残りの65機能 | 未着手。各IDの入力モード、正確性、参照、保存、失敗fixtureを完了させる |
 | 4 | コマンド拡張、性能、回復、配布 | 旧P5＋残る共通基盤 | 未着手。版管理・明示的AI編集・性能測定・配布物の検証を完了させる |
@@ -19,21 +20,21 @@
 
 ## Phase 1：基本操作と結果の整合性を完成させる
 
-最初に**P1-00でCIの既存テストを動かせる状態へ戻し、P1-01の形状不整合を修正する**。
-その後P1-02〜04を優先し、P1-05〜08で実操作から保存・生成までを閉じる。
+P1-00〜07の対象修正と自動検証を実施した。P1-08の実機受け入れは未完。
+次の表は作業契約を保持し、右端で実行済みの範囲と残る条件を区別する。
 環境整備・実機検証の準備は先行可能だが、未実行を合格に置き換えない。
 
-| タスク / 優先度 | 具体的な作業 | 主な対象 | 依存 / 完了条件 |
-| --- | --- | --- | --- |
-| P1-00 / 高・検証基盤 | AUD-007のNode 20 Clipper読込エラーを修正。対応Node版とテスト環境の契約を揃え、既存のbrowser向け処理を保つ | `vendor/clipper/clipper-env.js`、読込adapter、JS test/既存CI | なし。Node 20.20.2とNode 24で全JSテストが実行される。CIの`npm test`を通し、後続browserまで到達。engine宣言だけと実装が食い違う状態を残さない |
-| P1-01 / 最優先 | AUD-001の古い結果の適用を防ぐ。すべてのawait後に文書・feature・revision・入力hash・epochを再確認し、適用をまとめる。破棄したhandleを解放し最新dirty状態を失わない | `cad/store.js`、`tests/cad-jobs.test.mjs` | なし。幅70のexport待ち中に80へ変更しても最終形状80。待ち中のUndo/削除/別文書読込/上流変更でも古い文書を更新しない。通常の無関係revision変更は有効結果を捨てない |
-| P1-02 / 高 | AUD-002の複数元形状Differenceを修正。対象と工具の役割、工具保持、複数出力をschema/UI/native間で揃える。対応しないモードは実行前に明示的に拒否 | D02 registry/session、`native/cad_operations` | P1-01後に結果適用を確認。Box A(0..10)・B(20..30)・工具C(5..15)で各元形状を切る契約なら体積合計1,500、両方の残形状を保持。単一対象500、非接触、空結果、Undo/save/reopenも確認 |
-| P1-03 / 高 | AUD-003の分割出力の由来を保持。複数slotとentity/bodyの対応、消失/追加時のbinding候補と明示的修復を設計し実装 | D04、native split、Store、references、generation binding | P1-01。不要な再計算・同じ分割の再実行で同一出力の参照を失わない。形状変更時にordinal/近傍だけで別結果へ結ばない。分割数変更と保存後も正しく継承またはblocked表示になる |
-| P1-04 / 高 | AUD-004の平面指定を実際に処理/検証する。既存演算の必須型・単位・範囲・非対応オプションを照合し、無視された設定で成功させない | E06、`commands/registry.js`、native operation validation | P1-01。XY/XZ/YZ/任意平面、平面不一致、非平面、零軸/不正軸、距離符号、round/miterで数値fixture。非対応は型付き診断。汎用CAD全体に印刷用平面制約を課さない |
-| P1-05 / 高 | 基本作図の操作経路を仕上げる。Line/Polyline、Rectangleの中心・2コーナー・3点、Circle中心半径、作業平面、MoveのXYZ、選択前/後、入力中のキー競合を揃える | C02/C03/C04/C06、transform、session、workspace/view UI | P1-01/04。クリック・数値入力・Enter/Esc・相対座標・Shift複数選択・端点/中心スナップを操作確認。未完成モードを完成表示しない。拘束長方形の寸法変更/未収束/Undo/saveを確認 |
-| P1-06 / 高 | Rectangle→Extrude→Fillet→CAD binding→ツールパス→G-codeの更新と失敗復旧を完了させる。独立形状/別グラフへの影響を切り分ける | S05/D05、Store、generation-adapter、`cad-ui.js`、`app.js` | P1-01〜04。60×40×25→80×40×25で体積60,000→80,000、対象edge追従、生成寸法更新。参照消失ではlastValidを区別しG-codeを止め、再選択で復旧。別の正常形状は操作可能。非アクティブ生成グラフの状態も検査 |
-| P1-07 / 高 | v1/v2互換と不完全な作業の保存・回復を固める。CAD失敗状態、draft、command版、破損正本、open/cancel時の現文書保護を操作経路で検証 | persistence、Store、shape-library、`cad-ui.js`、`project_files.rs` | P1-01/03/06。v1を開くだけで改変せず次回保存v2。開曲線/開面/NURBS/失敗＋lastValidを別プロセスへ復元。失敗するOpenで現在文書を失わない。未保存変更と回復ファイルの扱いを仕様に沿って確定 |
-| P1-08 / 高 | 自動テストとmacOS実機検証を完了。P1-01〜04を恒久的な回帰テストへ取り込み、既存JS/native/browser/Rustチェックを実行する | tests/native tests/既存CI、下表M01〜M07 | 全修正後。正常・失敗の両方を記録。Chromium取得失敗等の環境障害をアプリ不具合と分離。Rust/Tauri実接続、macOS OS保存・回復まで確認して初めてPhase 1完了 |
+| タスク / 優先度 | 具体的な作業 | 主な対象 | 依存 / 完了条件 | 現在の状態・根拠 |
+| --- | --- | --- | --- | --- |
+| P1-00 / 高・検証基盤 | AUD-007のNode 20 Clipper読込エラーを修正。対応Node版とテスト環境の契約を揃え、既存のbrowser向け処理を保つ | `vendor/clipper/clipper-env.js`、読込adapter、JS test/既存CI | なし。Node 20.20.2とNode 24で全JSテストが実行される。CIの`npm test`を通し、後続browserまで到達。engine宣言だけと実装が食い違う状態を残さない | 実装・自動検証済み：Node20/24で165成功。CIのJS読込は回復 |
+| P1-01 / 最優先 | AUD-001の古い結果の適用を防ぐ。すべてのawait後に文書・feature・revision・入力hash・epochを再確認し、適用をまとめる。破棄したhandleを解放し最新dirty状態を失わない | `cad/store.js`、`tests/cad-jobs.test.mjs` | なし。幅70のexport待ち中に80へ変更しても最終形状80。待ち中のUndo/削除/別文書読込/上流変更でも古い文書を更新しない。通常の無関係revision変更は有効結果を捨てない | 実装・自動検証済み：export中の再編集、Undo、削除、Open、上流変更と無関係revisionをJSで検査 |
+| P1-02 / 高 | AUD-002の複数元形状Differenceを修正。対象と工具の役割、工具保持、複数出力をschema/UI/native間で揃える。対応しないモードは実行前に明示的に拒否 | D02 registry/session、`native/cad_operations` | P1-01後に結果適用を確認。Box A(0..10)・B(20..30)・工具C(5..15)で各元形状を切る契約なら体積合計1,500、両方の残形状を保持。単一対象500、非接触、空結果、Undo/save/reopenも確認 | 実装・自動検証済み：実OCCTの体積/非接触/空、対象body保持、工具保持の切替、Undo/Redo、保存再開 |
+| P1-03 / 高 | AUD-003の分割出力の由来を保持。複数slotとentity/bodyの対応、消失/追加時のbinding候補と明示的修復を設計し実装 | D04、native split、Store、references、generation binding | P1-01。不要な再計算・同じ分割の再実行で同一出力の参照を失わない。形状変更時にordinal/近傍だけで別結果へ結ばない。分割数変更と保存後も正しく継承またはblocked表示になる | 実装・自動検証済み：同一結果の反復/再import、分割数2→1で後段blocked、保存/明示的修復、独立Library履歴保持 |
+| P1-04 / 高 | AUD-004の平面指定を実際に処理/検証する。既存演算の必須型・単位・範囲・非対応オプションを照合し、無視された設定で成功させない | E06、`commands/registry.js`、native operation validation | P1-01。XY/XZ/YZ/任意平面、平面不一致、非平面、零軸/不正軸、距離符号、round/miterで数値fixture。非対応は型付き診断。汎用CAD全体に印刷用平面制約を課さない | 実装・自動検証済み：4平面、±距離、round/miter、開曲線、反転法線、不正/不一致/非平面/未知設定の拒否 |
+| P1-05 / 高 | 基本作図の操作経路を仕上げる。Line/Polyline、Rectangleの中心・2コーナー・3点、Circle中心半径、作業平面、MoveのXYZ、選択前/後、入力中のキー競合を揃える | C02/C03/C04/C06、transform、session、workspace/view UI | P1-01/04。クリック・数値入力・Enter/Esc・相対座標・Shift複数選択・端点/中心スナップを操作確認。未完成モードを完成表示しない。拘束長方形の寸法変更/未収束/Undo/saveを確認 | 実装・ブラウザ確認済み：3種Rectangle、相対Polyline/Backspace、Circle中心半径、Move単位XYZ、選択前/後、Shift、端点/中心snap、Esc、入力中Delete。macOS入力はM06 |
+| P1-06 / 高 | Rectangle→Extrude→Fillet→CAD binding→ツールパス→G-codeの更新と失敗復旧を完了させる。独立形状/別グラフへの影響を切り分ける | S05/D05、Store、generation-adapter、`cad-ui.js`、`app.js` | P1-01〜04。60×40×25→80×40×25で体積60,000→80,000、対象edge追従、生成寸法更新。参照消失ではlastValidを区別しG-codeを止め、再選択で復旧。別の正常形状は操作可能。非アクティブ生成グラフの状態も検査 | 実装・自動検証済み：実OCCT履歴→ネイティブ断面→幅80のパス/G-code、失敗時出力阻止と修復、非アクティブな独立グラフ保持。影響を受ける非アクティブグラフの自動再計算はPhase2へ |
+| P1-07 / 高 | v1/v2互換と不完全な作業の保存・回復を固める。CAD失敗状態、draft、command版、破損正本、open/cancel時の現文書保護を操作経路で検証 | persistence、Store、shape-library、`cad-ui.js`、`project_files.rs` | P1-01/03/06。v1を開くだけで改変せず次回保存v2。開曲線/開面/NURBS/失敗＋lastValidを別プロセスへ復元。失敗するOpenで現在文書を失わない。未保存変更と回復ファイルの扱いを仕様に沿って確定 | 実装・自動検証済み：別Pythonプロセスで開曲線/開面/有理NURBS/失敗＋lastValid/不正入力draft復元、v1→次回保存v2、破損/読込中編集の保護。OSダイアログ取消/権限/回復保存はM04/05 |
+| P1-08 / 高 | 自動テストとmacOS実機検証を完了。P1-01〜04を恒久的な回帰テストへ取り込み、既存JS/native/browser/Rustチェックを実行する | tests/native tests/既存CI、下表M01〜M07 | 全修正後。正常・失敗の両方を記録。Chromium取得失敗等の環境障害をアプリ不具合と分離。Rust/Tauri実接続、macOS OS保存・回復まで確認して初めてPhase 1完了 | 自動検証実施。macOS CIでRust25件と.app/.dmg生成成功。M01残部とM02〜M07のGUI/OS実機は未実施、受け入れ未完 |
 
 Phase 1の固定基準シーンは「Rectangle60×40→Extrude25→Fillet R2」と
 「自由な負Z/非平面の開曲線→開いた押出面」とする。前者は寸法追従・参照・出力、
@@ -45,9 +46,9 @@ R01〜R05/R08/R09を中心に既存受け入れ台帳へ証拠を追記する。
 
 ## macOSで実行する項目
 
-**M01のうちmacOS arm64 CIの`npm ci`・frontend準備・Rust crateコンパイル/21単体テストは成功。**
-M01の残りとM02以降のGUI/OS実利用は未実施。インストールしたアプリで確かめる。
-ブラウザ/Rustの今回のローカル未実行は、macOS固有の制約とは別の環境ブロックである。
+**M01のうちmacOS arm64 CIのfrontend準備、Rustコンパイル/25単体テスト、.app/.dmg生成とartifact保存は成功。**
+Mac上の`cad:setup`・Python/ブラウザの実利用、M02以降のGUI/OS操作は未実施。
+LinuxでJS/native/browserは実行済み。CIのビルドとインストール後の操作を分けて判定する。
 
 | ID | 実行項目 | 完了の証拠 |
 | --- | --- | --- |
@@ -66,7 +67,7 @@ M01の残りとM02以降のGUI/OS実利用は未実施。インストールし�
 | 曲線の編集 | E01〜E11を順に完成。特にTrim/Extend/2曲線Fillet・Chamfer、Split対象指定、Seam、制御点編集 | 交点/対象端点/保持区間/距離の入力を明示。正常/不成立/曖昧候補を分け、正本と履歴・全出力を保持 |
 | 閉領域と基本立体 | S03、B01〜B08、D01〜D07の不足モード | 穴/複数領域、面の押出、Cap/Pipe、複数Boolean対象、Shell失敗診断。開いた結果も許し、閉体積と区別 |
 | 既存STEPとの接続 | `importedShapes`/既存面編集と`cadDocument`の明示的import adapter、STEP書出し | 既存入力・保存を壊さずCAD履歴へ取り込める。単位/配置/正本/由来を保持。書出しを別ランタイムで再読込し数値比較 |
-| 共通操作・再利用 | Move以外の変換、選択/重なり候補、Library依存closure・配置 | 変換を表示だけでなく正本に適用。再利用後のIDと参照が元文書へ衝突しない |
+| 共通操作・再利用 | Move以外の変換、選択/重なり候補、Library依存closure・配置、影響を受ける非アクティブ生成グラフの再計算 | 変換を表示だけでなく正本に適用。再利用後のIDと参照が元文書へ衝突しない |
 
 新しいトポロジーや保存項目が必要なら、現行version/schemaを壊さない移行方針を先に記録する。
 
