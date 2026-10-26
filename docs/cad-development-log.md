@@ -379,3 +379,19 @@ Python側にBrotliモジュールがなかったため、archiveのBrotli復元�
 
 `git diff --check` はexit0。機能台帳65行の順序/列数とD02だけの行変更、資料の相対リンク9件、
 許可した12ファイルだけの変更を照合した。package/lock・native runtime・Split・history・CIは差分なし。
+
+### 実装headのGitHub CI
+
+実装head `616a8fb861b4dccd79227deea99d49ac2b98bd4a` に対する
+[PR #27](https://github.com/usagicraftlab/pathloom/pull/27) の
+[CI run 40408830985](https://github.com/usagicraftlab/pathloom/actions/runs/40408830985) は全3ジョブ成功。
+
+- javascript-and-browser / 121873528493：Node20の全171件成功・失敗0/skip0、
+  CIでインストールしたChromiumによるbrowser全24件成功（約2.0分）。
+- native-cad / 121873529001：OCP7.8.1.1、42検出・40成功/任意USD2skip（約1.26秒）。
+- rust-and-macos / 121873528902：frontend準備・コンパイル・Rust21件成功（テスト約0.37秒）。
+  .app/.dmg生成やGUI操作を行うworkflowではないため、それらの成功とは記録しない。
+
+この節の追記は開発ログだけで、製品コード・fixtureは上記実装headから変更していない。
+追記後headのCIは別runとしてPR本文・Issue #5に結果を記録する。
+Draftと未マージを維持し、Issue #5は手動クローズしない。
