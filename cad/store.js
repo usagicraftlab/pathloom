@@ -75,18 +75,25 @@ export class CadStore {
     return this.document.features.find((f) => f.id === featureId);
   }
   async handle(entity) {
-    let entry = this.handles.get(entity.geometry.assetHash);
+    const document = this.document,
+      epoch = this.epoch;
+    await this.native.start();
+    if (document !== this.document || epoch !== this.epoch)
+      throw new Error("CAD_CANCELLED");
+    const assetHash = entity.geometry.assetHash;
+    let entry = this.handles.get(assetHash);
     if (entry?.epoch === this.native.runtimeEpoch) return entry.value;
-    const asset = this.document.assets[entity.geometry.assetHash];
+    const asset = this.document.assets[assetHash];
     if (!asset?.data)
       throw new Error(
         "CAD_ASSET_MISSING: 正本を取得できません。保存または再計算で回復してください。",
       );
-    const result = await this.native.importAsset(
-      entity.geometry.assetHash,
-      asset,
-    );
-    this.handles.set(entity.geometry.assetHash, {
+    const result = await this.native.importAsset(assetHash, asset);
+    if (document !== this.document || epoch !== this.epoch) {
+      this.native.release([result.handle]);
+      throw new Error("CAD_CANCELLED");
+    }
+    this.handles.set(assetHash, {
       value: result,
       epoch: this.native.runtimeEpoch,
     });
@@ -111,6 +118,7 @@ export class CadStore {
           );
           throw Object.assign(new Error(d.message), { diagnostic: d });
         }
+        const inputHash = e.geometry.assetHash;
         const native = await this.handle(e);
         let selector = null;
         if (ref.kind) {
@@ -138,17 +146,25 @@ export class CadStore {
           geometryHash: native.geometryHash,
           selector,
         });
-        inputHashes.push(e.geometry.assetHash);
+        inputHashes.push(inputHash);
       }
     }
     return { prepared, inputHashes };
   }
   async preview(session) {
+    const document = this.document,
+      epoch = this.epoch,
+      sequence = ++session.previewSequence;
+    const current = () =>
+      document === this.document &&
+      epoch === this.epoch &&
+      sequence === session.previewSequence &&
+      session.state !== "cancelled";
     const { operationForSession } = await import("./commands/session.js");
+    if (!current()) return null;
     const operation = operationForSession(session);
     const { prepared, inputHashes } = await this.resolve(operation.inputs);
-    const sequence = ++session.previewSequence,
-      epoch = this.epoch;
+    if (!current()) return null;
     const requestedHash = await sha256({
       operation: operation.operation,
       parameters: operation.parameters,
@@ -158,6 +174,8 @@ export class CadStore {
         ...session.toleranceOverrides,
       },
     });
+    if (!current()) return null;
+    const runtimeEpoch = this.native.runtimeEpoch;
     session.state = "previewing";
     const result = await this.native.evaluate({
       documentId: this.document.id,
@@ -177,9 +195,21 @@ export class CadStore {
       },
     });
     if (
-      epoch !== this.epoch ||
-      sequence !== session.previewSequence ||
-      session.state === "cancelled"
+      !current() ||
+      runtimeEpoch !== this.native.runtimeEpoch ||
+      canonical(inputHashes) !==
+        canonical(
+          references(operation.inputs).map(
+            (ref) => this.getEntity(ref.entityId)?.geometry.assetHash,
+          ),
+        ) ||
+      references(operation.inputs).some(
+        (ref) =>
+          !["valid", "warning", "empty"].includes(
+            this.getFeature(this.getEntity(ref.entityId)?.producer.featureId)
+              ?.status,
+          ),
+      )
     ) {
       this.native.release(result.outputs.map((o) => o.handle));
       return null;
@@ -191,8 +221,11 @@ export class CadStore {
     return result;
   }
   async add(session) {
+    const document = this.document,
+      epoch = this.epoch;
     const before = checkpoint(this.document),
       { operationForSession } = await import("./commands/session.js");
+    if (document !== this.document || epoch !== this.epoch) return false;
     const operation = operationForSession(session);
     session.state = "committing";
     const featureId = id(),
@@ -229,6 +262,7 @@ export class CadStore {
     try {
       await this.recompute();
     } catch (error) {
+      if (document !== this.document || epoch !== this.epoch) return false;
       f.status = "failed";
       f.diagnostics = [
         diagnostic("CAD_RUNTIME_MISSING", error.message, f.id, [
@@ -236,9 +270,20 @@ export class CadStore {
         ]),
       ];
     }
+    if (
+      document !== this.document ||
+      epoch !== this.epoch ||
+      this.getFeature(f.id) !== f
+    )
+      return false;
     if (!["valid", "warning", "empty"].includes(f.status)) {
       const failure = clone(f);
-      this.document = before;
+      // A failed new feature must not roll back unrelated edits made while the
+      // kernel was busy. The exact result is adopted only after validation.
+      this.document.features = this.document.features.filter(
+        (feature) => feature !== f,
+      );
+      this.document.documentRevision++;
       session.state = "repairing";
       session.diagnostics = failure.diagnostics;
       session.result = null;
@@ -348,36 +393,72 @@ export class CadStore {
       this.queued = true;
       return this.recomputing;
     }
-    this.recomputing = this.runRecompute();
-    try {
-      await this.recomputing;
-    } finally {
-      this.recomputing = null;
-      if (this.queued) {
+    this.recomputing = (async () => {
+      do {
         this.queued = false;
-        return this.recompute();
-      }
-    }
+        await this.runRecompute();
+      } while (this.queued);
+    })().finally(() => {
+      this.recomputing = null;
+    });
+    return this.recomputing;
   }
   async runRecompute() {
-    const epoch = this.epoch;
+    const epoch = this.epoch,
+      document = this.document;
     const kernel = await this.native.start();
+    if (epoch !== this.epoch || document !== this.document) return;
     this.document.kernel.version = kernel.occtVersion ?? null;
     this.document.kernel.bindingVersion = kernel.ocpVersion;
     for (const feature of topologicalFeatures(this.document)) {
-      if (epoch !== this.epoch) return;
+      if (epoch !== this.epoch || document !== this.document) return;
       if (!["dirty", "blocked", "running"].includes(feature.status)) continue;
       const revision = feature.featureRevision;
-      let outputs = [];
+      const operation = clone(feature.operation),
+        parameters = clone(feature.parameters),
+        inputs = clone(feature.inputs);
+      const inputState = () =>
+        references(inputs).map((ref) => {
+          const entity = this.getEntity(ref.entityId);
+          const producer = this.getFeature(entity?.producer.featureId);
+          return [
+            entity?.geometry.assetHash,
+            producer?.featureRevision,
+            producer?.status,
+          ];
+        });
+      const initialInputState = canonical(inputState());
+      const current = () =>
+        epoch === this.epoch &&
+        document === this.document &&
+        this.getFeature(feature.id) === feature &&
+        feature.featureRevision === revision;
+      let outputs = [],
+        adopted = false;
       try {
-        const { prepared, inputHashes } = await this.resolve(feature.inputs);
+        const { prepared, inputHashes } = await this.resolve(inputs);
+        if (!current()) continue;
+        const inputsCurrent = () =>
+          current() &&
+          canonical(inputHashes) ===
+            canonical(
+              references(inputs).map(
+                (ref) => this.getEntity(ref.entityId)?.geometry.assetHash,
+              ),
+            ) &&
+          references(inputs).every((ref) =>
+            ["valid", "warning", "empty"].includes(
+              this.getFeature(this.getEntity(ref.entityId)?.producer.featureId)
+                ?.status,
+            ),
+          );
         const tolerances = {
           ...this.document.tolerances,
           ...feature.toleranceOverrides,
         };
         const hash = await sha256({
-          operation: feature.operation,
-          parameters: feature.parameters,
+          operation,
+          parameters,
           inputs: prepared
             ? Object.fromEntries(
                 Object.entries(prepared).map(([k, v]) => [
@@ -392,6 +473,7 @@ export class CadStore {
           tolerances,
           kernel: this.document.kernel,
         });
+        if (!inputsCurrent()) continue;
         feature.requestedHash = hash;
         if (
           feature.lastValid?.resultHash === hash &&
@@ -419,6 +501,7 @@ export class CadStore {
         feature.status = "running";
         this.activeFeature = feature.id;
         this.notify();
+        const runtimeEpoch = this.native.runtimeEpoch;
         const result = await this.native.evaluate({
           documentId: this.document.id,
           documentRevision: this.document.documentRevision,
@@ -428,38 +511,36 @@ export class CadStore {
           previewSequence: 0,
           requestedHash: hash,
           intent: "recompute",
-          operation: clone(feature.operation),
-          parameters: clone(feature.parameters),
+          operation,
+          parameters,
           inputs: prepared,
           tolerances,
         });
         outputs = result.outputs || [];
-        const current = this.getFeature(feature.id);
-        const nowHashes = references(feature.inputs).map(
-          (r) => this.getEntity(r.entityId)?.geometry.assetHash,
-        );
-        if (
-          epoch !== this.epoch ||
-          !current ||
-          current.featureRevision !== revision ||
-          current.requestedHash !== hash ||
-          canonical(nowHashes) !== canonical(inputHashes)
-        ) {
-          this.native.release(outputs.map((o) => o.handle));
-          continue;
-        }
+        const resultCurrent = () =>
+          inputsCurrent() &&
+          feature.requestedHash === hash &&
+          runtimeEpoch === this.native.runtimeEpoch;
+        if (!resultCurrent()) continue;
         feature.diagnostics = result.diagnostics || [];
         if (!["ok", "warning", "empty"].includes(result.status)) {
           feature.status =
             result.status === "cancelled" ? "cancelled" : "failed";
           continue;
         }
-        this.document.kernel.version =
-          (await this.native.start()).occtVersion ?? null;
-        Object.assign(
-          this.document.assets,
-          await this.native.exportAssets(outputs.map((o) => o.handle)),
+        const runtime = await this.native.start();
+        if (!resultCurrent()) continue;
+        const assets = await this.native.exportAssets(
+          outputs.map((o) => o.handle),
         );
+        // No document mutation after an await until the entire result is current.
+        if (
+          !resultCurrent() ||
+          runtime.runtimeEpoch !== this.native.runtimeEpoch
+        )
+          continue;
+        this.document.kernel.version = runtime.occtVersion ?? null;
+        Object.assign(this.document.assets, assets);
         const oldSlots = new Map(feature.outputSlots.map((s) => [s.key, s]));
         feature.outputSlots = [];
         const snapshots = [];
@@ -577,13 +658,10 @@ export class CadStore {
           entitySnapshots: snapshots,
           inputRevisionHashes: inputHashes,
         };
+        adopted = true;
         this.resolveBindings();
       } catch (error) {
-        if (
-          epoch !== this.epoch ||
-          this.getFeature(feature.id) !== feature ||
-          feature.featureRevision !== revision
-        )
+        if (!current() || canonical(inputState()) !== initialInputState)
           continue;
         const code =
           error.diagnostic?.code ||
@@ -608,8 +686,10 @@ export class CadStore {
             ]),
         ];
       } finally {
+        if (!adopted && outputs.length)
+          this.native.release(outputs.map((o) => o.handle));
         if (this.activeFeature === feature.id) this.activeFeature = null;
-        this.notify();
+        if (document === this.document && epoch === this.epoch) this.notify();
       }
     }
   }

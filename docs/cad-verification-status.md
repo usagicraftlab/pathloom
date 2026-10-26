@@ -33,7 +33,7 @@ that T19/T20 do not cover multiple Difference arguments.
 | A20 | partial | Typed ID remap unit test + real rectangle history insertion; multi-feature dependent closure E2E pending |
 | A21 | partial | browser v2 exact assets/reopen + native T25 subset; other environment/macOS portability untested |
 | A22 | partial | legacy JS/Python/browser regression suite; real GH/OS integration untested |
-| A23 | partial | R01/R02/R03 injected transport race tests; real drag load untested |
+| A23 | partial | Issue #4: document/feature/input/epoch guards through asset export; transport races17 pass, real OCCT width70→80 probe and existing browser21 pass. Actual macOS drag/load remains untested |
 | A24 | partial | explicit B-rep generation input binding browser + vault/XYZ unit tests; branch isolation/recompute preservation pending |
 | A25 | not-run | immutable command registry exists; explicit version upgrade/rollback UI pending |
 | A26 | partial | 1280x800 Library/recovery browser and reachable panels; all shortcuts/VoiceOver/drag combinations pending |
@@ -63,9 +63,9 @@ that T19/T20 do not cover multiple Difference arguments.
 | T23 | not-run | 未実装または未検証。合格としない。 |
 | T24 | passed | real negative nonplanar curve persisted; CAD browser free 3D creation |
 | T25 | partial | runtime destroyed/new instance: curve+solid exact hash/bounds/length/volume; open shell+NURBS exhaustive trim/parameter proof pending |
-| R01 | passed | cad-jobs.test.mjs: delayed old preview ignored and released |
-| R02 | passed | cad-jobs.test.mjs: unrelated revision does not discard a valid result |
-| R03 | passed | cad-jobs.test.mjs: Undo cancels old job and restores original state/revision |
+| R01 | passed | Issue #4: latest preview/export result wins, superseded handles released; late upstream evaluation/export failures cannot overwrite the latest dependent dirty state |
+| R02 | passed | Issue #4: unrelated revision retains a valid result; all queued recompute callers wait until the newest input has been evaluated |
+| R03 | passed | Issue #4: Undo/delete/Open during export cannot adopt the old result; add initialization cannot insert into a replaced document |
 | R04 | partial | Rust Session real hard-kill test passes; full Tauri/macOS recovery not run |
 | R05 | partial | Corrupt asset prepare cannot replace current document (job test); real native hash/byte rejection; full OS dialog flow untested |
 | R06 | passed | Work-order user command project reopened in fresh page after global command definitions were removed; exact geometry restored |

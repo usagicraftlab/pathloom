@@ -88,3 +88,14 @@ are not shown as fake working buttons.
 Move transform, project v2, CAD recovery file, shape/history Library with typed ID
 remapping, command-data registration, 4-stage layout and explicit body-result
 generation binding are implemented in part. See `cad-implementation-notes.md`.
+
+## Issue #4 — AUD-001 asynchronous result application
+
+The isolated `fix/4-aud-001` branch changes Store result adoption and its race
+fixtures only. Recompute/preview capture document, feature revision, exact input
+state and epochs through every asynchronous stage, including asset export.
+Superseded handles are released and every recompute caller waits for the latest
+queued pass. Imports are cached by the requested immutable asset hash.
+No command IDs, modes, geometry operators, body policies or save schemas change.
+This is shared result-integrity evidence, not completion of Difference/Split/Offset
+or any command's remaining modes. See the dated Issue #4 execution log.
