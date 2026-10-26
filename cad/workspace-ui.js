@@ -205,9 +205,27 @@ export function initModelWorkspace(api) {
         };
         if (e.kind === "curve" || e.displayCache?.preview?.meshes?.length) {
           host.append(use);
+          for (const binding of store.document.outputBindings.filter(
+            (binding) => ["split", "missing"].includes(binding.status),
+          )) {
+            const repair = document.createElement("button");
+            repair.textContent = `「${binding.name}」の生成参照をこの形状へ変更`;
+            repair.onclick = () => {
+              try {
+                store.rebindOutput(binding.id, e.id);
+                setStatus(
+                  "生成参照を修復しました。既存のノード配線を維持します。",
+                );
+              } catch (error) {
+                report(error);
+              }
+            };
+            host.append(repair);
+          }
         } else {
           const note = document.createElement("p");
-          note.textContent = "この形状はCAD内で保存・編集できます。生成入力へのadapterは未対応です。";
+          note.textContent =
+            "この形状はCAD内で保存・編集できます。生成入力へのadapterは未対応です。";
           host.append(note);
         }
         for (const [label, key] of [

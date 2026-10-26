@@ -3,7 +3,11 @@ export function resolveSubshape(ref, entity) {
   if (!entity) return { status: "missing", candidates: [] };
   const topology = entity.displayCache?.topology || [];
   let matches = [];
-  if (ref.recordedResultHash === entity.resultHash)
+  if (
+    ref.recordedResultHash === entity.resultHash ||
+    (ref.recordedAssetHash &&
+      ref.recordedAssetHash === entity.geometry?.assetHash)
+  )
     matches = topology.filter(
       (t) => t.kind === ref.kind && t.topologyId === ref.topologyId,
     );
@@ -34,6 +38,7 @@ export function makeSubshapeRef(entity, topology) {
     semanticPath: topology.semanticPath,
     topologyId: topology.topologyId,
     recordedResultHash: entity.resultHash,
+    recordedAssetHash: entity.geometry.assetHash,
     fingerprint: topology.fingerprint,
   };
 }

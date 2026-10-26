@@ -64,6 +64,8 @@ export function differenceOutputs(outputs, inputs) {
 }
 
 export function replacementRefs(feature) {
+  if (["solid.split", "surface.split"].includes(feature.operation.id))
+    return feature.inputs.targets || [];
   if (
     feature.operation.id === "solid.difference" &&
     feature.parameters.keepTools === true
@@ -114,7 +116,18 @@ export function reconcileDifferenceTools(doc, extraRefs = []) {
         !ref.kind &&
         states.has(bodyId) &&
         !f.outputSlots.some((s) => s.bodyId === bodyId)
-      )
+      ) {
+        if (["solid.split", "surface.split"].includes(f.operation.id)) {
+          const splitIntoBodyIds = f.outputSlots
+            .filter((slot) => slot.sourceEntityId === ref.entityId)
+            .map((slot) => slot.bodyId);
+          states.set(bodyId, {
+            tipEntityId: null,
+            status: splitIntoBodyIds.length ? "split" : "missing",
+            splitIntoBodyIds,
+          });
+          continue;
+        }
         states.set(bodyId, {
           tipEntityId: null,
           status:
@@ -126,6 +139,7 @@ export function reconcileDifferenceTools(doc, extraRefs = []) {
               ? f.outputSlots.map((s) => s.bodyId)
               : [],
         });
+      }
     }
   }
   for (const body of doc.bodies)

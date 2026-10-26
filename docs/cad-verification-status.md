@@ -19,7 +19,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | A05 | partial | T03/T05 solver + constrained rectangle browser; all constraint types/drag pending |
 | A06 | partial | T04 no-convergence preserves geometry and draft; not all conflict UI cases tested |
 | A07 | partial | native T10/T11 + sketch->extrude and semantic fillet browser paths; full chained generation numerical test pending |
-| A08 | partial | rounded rectangle removes old sharp edge; explicit edge reselect recovers fillet in browser; generalized mapping pending |
+| A08 | partial | Existing fillet repair plus Issue #6 Split exact source/asset identity, disappearance/candidates and explicit reselection; no ordinal/proximity remap. Generalized topology mapping pending |
 | A09 | partial | branch-local DAG invalidation implemented; full failed-branch UI scenario pending |
 | A10 | partial | T06 open Join and Explode native; branch chooser pending |
 | A11 | partial | Real native .01 rejection/.1 join + browser explicit tolerance change and persistence; no-extension numerical audit still pending |
@@ -31,11 +31,11 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | A17 | partial | Issue #5: real Difference single500/multiple1500/noncontact1000/empty0/mixed-empty results; browser checks empty history state and persistence. Broader empty-result explanation UI remains pending |
 | A18 | partial | Untrim/Offset/Reverse operators exist; actual Trim->Untrim scenario not implemented |
 | A19 | partial | Real exact-asset Library/history insertion and recovery browser flow; broader open-face/multi-shape OS cases pending |
-| A20 | partial | Typed ID remap unit test + real rectangle history insertion; multi-feature dependent closure E2E pending |
+| A20 | partial | Issue #6: typed Split source IDs, slot keys, snapshots/body candidates remapped; two independent real-OCCT history Library copies verified. Broader closure/OS matrix pending |
 | A21 | partial | Issue #5 adds two independent Difference remainders, target IDs, tool retention, fresh-page v2 reopen and mixed-empty round-trip; native new-Runtime exact-asset import. Other environment/macOS portability untested |
 | A22 | partial | legacy JS/Python/browser regression suite; real GH/OS integration untested |
 | A23 | partial | Issue #4: document/feature/input/epoch guards through asset export; transport races17 pass, real OCCT width70→80 probe and existing browser21 pass. Actual macOS drag/load remains untested |
-| A24 | partial | explicit B-rep generation input binding browser + vault/XYZ unit tests; branch isolation/recompute preservation pending |
+| A24 | partial | Issue #6: exact Split rerun preserves binding ID; changed/count results block, v2 reopen retains candidates, explicit same-kind repair preserves binding ID. Full CAD-to-G-code chain remains #9 |
 | A25 | not-run | immutable command registry exists; explicit version upgrade/rollback UI pending |
 | A26 | partial | 1280x800 Library/recovery browser and reachable panels; all shortcuts/VoiceOver/drag combinations pending |
 | A27 | partial | original UI/code, vendor notice retention, actual OCP/VTK wheel texts; full distribution/license audit unfinished |
@@ -73,7 +73,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | R07 | partial | alias collision unit test; import collision UI pending |
 | R08 | partial | Browser recovery restores real assets and history; failed feature + lastValid saved in v2; complete failed-draft restart matrix pending |
 | R09 | partial | existing representative JS fixtures + browser regressions; complete legacy asset matrix pending |
-| R10 | partial | split marks source body split/pending; explicit binding candidate UI pending |
+| R10 | partial | Issue #6: per-source Split candidates, vanished part bindings, explicit repair UI, blocked v2 reopen and independent Library copies tested. Real Tauri/macOS interaction remains untested |
 
 ## 2026-10-27 JST — Issue #5 scope
 
@@ -102,3 +102,25 @@ Do not carry the historical browser/Rust successes forward as current evidence.
 - Packaged browser: **21 passed** (7 CAD real-kernel scenarios + 14 existing regressions).
 - Rust Session: 4 passed against the extracted production transport and real Python child processes. Full Tauri/macOS compilation remains unexecuted here.
 - No real AI generation, Rhino session or printer transmission was performed.
+
+## 2026-10-27 JST — PR #28 rebase after Difference #5
+
+Rebased Issue #6 onto main `f9f4ad9e` (PR #27 merged). D02's rows/evidence and
+D04's rows/evidence are both retained; A20 uses the Split update and A21 retains
+the Difference update. Revalidation: Node24/20.20.2 each185 passed; native48
+discovered,46 passed/2 optional USD skipped; packaged browser25 passed, including
+Difference3 and Split1. The two added JS integration cases reproduce and prevent
+Difference tool-policy replay consuming Split cutters or mixing candidates from
+different Split sources. They substitute geometry transport, unlike native and
+browser geometry checks. No flaky frame assertion recurred in this local run;
+this does not establish that the existing intermittency is fixed. Details and
+previous successful/failed CI runs are separated in the execution log.
+
+## 2026-10-27 JST — Issue #6 after Offset #7
+
+Latest-base revalidation retains the D02/D04/E06 contracts: Node24/20 each185
+passed; native51 discovered/49 passed/2 optional USD skipped; packaged browser25
+passed. Issue #6's three acceptance conditions are mapped individually in the
+execution log and PR #28. All CI runs for the final head are checked separately
+before an authorized merge; known frame/notification intermittency is not
+reported as fixed. Historical no-merge instructions are superseded by the user.

@@ -1,4 +1,5 @@
 import { id, clone, references } from "./document.js";
+import { isSplit } from "./split-bindings.js";
 export function packageShapes(
   doc,
   entityIds,
@@ -46,20 +47,28 @@ export function packageShapes(
       ? clone(doc.features.filter((f) => needed.has(f.id)))
       : [],
     entities: clone(entities),
-    bodies: [
-      ...new Map(
-        selected.map((e) => [
-          e.bodyId,
-          {
-            id: e.bodyId,
-            name: e.name,
-            tipEntityId: e.id,
-            splitIntoBodyIds: [],
-            status: "ready",
-          },
-        ]),
-      ).values(),
-    ],
+    bodies:
+      withHistory &&
+      doc.features.some((f) => needed.has(f.id) && isSplit(f.operation.id))
+        ? clone(
+            doc.bodies.filter((body) =>
+              entities.some((e) => e.bodyId === body.id),
+            ),
+          )
+        : [
+            ...new Map(
+              selected.map((e) => [
+                e.bodyId,
+                {
+                  id: e.bodyId,
+                  name: e.name,
+                  tipEntityId: e.id,
+                  splitIntoBodyIds: [],
+                  status: "ready",
+                },
+              ]),
+            ).values(),
+          ],
     sketches: withHistory
       ? clone(
           doc.sketches.filter((s) =>
@@ -92,6 +101,7 @@ export function insertShapes(doc, entry) {
   )
     throw new Error("Unsupported shape library entry");
   const map = new Map();
+  const slotKeys = new Map();
   function remap(value) {
     if (!value) return value;
     if (!map.has(value)) map.set(value, id());
@@ -100,7 +110,9 @@ export function insertShapes(doc, entry) {
   const entities = clone(entry.entities);
   const features = [];
   const remapEntity = (e) => {
-    const original = e.id;
+    e.producer.slotKey =
+      slotKeys.get(`${e.producer.featureId}:${e.producer.slotKey}`) ||
+      e.producer.slotKey;
     e.id = remap(e.id);
     e.bodyId = remap(e.bodyId);
     e.producer.featureId = remap(e.producer.featureId);
@@ -109,11 +121,30 @@ export function insertShapes(doc, entry) {
   };
   if (entry.withHistory) {
     for (const f of clone(entry.features)) {
+      const originalFeatureId = f.id;
       f.id = remap(f.id);
       if (f.sketchId) f.sketchId = remap(f.sketchId);
-      for (const ref of references(f.inputs))
+      for (const ref of references(f.inputs)) {
         ref.entityId = remap(ref.entityId);
+        if (ref.candidateEntityIds)
+          ref.candidateEntityIds = ref.candidateEntityIds.map(remap);
+        if (ref.splitOrigin) {
+          ref.splitOrigin.featureId = remap(ref.splitOrigin.featureId);
+          ref.splitOrigin.entityId = remap(ref.splitOrigin.entityId);
+        }
+      }
       for (const slot of f.outputSlots) {
+        if (isSplit(f.operation.id) && slot.sourceEntityId) {
+          const oldKey = slot.key;
+          const prefix = `${f.operation.id}/${slot.sourceEntityId}/`;
+          slot.sourceEntityId = remap(slot.sourceEntityId);
+          if (!oldKey.startsWith(prefix))
+            throw new Error("Invalid Split Library slot");
+          slot.key =
+            `${f.operation.id}/${slot.sourceEntityId}/` +
+            oldKey.slice(prefix.length);
+          slotKeys.set(`${originalFeatureId}:${oldKey}`, slot.key);
+        }
         slot.entityId = remap(slot.entityId);
         slot.bodyId = remap(slot.bodyId);
       }
@@ -153,23 +184,54 @@ export function insertShapes(doc, entry) {
       });
     }
   }
-  const bodies = entities
-    .filter((e) =>
-      entry.withHistory
-        ? entry.bodies.some(
-            (b) =>
-              b.id && remap(b.id) === e.bodyId && remap(b.tipEntityId) === e.id,
+  const bodies =
+    entry.withHistory && features.some((f) => isSplit(f.operation.id))
+      ? clone(entry.bodies).map((body) => ({
+          ...body,
+          id: remap(body.id),
+          tipEntityId: remap(body.tipEntityId),
+          splitIntoBodyIds: body.splitIntoBodyIds.map(remap),
+          ...(body.replacementBodyIds
+            ? { replacementBodyIds: body.replacementBodyIds.map(remap) }
+            : {}),
+          ...(body.splitOrigin
+            ? {
+                splitOrigin: {
+                  featureId: remap(body.splitOrigin.featureId),
+                  entityId: remap(body.splitOrigin.entityId),
+                },
+              }
+            : {}),
+        }))
+      : entities
+          .filter((e) =>
+            entry.withHistory
+              ? entry.bodies.some(
+                  (b) =>
+                    b.id &&
+                    remap(b.id) === e.bodyId &&
+                    remap(b.tipEntityId) === e.id,
+                )
+              : true,
           )
-        : true,
-    )
-    .map((e) => ({
-      id: e.bodyId,
-      name: entry.name,
-      tipEntityId: e.id,
-      splitIntoBodyIds: [],
-      status: "ready",
-    }));
+          .map((e) => ({
+            id: e.bodyId,
+            name: entry.name,
+            tipEntityId: e.id,
+            splitIntoBodyIds: [],
+            status: "ready",
+          }));
   const sketches = clone(entry.sketches || []);
+  if (entry.withHistory && features.some((f) => isSplit(f.operation.id)))
+    for (const entity of entities)
+      if (!bodies.some((body) => body.id === entity.bodyId))
+        bodies.push({
+          id: entity.bodyId,
+          name: entry.name,
+          tipEntityId: entity.id,
+          status: "ready",
+          splitIntoBodyIds: [],
+        });
   for (const s of sketches) {
     s.id = remap(s.id);
     for (const p of s.points) p.id = remap(p.id);

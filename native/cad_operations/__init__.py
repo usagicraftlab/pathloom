@@ -249,14 +249,19 @@ def evaluate(op,p,inputs,tol,selectors=None):
     elif op in ('solid.split','surface.split'):
         from OCP.BRepAlgoAPI import BRepAlgoAPI_Splitter
         from OCP.TopTools import TopTools_ListOfShape
-        targets=TopTools_ListOfShape();cutters=TopTools_ListOfShape()
-        for shape in inputs.get('targets',[]):targets.Append(BRepBuilderAPI_Copy(shape).Shape())
+        sources=inputs.get('targets',[]);cutters=TopTools_ListOfShape()
         for shape in inputs.get('cutters',[]):cutters.Append(BRepBuilderAPI_Copy(shape).Shape())
-        if targets.IsEmpty() or cutters.IsEmpty():raise CadError('CAD_INPUT_MISSING','対象と切断形状を指定してください。')
-        b=BRepAlgoAPI_Splitter();b.SetArguments(targets);b.SetTools(cutters);b.Build()
-        if not b.IsDone():raise CadError('CAD_KERNEL_FAILED','形状を分割できません。')
-        result=b.Shape();parts=subshapes(result,TopAbs_SOLID if op=='solid.split' else TopAbs_FACE)
-        return [(str(__import__('uuid').uuid4()),part,{}) for part in parts]
+        if not sources or cutters.IsEmpty():raise CadError('CAD_INPUT_MISSING','対象と切断形状を指定してください。')
+        outputs=[]
+        # Evaluate each target independently: a result must retain its source,
+        # including when coincident targets have identical geometry.
+        for source_index,shape in enumerate(sources):
+            targets=TopTools_ListOfShape();targets.Append(BRepBuilderAPI_Copy(shape).Shape())
+            b=BRepAlgoAPI_Splitter();b.SetArguments(targets);b.SetTools(cutters);b.Build()
+            if not b.IsDone():raise CadError('CAD_KERNEL_FAILED','形状を分割できません。')
+            parts=subshapes(b.Shape(),TopAbs_SOLID if op=='solid.split' else TopAbs_FACE)
+            outputs.extend(('partition',part,dict(sourceIndex=source_index)) for part in parts)
+        return outputs
     elif op=='shape.section':
         from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
         from OCP.gp import gp_Pln

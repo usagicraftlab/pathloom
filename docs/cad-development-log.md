@@ -416,3 +416,265 @@ PR #2 の同ファイルにある他Issue分（Difference／Split 等）は持�
   修正を外した main 相当では新規 fixture が3件中2件失敗し、不具合の再現を確認した。
 - 汎用CAD全体への平面制約は追加していない（制約は Offset の入力検証の範囲のみ）。
 - GitHub CI の結果は PR 本文へ別途記録する。macOS GUI／実Tauri は未実施。
+
+## 2026-10-27 JST — Issue #6 / P1-03 / AUD-003（実装担当B）
+
+着手前にIssue #6本文、PR #25本文と上の完了報告を読み、GitHubでPR #25の
+`merged=true`、merge `4a22c588b233d857101086235389c35565eac5b9` を確認した。
+同じ最新mainから `fix/6-aud-003` を作成。PR #2は参考として差分を読んだが、
+一括cherry-pick・ファイル全体の採用は行っていない。#5担当Aのブランチ/PRは変更していない。
+
+### 契約と変更範囲
+
+- 対象ID：D04、P1-03/AUD-003、A08/A20/A24/R10の該当する部分。
+  入力はD04の複数targets/cutters選択・replace、nativeのsolid/surface Split、
+  entity/subshape参照、body-result生成binding、v2保存と履歴付きShape Library。
+- nativeは各targetの由来を保持し、slotを `operation/source entity ID/exact asset hash`
+  で識別する。同じ位置の複数targetも区別する。同一source/hashだけentity/bodyを継承する。
+  出力順序・ordinal・近傍・体積類似では再接続しない。由来重複/途中publish失敗時は
+  今回生成したhandleのみ解放し、入力cacheとlastValidを保持する。
+- Storeの新しいSplit専用helperにslot照合、sourceごとのbody候補、消失出力の候補更新、
+  抑制/削除時のsource復旧を集約した。cuttersは消費しない。cached再計算でも同じpolicyを使う。
+  他のSplitが同じsourceを使用している場合は、その候補を保持して元形状へ戻さない。
+- 消失entityへの参照はunresolved/blockedにし、候補を保存する。生成bindingも未解決にして
+  候補bodyを提示する。明示的な参照再選択と同型の生成参照修復で、既存binding IDを維持する。
+  unchanged exact assetのsubshapeは、featureのhashが変わっても同じtopology IDを確認できる。
+- Shape Libraryではsource ID、slot key、producer、lastValid snapshot、body候補を型付きで
+  再割当する。ユーザーのparameter文字列やasset hashは書き換えない。
+- 共通ファイルの変更は `cad/store.js` のSplit解決/採用/body/binding、
+  `cad/workspace-ui.js` の生成参照修復ボタン、`cad/references.js` のexact asset照合、
+  `cad/shape-library.js` のSplit再割当、nativeのSplit分岐とpublishの失敗片付けだけ。
+  `cad-pipeline.js` は保存検証のbinding状態に `split` を追加する1行だけ。
+  browserの共通specはAUD-003の新規1ケースを追加し、既存ケースは変更しない。
+  `cad/history.js`、Difference、Offset、Muse担当範囲、Phase 2以降、`ci.yml`は変更しない。
+
+### 互換性と継承の限界
+
+command ID、operation version、CAD schemaVersion=1、project v1/v2、正本asset形式は維持。
+sourceKeyはSplitのtargetsだけへ送り、要求hashへ含めるため、旧Splitのcacheは再評価される。
+旧UUID slotは「targetが1つ・exact asset一致が一意」の場合だけ移行する。
+複数元形状の由来不明、hash変更、消失/再出現は新しいidentityとし、参照の修復を要求する。
+OCCTの再読込後の別演算でserialization hashが変わった場合も、幾何的な類似だけで継承しない。
+生成入力の新しい `split` 状態は保存できるが、旧アプリはこの状態を含むprojectを拒否し得る。
+blocked状態を保存できることと、未解決形状を生成/G-codeへ使用できることは別である。
+既存の「使用中のbindingはreadyでなければ生成/出力しない」条件は維持した。全体経路は#9の契約。
+
+### 分離後に実行した検証
+
+環境：Linux x86_64、Node24.22.1 / Node20.20.2、Python3.12.14、OCP7.8.1.1。
+変更前のmainは `npm test` 166成功。以下は今回のブランチを再実行した値で、PR #2の数を流用していない。
+
+| コマンド / 検査 | 結果 | 範囲 |
+| --- | --- | --- |
+| `npm test` / Node24.22.1 | exit0、178成功/0失敗/0skip | 既存166＋AUD-003の12ケース。#4の17競合ケースも含む |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | exit0、178成功/0失敗/0skip | 対応Node20で同じ全JSを実行 |
+| `node --test tests/cad-split.test.mjs` | exit0、12成功 | rerun/reorder/cache、entity/body/binding、changed/count/blocked/repair、legacy、Library、subshape、handle解放、単独/並行Splitの抑制 |
+| `python -B -m unittest discover -s native -p test_cad_split.py -v` | exit0、6成功 | 実OCCTで500+500 mm³、同一結果、同形状の複数sourceと順序反転、2→3分割/合計1000 mm³、面分割/合計100 mm²、fresh Runtimeへのimport、曖昧/途中失敗のcache解放 |
+| `python -B -m unittest discover -s native -p 'test*.py'` | exit0、43検出/41成功/任意USD2skip | 既存native回帰＋今回6件 |
+| 新nativeの同一Split fixtureをmain `4a22c588` のworktreeへコピーし1件だけ実行 | 意図したexit1、同じ2分割でslot UUIDが毎回変わる | 新fixtureが修正前のAUD-003を検出することを確認。修正後は上記6件で成功 |
+
+browserはpackaged frontend、Playwright1.64.1 / Chromium153.0.8010.0を使用。
+Tauri transport、OS保存、cancelは既存fixtureの置換で、形状は実Python/OCCT。
+Chromium156/151の標準downloadは不完全zipで失敗したため、scratchのChromium153 archiveを
+展開し直した。初回の空executable/SwiftShader欠落は環境復旧であり、CIや製品の修正ではない。
+初期fixtureの厳密な浮動小数比較、生成完了前のSave、UI確定前の次操作も修正して再実行した。
+初回全体browserは既存21成功/新AUD-003 1失敗（再読込後のdialogがクリックを遮断）。
+確定完了と保存時draftなしを待った次の3回も、未処理の回復dialogにより3失敗だった。
+traceの本文を確認し、原因を既存autosaveの回復確認と特定した。最終fixtureは回復データを
+明示的に用意し、通常UIの「回復データを破棄」を操作してから保存projectをOpenする。
+回復の競合処理そのもの（#10）は変更していない。この調整後のAUD-003は3回連続成功
+（`--grep AUD-003 --repeat-each=3 --max-failures=1`、exit0、約19.3秒）。
+最終browser結果は本節末尾へ追記する。
+
+### CI間欠失敗の切り分け（ログを直接確認）
+
+| 対象/head | run / javascript-and-browser job | npm test | browser / 結論 |
+| --- | --- | --- | --- |
+| PR #26 / `59b600c8` / push | [40331402494](https://github.com/usagicraftlab/pathloom/actions/runs/40331402494) / 121601467625 | 155成功/0失敗 | 21成功、全3ジョブ成功 |
+| 同head / pull_request | [40331531188](https://github.com/usagicraftlab/pathloom/actions/runs/40331531188) / 121601906506 | 155成功/0失敗 | 19成功/2失敗、native/rust成功 |
+| PR #25 / #3反映前 `935765ca` / PRとpush | [40330634871](https://github.com/usagicraftlab/pathloom/actions/runs/40330634871) / 121598811759、[40330626820](https://github.com/usagicraftlab/pathloom/actions/runs/40330626820) / 121598783452 | 両方52報告中34成功/18失敗 | `navigator is not defined`、browser工程skip。間欠的なbrowser失敗とは別 |
+| PR #25 / `33a3b336` / pull_request | [40330298899](https://github.com/usagicraftlab/pathloom/actions/runs/40330298899) / 121597620816 | 同じnavigator読込エラー、34成功/18失敗 | browser工程skip。native/rustは完了時success |
+| PR #25 / #3反映後 `9ea12d6` / PRとpush | [40333257982](https://github.com/usagicraftlab/pathloom/actions/runs/40333257982) / 121607940046、[40333252958](https://github.com/usagicraftlab/pathloom/actions/runs/40333252958) / 121607919638 | JS工程は両方success | browserも両方success。後者run全体のcancelはrust側で、JSの失敗ではない |
+| PR #25 / `fe48190f` / PRとpush | [40333966571](https://github.com/usagicraftlab/pathloom/actions/runs/40333966571) / 121610442693、[40333959428](https://github.com/usagicraftlab/pathloom/actions/runs/40333959428) / 121610426176 | 両方166成功/0失敗 | 両方21成功、全3ジョブ成功 |
+
+PR #26失敗側の2件はログ上、次のassertionである。
+
+1. 当時の `tests/browser/cad-workspace.spec.mjs:415`、A04/R06の
+   `work-order command definition creates real geometry and persists without AI`。
+   447行目で `#modelStatus` に「登録・保存」を5000 ms待ったが、
+   「OCCT（OCP 7.8.1.1） · 正確な形状で作図できます」のまま。
+   登録操作そのものの失敗か、通知が別の状態更新に上書きされたかは、このログだけでは断定しない。
+   永続状態（登録ボタン/保存された定義）と短い通知のassertionを分けて調べる提案とする。
+2. `tests/browser/maintenance.spec.mjs:112`、`idle viewport stops frame polling and camera changes still render`。
+   115行目のaxis=top確認直後にframe数を一度だけ読み、期待>0に対して0。
+   `setAxisView`はaxisを同期更新し、描画を次のrequestAnimationFrameへ予約するため、
+   axisの確認だけでは描画完了待ちにならない。待機不足と整合する。
+   `expect.poll`でframe数/描画完了を待つ差分は分離元で#11に帰属しているため変更しない。
+
+比較した#26の両runはNode20.20.2、Python3.12.15、OCP7.8.1.1、Chromium156、
+Ubuntu24.04で依存準備を通過している。install/network/native起動失敗の証拠はなく、
+確認した失敗はbrowser assertionである。2runの同時実行が原因だという証拠もない。
+現在取得できた#25の#3反映後のペアでは、片側だけのJS/browser失敗は確認できなかった。
+
+`ci.yml`はpushとpull_request両方で起動し、concurrency groupもgithub.ref別なので、
+同一headに2runが存在すること自体は現在の設定と一致する。変更するなら、
+pushをmainだけに限定してPRでfeature branchを検証する案があるが、これは重複起動の削減案であり、
+browser assertionの修正ではない。今回、workflow/timeout/retry/既存browserケースは変更していない。
+
+### 未実施・次の開始地点
+
+macOS GUI、実Tauri IPC、OSダイアログ/保存/回復、ローカルRust、実機G-code/印刷は未実施。
+surface Splitはnative/JS fixtureの範囲で、専用UIの完成とは扱わない。
+次は本Issue専用Draft PRと照合、ユーザーのマージ指示待ち。
+#5担当Aと共通ファイルをmain上で統合するときは、Split分岐と相手のDifference分岐をそれぞれ保持し、
+両Issueのfixtureを再実行する。相手ブランチやPRに本作業から変更しない。
+mainへのマージ、Issue #6の手動クローズ、#9以降への着手は行わない。
+
+### 最終ローカル確認
+
+```sh
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/tmp/pathloom-b-chrome-runtime/chromium \
+PATHLOOM_FRONTEND_DIR=desktop-dist PATHLOOM_BREP_PYTHON=python \
+npm run test:browser
+```
+
+exit0、22成功/0失敗、約1分。新AUD-003と既存21件を同じ最終frontendで通した。
+この成功はPR #26の過去の2失敗を修正したという意味ではない。
+`node --test tests/cad-jobs.test.mjs` も17成功で、#4のguard回帰を確認した。
+`git diff --check`、資料の相対リンク、65機能台帳/14列を確認。
+共有ファイルの差分にDifference/Offset/CI/Rustの変更がないことを照合した。
+GitHub CIの今回のrunは、Draft PR作成後に別途確認する。ローカル結果でCI成功を推定しない。
+
+
+## 2026-10-27 JST — PR #28：#5反映後mainへのrebaseと統合再検証
+
+ユーザーの指示に従い、PR #27のmainへのマージ `f9f4ad9e5711182cc3bc8024ef2f9f4adbcc55b8`
+を確認し、`fix/6-aud-003` の旧head `4198b7f0c7fd74f0a5ccd710ef29fc93391f0652` を
+この最新mainへrebaseした。機械的なrebase直後のローカルheadは `39476de`。
+本節より前の#5/#6の開始地点・成功数・未マージ/Draft表現は、それぞれ実行当時の記録として保存する。
+本作業ではPRのready/Draft状態を変更せず、mainへのマージとIssue #6の手動クローズも行わない。
+マージの照合・実行はMuseの担当で、ここではpushまでとする。
+
+### 競合解消と両Issueの保持
+
+競合は `cad/store.js`、`docs/cad-development-log.md`、`docs/cad-verification-status.md`。
+
+- Storeの5つの競合hunkは、Differenceの検証・slot/body対応・工具方針と、Splitの
+  sourceKey・exact slot・入力body/candidate対応を演算ごとに残した。
+  共通のresolveはSplitのsourceKeyを渡し、Difference側の検証をその前に維持する。
+  出力適用はSplitのexact slot選択の後もDifferenceの対象body継承を残す。
+  body適用はSplit専用処理と、それ以外のreplacementRefsの分岐にする。
+- workspace UIの自動統合は、Differenceの対象/工具ラベル・工具保持checkbox・既存設定補完と、
+  Splitの明示的な生成参照修復ボタンがすべて残ることを確認した。
+- 機能台帳はD02のmain行とD04の#6行をともに保持。65行/14列を検査。
+  A/T/R台帳はA20の#6更新とA21の#5更新を採用し、他の両Issueの更新行も保持した。
+- 開発ログはmainの全内容をprefixとして保持し、その後ろへ元の#6章を全文追加した。
+  #5/#6それぞれのnative演算分岐を担当元と文字列比較し、どちらも同一であることを確認した。
+  両Issueのnative/browser fixture、Differenceのregistry/session、Splitのruntime/Library/
+  references補助処理も元の担当実装と一致し、CI/既存maintenanceケースは変更していない。
+
+### 統合時に検出した工具/切断形状の相互作用
+
+競合マーカーを両方保持するだけでは、Differenceの工具表示再評価が、後続/既存のSplitで
+使ったcuttersまで消費する組合せと、別元形状の分割先bodyを候補に混在させる組合せが残った。
+新規2件のJS回帰fixtureは、機械的なrebase後に0成功/2失敗（exit1）で両方を再現した。
+
+`cad/difference.js` の再評価対象がSplitの場合は、#6の既存契約に合わせてtargetsだけを消費し、
+分割先を同じsourceEntityIdのslotだけに限定する。Splitのcuttersは保持し、
+DifferenceのkeepToolsの意味とSplitの元形状ごとのbinding候補を両立させた。
+この修正後は同じ2件が2成功/0失敗（exit0）。#6のJS fixtureは従来12件＋統合2件＝14件。
+これはbody/参照方針のtransport fixtureであり、形状の数値的証拠とは区別する。
+
+### rebase・統合修正後の再実行結果
+
+Linux x86_64 / Node24.22.1・Node20.20.2 / Python3.12.14 / OCP7.8.1.1 /
+Chromium153.0.8010.0。最終製品コードに対して下記を実行し、結果の追記は資料だけで行った。
+
+| コマンド | 結果 | 範囲 |
+| --- | --- | --- |
+| `npm test`（Node24.22.1） | exit0、185成功/0失敗/0skip、約2.59秒 | #5/#6と統合2件、#4の17 raceを含む全JS |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | exit0、185成功/0失敗/0skip、約4.12秒 | 同じ全JSをNode20.20.2で再実行 |
+| `python -B -m unittest discover -s native -p 'test*.py'` | exit0、48検出・46成功/任意USD2skip、約3.06秒 | Difference5、Split6、既存native全体 |
+| 下記packaged browser全体 | exit0、25成功/0失敗/0skip、約1.2分 | Difference3、Split/AUD-003 1、既存CAD7/操作回帰14 |
+| 新規統合fixture2件の修正前/後 | exit1：0成功/2失敗 → exit0：2成功/0失敗 | Split cutter保持とsource別candidate保持 |
+| `git diff --check`・両側保持の照合 | exit0 | 競合markerなし、65行/14列、#5/#6ログ全文と演算/UIの保持 |
+
+```sh
+PATHLOOM_FRONTEND_DIR=desktop-dist PATHLOOM_BREP_PYTHON="$CODEX_PRIMARY_RUNTIME_PYTHON" PLAYWRIGHT_CHROMIUM_EXECUTABLE="$PWD/work/chromium-local/chromium" npm run test:browser
+```
+
+browserは実OCCTの演算・正本を使うが、Tauri transport・OS保存/回復/ダイアログは既存fixtureの
+置換である。実macOS GUI、実Tauri IPC、OS保存/回復、ローカルRust、実機プリンターは今回も未実施。
+
+### 間欠失敗の履歴との区別
+
+今回のローカルbrowser全25件のrunでは、maintenanceのフレーム数テストおよび
+A04/R06通知待ちの間欠失敗は再発していない。成功のための再試行や既存assertionの変更はしなかった。
+これは間欠失敗の修正・解消を意味しない。過去の成功/失敗は以下の別runとして保持する。
+
+- #5実装head `616a8fb8`：CI [40408830985](https://github.com/usagicraftlab/pathloom/actions/runs/40408830985) は全3ジョブ成功、browser24成功。
+- #5ログ追記head `4dae7ae6`：CI [40409476947](https://github.com/usagicraftlab/pathloom/actions/runs/40409476947) は
+  javascript-and-browser / 121875989294 が失敗。JS成功、browser23成功/1失敗。
+  既存 `maintenance.spec.mjs:115` でaxis=topの後にframe数>0を期待し、実測0。
+  #5新規3件・native・Rustは成功。製品/fixtureは前runと不変だが、前の成功をこのrunの合格としない。
+- #6旧head `4198b7f0`：push [40409763320](https://github.com/usagicraftlab/pathloom/actions/runs/40409763320) /
+  PR [40409874851](https://github.com/usagicraftlab/pathloom/actions/runs/40409874851) は全3ジョブ成功。
+  両方JS178/browser22/native41成功+任意USD2skip/Rust21成功。これもrebase後の実行結果ではない。
+
+push後の新しいCIは、このローカル再検証と別runである。未完了のCIを成功とは記録しない。
+本作業は検証結果をPR #28にも追記して、lease付きで既存ブランチを更新する。
+次の開始地点はMuseの照合とマージであり、本作業からはマージ・Issue手動クローズを行わない。
+
+
+## 2026-10-27 JST — PR #28：#7反映後の最終rebase・マージ条件確認
+
+ユーザーの新指示により、従来の「pushまで・マージ待ち」は廃止された。以下の条件を満たしたら
+CodexがReady化・マージコミット方式でマージし、Closes #6の自動クローズを確認する。
+過去の未マージ/Draft表現は当時の履歴として保持する。Issueを手動クローズしない。
+
+最新mainはPR #27/#29反映済み `225e1774f2e2de7fb44a3db23ea9a16e5799fc6a`。
+旧head `81dae90e` をrebaseした。競合は開発ログの追記位置1箇所のみで、#7章と
+#6章/前回rebase記録を全文残した。Store/UI/台帳のD02/D04、nativeのDifference/Split/Offsetを
+比較し、それぞれの変更が保持されることを確認。#7のOffset fixture3件も新しい全件検証へ含めた。
+
+### Issue #6本文の完了条件との対応
+
+| 完了条件 | 実装と再確認した証拠 |
+| --- | --- |
+| 不要な再計算・同一Splitで同一出力の参照を失わない | exact source+asset slot。cad-splitのnative rerun/reorder/cache fixture（solid/surface）と実OCCT反復fixture、browser AUD-003 |
+| 形状変更時にordinal/近傍だけで別結果へ結ばない | changed same-count/legacy ambiguity/exact part subshape fixture。変更した正本には新ID、既存参照はblocked、明示修復だけを受け付ける |
+| 分割数変更・保存後も正しく継承またはblocked | count changes/restore/Library二重コピーfixtureとbrowserのv2 reopen・候補保持・明示binding修復。binding ID維持を確認 |
+
+### 今回のローカル全再検証
+
+| 実行コマンド | 結果 |
+| --- | --- |
+| `npm test` / Node24.22.1 | exit0、185成功/0失敗/0skip、約2.85秒 |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | exit0、185成功/0失敗/0skip、約4.43秒 |
+| `python -B -m unittest discover -s native -p 'test*.py'` | exit0、51検出・49成功/任意USD2skip、約3.26秒 |
+| `PATHLOOM_FRONTEND_DIR=desktop-dist PATHLOOM_BREP_PYTHON="$CODEX_PRIMARY_RUNTIME_PYTHON" PLAYWRIGHT_CHROMIUM_EXECUTABLE="$PWD/work/chromium-local/chromium" npm run test:browser` | exit0、25成功/0失敗/0skip、約1.2分 |
+| `git diff --check`・両側保持確認 | exit0。D02/E06台帳行、D02/D04/Offset native分岐、3章のログを保持 |
+
+ブラウザはDifference3件/Split1件/既存21件を実OCCTで確認。#4のrace17件も全JSに含む。
+Tauri transportとOS保存/回復は置換。実macOS GUI・実Tauri IPC・OSダイアログ・
+ローカルRust・実プリンターは未実施であり、今回の成功として扱わない。
+
+### CI履歴の照合・マージゲート
+
+旧head `81dae90e` の [push 40414618488](https://github.com/usagicraftlab/pathloom/actions/runs/40414618488) と
+[PR 40414624307](https://github.com/usagicraftlab/pathloom/actions/runs/40414624307) は両方全3ジョブ成功。
+APIのPR専用取得だけで済ませず、同一headのpush/PR全runを公開APIで列挙して照合した。
+これは今回の#7反映後headの成功とは別の履歴である。
+
+#7の同一head `c4eb8ed0` ではPR [40414667194](https://github.com/usagicraftlab/pathloom/actions/runs/40414667194) が成功、
+[40414630011](https://github.com/usagicraftlab/pathloom/actions/runs/40414630011) が失敗。後者のjob121894327764の
+ログを今回直接読み、browser23成功/1失敗、maintenance.spec.mjs:115のframe>0に対して0であることを確認した。
+推測だけで既知失敗と分類したのではない。今回のローカル25件では再発していないが、修正済みとはしない。
+保存通知待ちとフレーム待ちの修正は、ユーザー指定どおり#11で扱う。
+
+この再base後headでもpush/PRの全CI runを確認し、結果をPR #28本文の最新run表へ記録してからマージする。
+未知の失敗ならマージせずIssue #6へ報告して停止する。既知の間欠失敗も成功runに置き換えない。
+現段階はローカル実測であり、未完了の新CIを成功とは記録しない。
+
+台帳はD02/E06のmain行とD04の更新を保持。A/T/Rの#5/#6両方の証拠も維持した。
+本節以後のCI結果とマージ後の自動クローズ確認は、PR #28本文とIssue #6の完了報告に記録する。
