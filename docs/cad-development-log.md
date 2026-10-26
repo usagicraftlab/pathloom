@@ -246,3 +246,37 @@ Issue #4のhead `33a3b33629ed7126eb8ca065829793c82e04dcc1` に対する
   全166件を実行・成功した結果ではない。
 - native-cad / 121597621275：成功。指定OCP7.8.1.1、37件中35成功/2 optional USD skip、約1.68秒。
 - rust-and-macos / 121597621311：確認時はcargo test進行中。完了・成功としては記録しない。
+
+## 2026-10-26 JST — Issue #4：#3先行反映後のrebaseと全JS再検証
+
+ユーザー指定の反映順に従い、PR #26（#3）のmain取り込みを確認してから、
+`fix/4-aud-001`の2コミットをmain `f87a19562c62d5f76f1e3b2ee5237ccbfe383b23`上へrebaseした。
+PR #26のマージとIssue #3のクローズはGitHub上の状態として確認したもので、
+この分離・検証作業からマージ操作やIssueの手動クローズは実行していない。
+
+再検証したheadは`9ea12d6bf1867dfa85d1e188ba2e65dce95d0e10`。
+旧`33a3b336`→`03dc4e51`、旧`935765ca`→`9ea12d6b`へ載せ替えた。
+mainとの差分は従来の5ファイル・+434/-61のままで、
+旧headと比較した製品・テスト・既存資料の内容は不変。mainから継承したClipper補完だけが異なる。
+本節の追記は検証記録だけの変更である。
+
+| コマンド / 検査 | 結果 | 範囲 |
+| --- | --- | --- |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | exit0、166成功/0失敗/0skip、約3.57秒 | #3反映後の全JS。#4の17競合fixtureを含む |
+| `node --test tests/*.test.mjs`（Node24.22.1） | exit0、166成功/0失敗/0skip、約2.58秒 | 同じ全JSを別の対応Node版で再実行 |
+| `git diff --check`、rebase前後の内容比較 | exit0。旧headとの差分は`vendor/clipper/clipper-env.js`のみ | #3はmainから継承し、#4自身の差分へ混ぜない |
+
+Node20全体の保留は解除した。上の旧失敗記録は#3反映前の履歴として残す。
+rebase後の[CI run 40333257982](https://github.com/usagicraftlab/pathloom/actions/runs/40333257982)
+は全3ジョブが成功した。
+
+- javascript-and-browser / 121607940046：Node20の全166件成功、browser全21件成功。
+- native-cad / 121607940281：37件検出、35成功/2 optional USD skip、約1.69秒。
+- rust-and-macos / 121607940191：Rust21件成功、frontend準備・コンパイル・単体テスト成功。
+  このPRはmacOS .app/.dmg生成ステップを追加していない。
+
+PR #26単体のbrowserは別runで19成功/2失敗だった。このrunの成功を過去の失敗の
+原因解明や修正完了の証拠に置き換えず、コマンド保存通知とidle viewport描画の失敗記録は
+PR #26に残している。本作業で当該テストの変更や再試行による合格化は行っていない。
+macOS GUI/実Tauri IPC/OS保存・回復は本作業では実施していない。
+PR #25はユーザー承認までDraft・未マージを維持する。
