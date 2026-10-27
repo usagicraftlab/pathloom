@@ -124,3 +124,25 @@ passed. Issue #6's three acceptance conditions are mapped individually in the
 execution log and PR #28. All CI runs for the final head are checked separately
 before an authorized merge; known frame/notification intermittency is not
 reported as fixed. Historical no-merge instructions are superseded by the user.
+
+## 2026-10-27 JST — Issue #31 / instruction 003: Difference browser fixture
+
+The D02/T19/T20 and v2 save/reopen scenarios retain their existing geometry,
+identity, tool-policy and history assertions. A natural 15-case diagnostic run
+showed 13 passes and two distinct fixture failures: an old page's post-teardown
+import entered the next test's FIFO queue and consumed its hello reply; a valid
+recovery confirmation also blocked a later click after reload. The fixture now
+owns its daemon and ID-keyed requests per test, waits for teardown and explicitly
+handles seeded recovery before opening the saved project. The original three
+scenarios repeated five times pass all 15 without retries or longer timeouts.
+This is test-lifecycle evidence, not a new product implementation or completion
+of other A/T/R rows, macOS GUI/IPC/OS dialogs, or known maintenance intermittency.
+Full-suite results and the exact observed request sequence are in the execution
+log; final-head CI runs and merge confirmation are recorded in the Issue #31 PR.
+
+Final local evidence for this fixture-only change: Node24 and Node20.20.2 each
+185 passed/0 failed/0 skipped; native51 discovered,49 passed/2 optional USD skips;
+packaged browser25 passed/0 failed/0 skipped, including Difference3 and Split1.
+The repeated Difference scenarios also pass 15/15 without retries. Actual
+macOS GUI/Tauri IPC/OS dialogs and local Rust remain unexecuted; CI is recorded
+separately rather than substituted for those checks.
