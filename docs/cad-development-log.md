@@ -996,3 +996,56 @@ assertion・timeoutは変更していない。新しいローカル検証
 以前の指示004で取得した再現証拠を、今回実行した検証と混同しない。
 Draft PRのCI結果は確認後にPR本文とボードへ記録する。修正完了・Ready化・
 マージ・Issue自動クローズは未実施であり、この準備を完了条件の達成と扱わない。
+
+
+## 2026-10-27 JST — 指示007 / Issue #34：原因側の修正案と第2停止点
+
+ユーザーの「続けてください」で同じbranch/PR #35を再開。今回は原因特定・
+修正案と対象検証までで再び停止する。004の再開・Ready化・マージはしない。
+
+実測：Section右側直線の開始parameter=-5.999999999062311e-7、
+評価点Y=-17.0000006に対し、共有する位相頂点はY=-17、
+vertex toleranceは約1.0000000071e-6 mm。曲線のパラメータ端を別々に
+polylineへ足していたため、微小折返しが生成された。出力検証が不正な
+polylineを拒否しているので、検証側を緩めない。
+
+修正案：slice_brepの曲線サンプル列の両端だけを向き付きFirstVertex/LastVertexの
+座標へ揃える。内部サンプル、B-rep、断面高さ/許容差、dedup閾値、JS交差判定、
+丸め、assertion/timeoutは変更しない。B-rep hashは修正前後で
+3a68ff555efce4f349936b1a378c10d0129f600834cea730c659249c31a98ea5のまま。
+42 pathsを維持し、第1層41点→37点、全層最短segmentは約6e-7→0.40256835 mm。
+同じ既存validateOutputが生断面・小数6桁化後とも成功する。
+
+今回のローカル対象検証（Linux/Node24.22.1/Python3.12.14/OCP7.8.1.1）：
+
+| 実行 | 結果 |
+| --- | --- |
+| 追加native回帰2件、修正前 | 1成功/1失敗。約6e-7 mmの短いsegmentを再現、約0.877秒 |
+| 同じ2件、修正後 | 2成功、失敗/skip0、約1.095秒 |
+| native/test_occt_brep_bridge.py 全件 | 20成功、失敗/skip0、約1.573秒。native全件ではない |
+| node --test tests/open-print-output.test.mjs tests/print-intro.test.mjs tests/cad.test.mjs | 21成功、失敗/skip0、約0.507秒 |
+| 追加browser1件の初回 | 生成は成功したがZ0.600を文字列Z0.6で期待して失敗、約11.54秒 |
+| 同browserの数値表記訂正後 | 1成功、失敗/skip/retry0、約10.77秒（runner11.79秒） |
+| 生断面/小数6桁化後の出力検証 | 修正前はZero-length/Intersecting、修正案は両方成功 |
+| 構文・git diff --check | 成功 |
+
+Browserは旧fixtureのCAD daemonを使い、追加した当該テスト内だけで実native
+occt_brep_bridge.pyのslice IPCと取消を代替。normal v2 projectで生成配線だけを
+seedし、edge長64/bbox・同一B-rep hash・42 paths・全42層のG-codeを確認した。
+fixtureのedge条件、assertionの意味、timeout/retryを緩和していない。初回の
+表記失敗は数値で全層を比較する検証へ訂正し、成功結果と区別する。
+
+S05/D05の証拠欄とA/T/R台帳に対象結果と残件を追記し、既存partialや未実施を
+promoteしない。ローカルNode24全JS、Node20.20.2全JS、native全件、browser全件、
+実Mac GUI/Tauri IPC/OS dialog/実機プリンター、ローカルRustは未実施。
+全検証前の第2停止点として残し、Ready/merge/Issue自動closeは未実施。
+
+準備head46f7daedb7ac234baadbf63e1d22baca9901f87dのCIは、push40506774872・
+PR40506779845ともattempt1 success。各runのログでNode20.20.2 JS192成功、
+native51検出=49成功/2skip、Rust21成功、browser32成功を確認した。
+製品修正前の結果であり、修正headのCI結果は確認後にPR本文とボードへ別記する。
+
+生ログ/JSON/trace：work/board-verification/007/のnative-red.log、native-green.log、
+native-bridge.log、js-guards.log、endpoint-comparison.json、junctions.json、
+section-target.json/log/traceとsection-target-numeric.json/log。文書patchの初回は
+文脈行不一致で適用されず、実際の行を読み直して適用した。製品/検証失敗とは区別する。

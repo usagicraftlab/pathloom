@@ -181,3 +181,31 @@ and ran no tests; the expanded-file retry is the successful 192-case execution.
 Full commands, source identities, helper-check corrections and limits are in
 the development log. Final-head CI runs and merge/auto-close confirmation are
 recorded separately in PR #30 and the board after they actually occur.
+
+
+## 2026-10-27 JST — Issue #34 targeted section evidence (second checkpoint)
+
+The native section adapter now takes oriented topological vertices as edge
+endpoints. In the 70×40 rounded-R3 Rectangle→Extrude25→bottom-edge Fillet R2
+fixture, an extended line parameter introduced a ~6e-7 mm backwards segment
+within OCCT vertex tolerance. This was a generated-polyline defect, not a reason
+to relax output validation. Interior samples, CAD B-rep, output rounding and all
+validation tolerances remain unchanged. The same B-rep hash and 42 layers now
+pass both raw and six-decimal output validation.
+
+New native tests first reproduced the short-segment failure (1 pass/1 fail),
+then passed 2/2 after the adapter change. All 20 tests in test_occt_brep_bridge.py
+pass, including periodic/curved and open sections. Three existing Node24 test
+files pass 21/21, retaining genuine crossing/zero-length/intro-collision rejection.
+The new packaged-browser fixture verifies the same length-64 bottom edge and
+B-rep hash, actual OCCT sections, 42 output paths and G-code for all 42 Z levels.
+Its first run failed on 0.6 versus 0.600 text formatting; a numerical comparison
+of all 42 layers passes on re-run (1 pass, no failure/skip/retry). The initial
+failed run remains in the PR and development log.
+
+These are targeted results, not local full-suite completion. Node24 all JS,
+Node20.20.2 all JS, native all and browser all remain unrun locally for this
+change. The two successful preparation-head CI runs have 192 JS, native49/2skip,
+Rust21 and browser32 each, and do not validate the later product change.
+No A/T/R status is promoted here. In particular, #9 reference-loss recovery
+remains outside #34, and actual macOS IPC/dialogs/printer were not exercised.

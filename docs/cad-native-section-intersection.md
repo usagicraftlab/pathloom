@@ -1,6 +1,6 @@
 # 指示007 / Issue #34：native断面出力の交差エラー
 
-2026-10-27 JST。修正前の再現記録を保存する準備段階。
+2026-10-27 JST。原因特定・修正案と対象検証まで進めた第2停止点。
 対象Issue: https://github.com/usagicraftlab/pathloom/issues/34
 
 ## 範囲と現状
@@ -11,8 +11,8 @@ base mainは`5defb1778f2058940c0d54e91b747d7ef8b2a71c`、
 treeは`c302dc84bbca55e88bcce057a61bfc6bd906a8c1`。
 Issue #9のStore・CAD binding・graph更新の差分は取り込まない。
 
-ユーザーの指示に従い、Issue・専用branch・Draft PRと再現記録の準備までで一度停止する。
-この段階では製品コードや検証条件を変更せず、新しい検証も実行していない。
+第1停止点ではIssue・専用branch・Draft PRと再現記録の準備までで停止した。
+ユーザーの「続けてください」を受け、原因特定・修正案・対象検証まで実施し、再び停止する。
 指示004の再開は今回の作業範囲に含めない。
 
 ## 固定する再現条件
@@ -51,23 +51,69 @@ Issue #9のStore・CAD binding・graph更新の差分は取り込まない。
   `cad-pipeline.js`はともに
   `f2b9b912fa6928479f457dc4197905146346fb9fd4046c2b94c22d1f9c7eee0d`。
 
-これらは既存mainで再現する証拠であり、根本原因の分類が完了したという主張ではない。
-nativeの離散化・接続と、出力側の丸め・交差検証のどこに原因があるかを次段階で確定する。
+この節は修正前の証拠を保持したもの。根本原因と修正案は次節に記す。
 
-## 次の段階で確認すること
+## 根本原因と修正案（22:12 JSTまでの実測）
 
-- 同じ形状・edge条件の再現を回帰検証として固定する。
-- 実交差／丸め精度を含む検証の誤検出を証拠で切り分ける。
-- 原因側の最小限の修正と、本来の交差・無効出力の拒否を両立する。
-- 同じ形状から断面→toolpath→G-code生成まで確認する。
-- Node24のnpm test、Node20.20.2全JS、native全件、browser全件を実行する。
-- CIの全run/attemptを確認し、失敗・skip・未実行も保持する。
-- 機能台帳・A/T/R台帳・開発ログを更新する。
-- 全条件成立後のみReady化・merge commit・Issue自動クローズを確認する。
+原因はnativeの断面edgeをpolylineへ変換する際の端点接続にある。
+第1層の右側直線では開始parameterが`-5.999999999062311e-7`、評価したY座標が
+`-17.0000006`だった。一方、前のBSplineと共有する位相頂点のY座標は正確に`-17`、
+頂点の許容差は約`1.0000000071e-6` mmだった。許容差内で伸びた曲線端点を
+前のedgeの端点と別々に加えていたため、約6e-7 mmの折返しがpolylineに入る。
+形状自体はvalidだが、生成されたpolylineは不正であり、出力検証はこれを拒否している。
+小数6桁化はこの不整合の現れ方を変えている。
 
-## この準備段階の検証状態
+`slice_brep`で、サンプル列の両端を`TopExp.FirstVertex/LastVertex(edge, True)`の
+座標へ揃える。`True`でedgeの向きを考慮し、内部の曲線サンプルは保持する。
+実際の共有頂点を継ぎ目に使い、余分な端点を足さない。
+交差判定・丸め・許容差・dedup閾値・assertion・timeoutは変更しない。
 
-Node24全JS、Node20.20.2全JS、native全件、browser全件：未実行。
-実機確認：未実行。修正：未実施。マージ：未実施。
-Draft PR作成に伴うCIは、実際に開始・確認した結果をPR本文とボードへ追記する。
-過去の指示004の部分検証やCIを本Issueの修正検証として流用しない。
+位相APIの根拠：OCCTの[TopExp](https://www.occt3d.com/dev/doc/refman/html/class_top_exp.html)
+は向きを考慮した端点取得を提供し、
+[WireExplorer](https://www.occt3d.com/dev/doc/refman/html/class_b_rep_tools___wire_explorer.html)
+は接続順にwireをたどる。実測はOCP7.8.1.1で行った。
+
+| 観測 | 修正前 | 修正案 |
+| --- | --- | --- |
+| B-rep hash | `3a68ff555efce4f349936b1a378c10d0129f600834cea730c659249c31a98ea5` | 同一 |
+| paths数 | 42 | 42 |
+| 第1層の点数 | 41 | 37 |
+| 全層中の最短segment | 約5.99999989e-7 mm | 約0.40256835 mm |
+| 生断面の既存validateOutput | Zero-length segment | 成功 |
+| 小数6桁化後の既存validateOutput | Intersecting output curves | 成功 |
+
+## 第2停止点の対象検証
+
+- 追加native回帰2件の修正前：1成功/1失敗。失敗は同じ約6e-7 mmのsegment。
+- 同じ2件の修正後：2成功。開いたfaceの断面を閉じないことも確認。
+- native bridgeの既存・追加20件：20成功、失敗/skip0。
+  Box/Cylinder/Coneの断面を含む。この20件をnative全件とは扱わない。
+- Node24の既存`cad.test`/`open-print-output.test`/`print-intro.test`：21成功、失敗/skip0。
+  実交差・ゼロ長・Intro衝突の拒否を維持。Node24全JSとは扱わない。
+- 追加browser1件：同じ長さ64の下端edgeとB-rep hash、42 paths、全42層のG-codeを確認して成功。
+  最初の1回はZ表記`0.600`を`0.6`の文字列で期待したテスト側の失敗。
+  全42層を数値で比較する検証へ訂正し、再実行は1成功/0失敗/0skip/0retry（約10.77秒）。
+  Tauri IPCと保存先だけを代替し、CAD/native断面/worker/出力検証/G-codeは実コードを使用。
+- `git diff --check`、browser spec構文確認：成功。
+
+ログ/JSONは`work/board-verification/007/`に保存。初期失敗もPRとボードに保持する。
+
+## Issue完了に必要なこと
+
+- [x] 同じ形状・edge条件の再現を回帰検証として固定する。
+- [x] 実交差／丸め精度を含む検証の誤検出を証拠で切り分ける。
+- [x] 原因側の修正案と、本来の交差・無効出力の拒否を両立する。
+- [x] 同じ形状から断面→toolpath→G-code生成まで対象検証で確認する。
+- [ ] Node24のnpm test、Node20.20.2全JS、native全件、browser全件を実行する。
+- [ ] CIの全run/attemptを確認し、失敗・skip・未実行も保持する。
+- [ ] 機能台帳・A/T/R台帳・開発ログを最終結果へ更新する。
+- [ ] 全条件成立後のみReady化・merge commit・Issue自動クローズを確認する。
+
+## 全件検証前の状態
+
+Node24全JS、Node20.20.2全JS、native全件、browser全件：ローカル未実行。
+実機確認、Ready化、マージ、Issue自動クローズ：未実施。
+準備headのpush/PR CIは両方attempt1 success（JS各192成功、native各49成功/2skip、
+Rust各21成功、browser各32成功）。これは製品修正前の結果であり、修正headの検証とは分ける。
+修正headのCIは開始後の実際の結果をPR本文とボードへ追記する。
+全件検証と最終判定の前に、ユーザー指定の第2停止点で待機する。
