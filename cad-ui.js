@@ -81,7 +81,7 @@ export function initCad(api){
   }
   function replace(next){definition=validateDefinition(next);render();queueGenerate()}
   function newGenerator(){idleWorker?.terminate();idleWorker=null;document.dispatchEvent(new Event('pathloom:ai-dismiss'));chat?.cancel();cancelJob();setDrawing(false);sourceId=null;generationError=null;generatorKey=`cad:${crypto.randomUUID()}`;definition=geometryDefinition(DEFAULT_DEFINITION);history=[];historyIndex=-1;inputUi.restoreSelection('section');render();generate()}
-  function selectGenerator(id){const source=api.sources().find(s=>s.id===id);if(!source?.generator||id===sourceId)return;if((source.generatorGroup||source.liveSource)===generatorKey){sourceId=id;drawInputs();return}idleWorker?.terminate();idleWorker=null;document.dispatchEvent(new Event('pathloom:ai-dismiss'));chat?.cancel();cancelJob();clearStage(true);setDrawing(false);sourceId=id;generationError=source.generationError||null;generatorKey=source.generatorGroup||source.liveSource||`cad:${id}`;definition=migrateDefinition(source.generator);history=[];historyIndex=-1;remember();render();drawInputs();status('');syncPrintInputs()}
+  function selectGenerator(id){const source=api.sources().find(s=>s.id===id);if(!source?.generator||id===sourceId)return;if((source.generatorGroup||source.liveSource)===generatorKey){sourceId=id;drawInputs();return}idleWorker?.terminate();idleWorker=null;document.dispatchEvent(new Event('pathloom:ai-dismiss'));chat?.cancel();cancelJob();clearStage(true);setDrawing(false);sourceId=id;generationError=source.generationError||null;generatorKey=source.generatorGroup||source.liveSource||`cad:${id}`;definition=migrateDefinition(source.generator);history=[];historyIndex=-1;remember();render();drawInputs();status('');if(generationError?.startsWith('CAD input ')){syncPrintInputs(false);generate(false)}else syncPrintInputs()}
   inputUi=initInputUi({curveAttributes:()=>pending?{}:curveDataAttributes,definition:()=>definition,saveComponent:id=>openComponentSave(id),isSavedComponent:step=>isSavedComponent(step),layoutChanged:editor=>{definition.editor=editor;api.setEditorState(sourceId,editor)},editWithAi:id=>{setMode('generate');chat?.editStep(id)},previewStep,previewStepId:()=>selectedStep,sourceId:()=>sourceId,replace,changed:queueGenerate,redraw:drawInputs,visibilityChanged:input=>api.setInputVisibility(sourceId,input.id,input.visible),error:message=>api.toast(message,'error'),toast:message=>api.toast(message),printSettings:api.printSettings,printLinks:api.printLinks,setPrintLink:(target,key,on)=>api.setPrintLink(target,sourceId,key,on)});
   function syncPrintInputs(recalculate=true){const values=api.printSettings();let changed=false;for(const input of definition.inputs)if(input.printSetting&&Number.isFinite(values[input.printSetting])&&input.value!==values[input.printSetting]){input.value=values[input.printSetting];input.min=Math.min(input.min,input.value);input.max=Math.max(input.max,input.value);changed=true}if(changed){inputUi.syncValues();if(recalculate)queueGenerate()}return changed}
   document.addEventListener('input',event=>{if(Object.hasOwn(api.printSettings(),event.target.id))syncPrintInputs()});document.addEventListener('pathloom:print-links-changed',()=>syncPrintInputs());
@@ -207,6 +207,22 @@ export function initCad(api){
     try{await saveAiRecipes(clone(next),before)}catch(error){return {warning:`Library: ${error.message}`}}
   }});
 
-  window.PathloomCad={upsertCadBinding({bindingId,status,input}){api.syncCadBinding({bindingId,status,input});const next=clone(definition),i=next.inputs.findIndex(i=>i.cadBinding?.id===bindingId);if(input){if(i<0){next.inputs.push(input);replace(next)}else{const old=next.inputs[i];next.inputs[i]={...old,...input,name:old.name,visible:old.visible,exposed:old.exposed};if(cadInputUsed(next,old.id))replace(next);else{definition=next;api.syncCadInput(sourceId,next.inputs[i]);inputUi.refresh();drawInputs()}}}else if(i>=0){next.inputs[i].cadBinding.status=status;definition=next;api.syncCadInput(sourceId,next.inputs[i]);if(cadInputUsed(next,next.inputs[i].id))api.invalidate(sourceId,`CAD input ${next.inputs[i].name}: ${status}`);inputUi.refresh()}},liveContext:()=>`${generatorKey}:${liveEpoch}`,upsertRhinoBrep(payload,shape){const next=updateRhinoInput(definition,payload,shape);inputUi.clearSurfaceSelection();replace(next)},snapshot:()=>({sourceId,selectedInputId:inputUi.selectedId(),previewStepId:selectedStep,mode:workspaceMode,chat:chat.snapshot()}),isProcessing:()=>workspaceMode!=='output'&&!$('cadPanel').hidden,refreshInputs:drawInputs};
+  window.PathloomCad={
+    upsertCadBinding({bindingId,status,input,connect=true}){
+      api.syncCadBinding({bindingId,status,input});
+      const next=clone(definition),i=next.inputs.findIndex(i=>i.cadBinding?.id===bindingId);
+      if(i<0){if(input&&connect){next.inputs.push(input);replace(next)}return}
+      const old=next.inputs[i],used=cadInputUsed(next,old.id);
+      if(input){
+        const changed=old.cadBinding.status!==status||old.cadBinding.resultHash!==input.cadBinding.resultHash;
+        next.inputs[i]={...old,...input,name:old.name,visible:old.visible,exposed:old.exposed};
+        if(used&&changed){replace(next);return}
+      }else next.inputs[i].cadBinding.status=status;
+      definition=next;api.syncCadInput(sourceId,next.inputs[i]);
+      if(!input&&used){definitionVersion++;chat?.discard();cancelJob();markPending(`CAD input ${old.name}: ${status}`)}
+      inputUi.refresh();if(input)drawInputs();
+    },
+    liveContext:()=>`${generatorKey}:${liveEpoch}`,upsertRhinoBrep(payload,shape){const next=updateRhinoInput(definition,payload,shape);inputUi.clearSurfaceSelection();replace(next)},snapshot:()=>({sourceId,selectedInputId:inputUi.selectedId(),previewStepId:selectedStep,mode:workspaceMode,chat:chat.snapshot()}),isProcessing:()=>workspaceMode!=='output'&&!$('cadPanel').hidden,refreshInputs:drawInputs,
+  };
   render();updateUndo();api.lockPreview(true);loadLibrary();generate();
 }

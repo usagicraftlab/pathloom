@@ -1,4 +1,35 @@
 import { id } from "./document.js";
+import { cadInputUsed } from "../cad-pipeline.js";
+
+export function syncCadBindingSources(sources, { bindingId, status, input }) {
+  const values = [...sources];
+  const group = (source) => source.generatorGroup
+    ? `group:${source.generatorGroup}`
+    : `source:${source.id}`;
+  // Outputs of one graph can share the very same definition object. Capture
+  // every old state before mutating any input, then invalidate the whole group.
+  const targets = values.flatMap((source) => {
+    const target = source.generator?.inputs?.find((i) => i.cadBinding?.id === bindingId);
+    if (!target) return [];
+    return [{ source, target, used: cadInputUsed(source.generator, target.id),
+      changed: target.cadBinding.status !== status ||
+        !!input && target.cadBinding.resultHash !== input.cadBinding.resultHash }];
+  });
+  const dirty = new Map();
+  for (const { source, target, used, changed } of targets) {
+    if (used && changed)
+      dirty.set(group(source), `CAD input ${target.name}: ${status === "ready" ? "updated; select this graph to recalculate" : status}`);
+  }
+  for (const { target } of targets) {
+    if (input) Object.assign(target, structuredClone({ ...input,
+      name: target.name, exposed: target.exposed, visible: target.visible }));
+    else target.cadBinding.status = status;
+  }
+  for (const source of values)
+    if (source.generator && dirty.has(group(source)))
+      source.generationError = dirty.get(group(source));
+}
+
 export function bindBody(doc, entity) {
   const found = doc.outputBindings.find(
     (b) => b.source.mode === "body-result" && b.source.bodyId === entity.bodyId,

@@ -975,3 +975,94 @@ JSON集計もexpected32/unexpected0/skipped0/flaky0、errors=[]で一致する�
 別の履歴としてPR本文に保持する。最新mainへrebaseした新headの全CI、Ready化、
 マージコミットとIssue #8自動クローズの結果はPR本文とボードへ実際の確認後に記録する。
 この段階のログだけでCI成功やマージ完了とは扱わない。#9/#10へは先行着手しない。
+
+## 2026-10-27 JST — 指示004 / Issue #9 — 更新追従と失敗復旧（要判断）
+
+契約はIssue #9の3完了条件。指示004をrevision guard付きで未着手→作業中へ変更し、
+読戻し確認後に開始した。依存Issue #4〜#7はclosed。開始時mainは
+`5defb1778f2058940c0d54e91b747d7ef8b2a71c`、treeは
+`c302dc84bbca55e88bcce057a61bfc6bd906a8c1`。このtreeと照合した独立checkoutで
+専用branch `fix/9-cad-generation-recovery` を使用する。既存の#9用branch/PRはなかった。
+#10/#11は予約であり着手しない。
+
+### 修正前の証拠
+
+実OCPのRectangle→Extrude→FilletをUIで作成し、通常v2プロジェクトfixtureで
+そのbody binding→Slice STEP→Build Toolpathを配線する。断面計算もTauri transportだけを
+置換し、実際の`native/occt_brep_bridge.py`をRustのslice_step_brepと同じaction/引数で呼ぶ。
+生成worker、出力検証、G-codeはアプリの実装を実行する。
+
+- 最初の有効fixtureによる3件：1成功/2失敗、exit1、約65.51秒。
+  寸法60→80、Extrude体積60000→80000、semantic edgeを再選択しないFillet追従、
+  実断面とG-code幅60→80は成功した。1失敗はFilletがCAD_REFERENCE_MISSINGでfailedなのに
+  body-result bindingがreadyとなるもの。もう1失敗はテスト初期化で非表示の旧Newボタンを
+  クリックしたfixtureの45秒停止で、製品不具合には数えない。
+- 初期化を既存handler呼出しに直して対象2件を再診断：2失敗、exit1、約27.41秒。
+  失敗FilletにはlastValidが残っている一方、同じbodyのtipとbinding.resolvedProducerが
+  上流のExtrudeへ戻っていた。更新されたExtrudeをreadyとして渡し、下流の失敗を飛ばしていた。
+  添付JSONにはRectangle/Extrude/Filletの同じbodyIdと各slot、failed/readyの矛盾を記録した。
+  別の正常グラフには無関係なcad-* inputが自動追加され、非アクティブな更新グラフを
+  表示どおり選択しても再計算が始まらず、G-codeは`updated; select this graph to recalculate`
+  のまま停止した。
+
+証拠は`work/board-verification/004/baseline-product.json`、`baseline-details.json`と
+対応するartifact/trace。添付missing-reference-state/inactive-graphsはJSON reporterにも保持。
+失敗のassertionを削除せず、独立したグラフ状態の比較はsoft assertionで全て検査し、
+一つでも不一致があればcase自体を失敗とする。
+
+### 現在の修正範囲
+
+- Storeのbody tipを、再計算途中の上流ではなく有効な履歴末尾slotへ揃える。
+  末尾がdirty/running/blocked/failed/cancelledならlastValidをreadyへ昇格させない。
+  suppressedは除外し、missing/splitのbodyを旧slotから復活させず、Curve/B-rep両方向の
+  型不一致をtype-changedにする。G-code生成直前にもbindingを解決する。
+- CAD参照がpending等になった場合、生成/preview workerと予約を中断し、前回形状を
+  表示中のエラーにする。古い断面結果を保留→参照消失→結果解放するfixtureで検査する。
+- 自動通知と明示的な「生成で使用」を区別する。通常更新では別の正常グラフにinputを
+  勝手に追加しない。明示操作は既存bindingでも接続できる。
+- shared generatorの全出力について変更前の状態を採取してからinputを更新・無効化する。
+  非アクティブな更新グラフは前回pathsと停止状態を保持し、既存表示どおり選択時に再計算する。
+  背景自動再計算を新たに実装したものではない。
+- browser共通fixtureもDifferenceの既存対策と同様に、テストごとのchild/ID対応pendingと
+  終了待機にする。実section subprocessの取消と終了も管理する。テスト間のFIFO共有を避ける。
+
+製品の正本/native演算、文書version、CI設定、assertionのtimeout/retryは変更していない。
+S05/D05機能台帳とA/T/R台帳は、成功した範囲と未完了の下流生成を区別して記録する。
+
+### 実行結果と停止理由
+
+| 実行 | 実測 |
+| --- | --- |
+| `node --test tests/cad-generation.test.mjs` / Node24.22.1 | 追加6件成功/失敗・skip0 |
+| 製品/fixtureの`node --check`、`git diff --check` | 成功 |
+| 修正後の追加browser3件 | **2成功/1失敗**、exit1、約36.20秒、retry0。JSON expected2/unexpected1/skipped0/flaky0 |
+| Node24全JS / Node20.20.2全JS / native全件 / browser全件 | 未実行。部分検証を全件成功には転記しない |
+| ローカルRust、実macOS GUI/Tauri IPC/OS dialog、実機プリンター | 未実行 |
+
+修正後、寸法追従・G-code更新と、別グラフ/非アクティブ共有出力の選択再計算・明示的接続は
+成功した。参照消失ケースも、pending化・lastValid保持・旧worker取消・G-code停止、
+独立Rectangleの追加、edge再選択によるFilletのvalid復帰までは通る。
+ただし、その後の実断面の生成適用が **`Intersecting output curves at Z 0.6`** で失敗する。
+`fixed-target.json`とtraceのgeneration-error-detailsに実メッセージを保持している。
+選び直したのは丸角RectangleをExtrudeした形状の下端にある長さ30超の水平edge。
+CAD featureはvalidだが、断面/経路の実際の交差なのか出力検証なのかは原因未確定である。
+この1件を別のedgeや緩い判定へ置換して成功扱いにせず、指示004の未知失敗時ルールに従い
+マージせず要判断とし、連絡欄の@Museへ方針を確認する。失敗復旧の完了条件は未達。
+現在の差分を1つのDraft PRへ記録し、全検証/CI/Ready化/マージ/Issue自動クローズの未実施を
+明記する。CIが自動で開始された場合も、未確認のものを成功と記載しない。
+
+### 検証環境の復元とfixtureの先行エラー
+
+以前のChromium実体が作業領域整理で消えており、専用ignored領域に
+`@sparticuz/chromium@153.0.0`を取得した。offline cache missはテスト未実行。
+通常展開はfontsのchownでEINVALとなったため、Brotliの標準展開とtarのdata filterで復元。
+初回browser3件と診断1件は、付属のAWS向けフォント設定でSkiaがSIGTRAP終了し、
+製品テスト本体に到達しなかった。`FONTCONFIG_PATH=/etc/fonts`で起動を回復した。
+先行した1件はfixtureのpipeline.id指定誤りによりOpenできず失敗したが、fixtureを
+`id:pipeline`へ直しvalidateProjectで確認した後の結果を上記へ分けている。
+
+Linux、Node24.22.1、Python3.12.14/OCP7.8.1.1、Chromium153.0.8010.0。
+既存Playwright設定のworker1/timeout45秒/retry0/launch argsを維持し、ignored configで
+JSON reporterと専用出力先を追加した。追加のsingle-process等のflagは採用していない。
+ローカル実行は`python work/board-verification/004/run-browser.py <run-name> [Playwright args]`。
+package/binary/font設定は検証環境だけであり、製品依存やCI設定へ追加していない。

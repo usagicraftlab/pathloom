@@ -181,3 +181,28 @@ and ran no tests; the expanded-file retry is the successful 192-case execution.
 Full commands, source identities, helper-check corrections and limits are in
 the development log. Final-head CI runs and merge/auto-close confirmation are
 recorded separately in PR #30 and the board after they actually occur.
+
+## 2026-10-27 JST — Issue #9 / instruction 004: partial, awaiting a decision
+
+The new real-OCP browser route confirms Rectangle60×40 / capped Extrude25
+volume60000, then width80 / volume80000, unchanged semantic Fillet reference,
+updated exact sections and G-code XY width60→80. An inactive graph's shared
+outputs remain marked stale until selected; selection now recalculates them,
+and unrelated graph inputs/paths are unchanged. Explicitly connecting an
+existing binding to another graph is tested separately from automatic updates.
+Background generation for inactive graphs is not claimed as implemented.
+
+The terminal body feature is retained for dirty/failed lastValid rather than
+silently binding the recomputed Extrude. Pending bindings stop G-code and cancel
+old generation/preview jobs. Six new JS tests pass. The three new browser cases
+after the current changes have **2 passes / 1 failure**, not a full-suite pass.
+The failed case reaches an explicitly reselected valid Fillet but generation
+rejects its paths with `Intersecting output curves at Z 0.6`. The cause is not
+yet established, so downstream recovery is incomplete and no new A/T/R row is
+promoted. Existing T10/T11/T12 CAD-only evidence does not prove G-code recovery.
+
+Node24 full JS, Node20.20.2 full JS, native full suite and full browser suite
+have not been run on this partial change. CI, merge and auto-close are recorded
+in the Draft PR and board when actually observed. Actual macOS GUI/Tauri IPC/OS
+dialogs, local Rust and physical printing are unexecuted. Existing maintenance
+frame/notification intermittency is outside this change and remains unresolved.

@@ -270,7 +270,7 @@ export function initModelWorkspace(api) {
               throw new Error("未解決の古い形状は生成に渡せません");
             const binding = bindBody(store.document, e);
             store.resolveBindings();
-            updateBindings();
+            updateBindings(binding.id);
             setStatus("生成入力へ接続しました。ノード配線は変更していません。");
           } catch (error) {
             report(error);
@@ -819,10 +819,10 @@ export function initModelWorkspace(api) {
       host.append(remove);
     }
   }
-  function updateBindings() {
+  function updateBindings(connectBindingId = null) {
     for (const b of store.document.outputBindings) {
       const stamp = `${b.status}:${b.resolvedResultHash}:${b.resolvedEntityId}`;
-      if (bindingStamps.get(b.id) === stamp) continue;
+      if (bindingStamps.get(b.id) === stamp && b.id !== connectBindingId) continue;
       const entity = store.getEntity(b.resolvedEntityId);
       if (b.status === "ready" && entity) {
         const input = generationInput(
@@ -834,11 +834,13 @@ export function initModelWorkspace(api) {
           bindingId: b.id,
           status: b.status,
           input,
+          connect: b.id === connectBindingId,
         });
       } else
         window.PathloomCad?.upsertCadBinding?.({
           bindingId: b.id,
           status: b.status,
+          connect: b.id === connectBindingId,
         });
       bindingStamps.set(b.id, stamp);
     }
