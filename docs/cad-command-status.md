@@ -139,3 +139,14 @@ The Store change is only the recorded Rectangle `command.mode`; schemas and pinn
 command definitions remain compatible. Offset/native plane validation stays owned
 by #7. #9 generation binding and #10 save/recovery infrastructure are unchanged.
 For commands, results and unrun OS cases, see the dated Issue #8 execution log.
+
+
+## 2026-10-28 JST — Issue #11 shared startup and persistence checks
+
+The 65 command IDs and their implementation states are unchanged. Workspace
+initialization and command registration now share the initial library-load
+barrier. Browser regressions exercise a held initial reply and a rejected shared
+save while preserving the project definition. Camera-frame checks wait for
+the actual callback with the same numerical predicates and timeouts. See
+[the scoped verification record](cad-phase1-regression-verification.md);
+these checks do not complete macOS M01–M07 or unimplemented command modes.
