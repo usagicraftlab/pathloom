@@ -131,3 +131,12 @@ macOS固有の実行項目M01〜M07は[ロードマップ](cad-roadmap.md)に置
 監査基準main自体の過去のリモートCI成功は未確認。上記は製品コードが同じPhase 0 PRで今回得た結果である。
 
 次の実装範囲と受け入れ条件は[ロードマップのPhase 1タスク](cad-roadmap.md)を参照する。
+
+
+### 2026-10-28：先行自動対策と後段実機検証の分離
+
+Issue #11 / 指示006はframe・保存競合の自動対策と全自動検証の先行範囲へ整理した。
+macOS M01〜M07、実Tauri/OS保存回復、M07とPhase 1最終照合は
+[Issue #37](https://github.com/usagicraftlab/pathloom/issues/37)へ移管し、
+Phase 1の残る#34/#9/#10の完成後に扱う。実機項目は未実施であり、
+自動対策のmergeやソフトウェア側Phase 1の進行を実機受け入れ合格と混同しない。

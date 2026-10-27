@@ -1,9 +1,13 @@
 # 指示007 / Issue #34：native断面出力の交差エラー
 
-2026-10-27 JST。ローカル全件検証を完了し、fixture修正headのCIを照合する第3停止点。マージ前で停止する。
+2026-10-28 JST：指示006 / PR #36の完了後に再開。最新main
+`aa4338d7e79ff8625c1ddcbe23e8b864fa23183d` を取り込み、全ローカル検証を完了した。
+最終headのCIを確認して通常のマージ条件で進める。macOS実機は未実施のまま
+[Issue #37](https://github.com/usagicraftlab/pathloom/issues/37)で後段に扱う。
+以下の第1〜3停止点は2026-10-27時点の履歴で、旧007限定・区切り停止の運用は解除済み。
 対象Issue: https://github.com/usagicraftlab/pathloom/issues/34
 
-## 範囲と現状
+## 初期範囲と履歴（2026-10-27）
 
 指示004 / Issue #9の調査中に、変更なしのmainでも発生することが分かった問題を分離する。
 本Issueのbranchは`fix/34-native-section-intersection`。
@@ -98,7 +102,7 @@ Issue #9のStore・CAD binding・graph更新の差分は取り込まない。
 
 ログ/JSONは`work/board-verification/007/`に保存。初期失敗もPRとボードに保持する。
 
-## Issue完了に必要なこと
+## 第3段階時点の未完了条件（2026-10-27の履歴）
 
 - [x] 同じ形状・edge条件の再現を回帰検証として固定する。
 - [x] 実交差／丸め精度を含む検証の誤検出を証拠で切り分ける。
@@ -147,3 +151,35 @@ Node24/Node20/nativeの全件結果はff19d401と同一の製品・JS/nativeテ�
 そのfixtureを含めbrowser全件を再実行した。package/lock/全製品・assertionは不変。
 新headのCI全runはPR本文とボードへ実測結果を記録し、未確認を成功扱いしない。
 Ready化・merge commit・Issue自動closeの前でユーザー指定の停止点とする。
+
+
+## 2026-10-28 — 指示006完了後のmain統合と全件再検証
+
+PR #36のmerge aa4338d7を確認し、既存branchへmainを取り込んだ。
+競合は開発ログの追記だけで、ours/theirsとも共通base5defb177の完全なprefixを
+保持した追記であることをbyte単位で検証し、旧007追記8346 bytesと006追記4628 bytesを
+双方そのまま保持した。実行コードの競合や仕様判断はない。
+006のframe/保存競合対策・#37への実機移管を保持し、native端点修正は旧headから不変。
+Issue #9のStore/binding/graph差分は含めない。
+
+| 統合後の実行 | 実測 |
+| --- | --- |
+| Node24.22.1 npm test | 192成功/失敗・skip0、test2.744秒/runner2.995秒 |
+| Node20.20.2 全28 JSファイルを明示展開 | 192成功/失敗・skip0、test4.160秒/runner4.233秒 |
+| native全件、verboseで集計を確認 | 53検出＝51成功/任意USD2skip、test4.673秒/runner6.348秒 |
+| Node20.20.2 / Chromium156 全browser | 36成功/失敗・skip・retry・flaky0、errors[]、test103.178秒/runner104.552秒 |
+
+browser attachmentで同じB-rep hash3a68ff555efce4f349936b1a378c10d0129f600834cea730c659249c31a98ea5、
+同じ水平edge長64/bbox[-32,-20,0]→[32,-20,0]、42 paths、G-code成功を再確認。
+追加された006の保留frame・保存順序・保存拒否ケースも含む全件成功である。
+初回のNode20/ブラウザー起動は古いnpm cacheのbinaryがなくテスト本体未到達だった。
+ignored work内へNode20.20.2を準備し、versionを確認してから実行した結果が上表。
+nativeの最初の非verbose実行はexit0でも保存ログに最終集計がなく全件未確認だったため、
+成功扱いせずverboseで全53件の最終集計まで再実行して確認した。
+環境起動/記録の障害をnativeのassertion失敗やframe数の再現と混同しない。
+
+raw log/JSON/attachmentはwork/board-verification/007-resume-006/。
+main aa4338d7のpost-merge checks run40601895904とPages run40602176848はsuccessを確認。
+007の過去のCI 6 run・8 attempt（準備成功、fixture初期化失敗、frame失敗）はPR #35へ保持し、
+006の成功で置き換えない。今回の新headの全CIは確認後にPR本文とボードへ記録する。
+実macOS/Tauri/OSダイアログ・実プリンターは未実施のままである。
