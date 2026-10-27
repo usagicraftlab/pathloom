@@ -178,6 +178,8 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
                   : 0x344e61,
             );
         });
+        g.userData.selectable =
+          !e.locked && e.visibility !== "hidden" && !ghost;
       }
       preview().dirty();
     },
@@ -234,7 +236,11 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       );
       const hits = ray
         .intersectObjects(group.children, true)
-        .filter((h) => !h.object.parent.userData.ghost);
+        .filter(
+          (h) =>
+            !h.object.parent.userData.ghost &&
+            h.object.parent.userData.selectable !== false,
+        );
       const result = [];
       for (const hit of hits) {
         const data = hit.object.userData;

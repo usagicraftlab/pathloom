@@ -15,7 +15,42 @@ export function parseScalar(text, kind = "length") {
     return n * (unit === "rad" ? 1 : Math.PI / 180);
   }
   if (["deg", "rad"].includes(unit)) throw new Error("長さ単位が必要です");
-  return n * ({ cm: 10, m: 1000 }[unit] || 1);
+  const value = n * ({ cm: 10, m: 1000 }[unit] || 1);
+  if (!Number.isFinite(value)) throw new Error("有限の長さが必要です");
+  return value;
+}
+// Coordinate mapping needs the same orthonormal frame that the native kernel
+// accepts. Offset-specific plane membership remains owned by native validation.
+export function validateDrawingPlane(plane) {
+  const vectors = [plane?.origin, plane?.xAxis, plane?.yAxis];
+  if (
+    vectors.some(
+      (v) => !Array.isArray(v) || v.length !== 3 || !v.every(Number.isFinite),
+    )
+  )
+    throw new Error("作業平面には有限の原点・X軸・Y軸が必要です");
+  const [, x, y] = vectors;
+  if (
+    Math.abs(x.reduce((n, v) => n + v * v, 0) - 1) > 1e-6 ||
+    Math.abs(y.reduce((n, v) => n + v * v, 0) - 1) > 1e-6 ||
+    Math.abs(x.reduce((n, v, i) => n + v * y[i], 0)) > 1e-6
+  )
+    throw new Error("作業平面の軸は直交する単位ベクトルが必要です");
+  return plane;
+}
+export function inDrawingPlane(point, plane, origin = plane.origin) {
+  validateDrawingPlane(plane);
+  const x = plane.xAxis,
+    y = plane.yAxis;
+  const normal = [
+    x[1] * y[2] - x[2] * y[1],
+    x[2] * y[0] - x[0] * y[2],
+    x[0] * y[1] - x[1] * y[0],
+  ];
+  return (
+    Math.abs(point.reduce((n, v, i) => n + (v - origin[i]) * normal[i], 0)) <=
+    1e-6
+  );
 }
 export function parseCoordinate(text, { previous = null, plane = null } = {}) {
   text = String(text).trim();
@@ -26,15 +61,18 @@ export function parseCoordinate(text, { previous = null, plane = null } = {}) {
     throw new Error("x,y または x,y,z を入力してください");
   let p = parts.map((v) => parseScalar(v));
   if (p.length === 2) {
-    if (plane)
+    if (plane) {
+      validateDrawingPlane(plane);
       p = plane.origin.map(
-        (v, i) => v + p[0] * plane.xAxis[i] + p[1] * plane.yAxis[i],
+        (v, i) =>
+          (relative ? 0 : v) + p[0] * plane.xAxis[i] + p[1] * plane.yAxis[i],
       );
-    else p.push(0);
+    } else p.push(0);
   }
   if (relative) {
     if (!previous) throw new Error("相対座標の起点を先に指定してください");
     p = p.map((v, i) => v + previous[i]);
   }
+  if (!p.every(Number.isFinite)) throw new Error("有限の座標が必要です");
   return p;
 }
