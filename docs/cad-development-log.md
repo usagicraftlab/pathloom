@@ -975,3 +975,24 @@ JSON集計もexpected32/unexpected0/skipped0/flaky0、errors=[]で一致する�
 別の履歴としてPR本文に保持する。最新mainへrebaseした新headの全CI、Ready化、
 マージコミットとIssue #8自動クローズの結果はPR本文とボードへ実際の確認後に記録する。
 この段階のログだけでCI成功やマージ完了とは扱わない。#9/#10へは先行着手しない。
+
+
+## 2026-10-27 JST — 指示007 / Issue #34：既存断面交差問題の準備
+
+Issue #9 / Draft PR #33とは分け、変更なしmain
+`5defb1778f2058940c0d54e91b747d7ef8b2a71c`をbaseとする
+`fix/34-native-section-intersection`で既存問題を扱う。
+[Issue #34](https://github.com/usagicraftlab/pathloom/issues/34)に固定する再現条件、
+同一B-rep hash・同一42 paths、小数6桁化後の交差エラーの証拠と完了条件を記録した。
+詳細は`docs/cad-native-section-intersection.md`。
+
+ユーザーから「007だけを実行」「ちょこちょこ止めて報告」と指定されたため、
+Issue・専用branch・Draft PRと修正前の記録を用意した時点で一度停止する。
+指示004は再開せず、Issue #9の変更も取り込まない。
+
+今回の差分は再現記録とこの開発ログだけ。製品コード・テスト・交差判定・
+assertion・timeoutは変更していない。新しいローカル検証
+（Node24全JS、Node20.20.2全JS、native全件、browser全件）と実機確認は未実行。
+以前の指示004で取得した再現証拠を、今回実行した検証と混同しない。
+Draft PRのCI結果は確認後にPR本文とボードへ記録する。修正完了・Ready化・
+マージ・Issue自動クローズは未実施であり、この準備を完了条件の達成と扱わない。
