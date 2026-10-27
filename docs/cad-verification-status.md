@@ -15,7 +15,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | A01 | partial | 4 stages; shared camera + document preserved in browser; full keyboard/selection paths pending |
 | A02 | not-run | 未実装または未検証。合格としない。 |
 | A03 | passed | Issue #8: center(10,20),60×40 and constrained width80 retain center; two-corner input is distinct; three-mode browser Save/Undo. Scoped to this fixture |
-| A04 | partial | Work-order command JSON creates real rectangle, persists globally and inside v2; explicit command upgrade/rollback UI pending |
+| A04 | partial | Work-order command JSON creates real rectangle, persists globally and inside v2; Issue #11 adds initial-library/registration ordering and shared-save failure coverage ([evidence](cad-phase1-regression-verification.md)); explicit command upgrade/rollback UI pending |
 | A05 | partial | T03/T05 plus Issue #8 real Worker width60→80, center/height retained, Undo/Redo and normal Save/reopen; all constraint types/drag pending |
 | A06 | partial | Issue #8 conflicting width20 produces no-convergence; previous exact asset hash/bbox survives, draft is retained through Undo/Redo/Save/reopen; broader conflict/recovery cases pending |
 | A07 | partial | native T10/T11 + sketch->extrude and semantic fillet browser paths; full chained generation numerical test pending |
@@ -69,7 +69,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | R03 | passed | Issue #4: Undo/delete/Open during export cannot adopt the old result; add initialization cannot insert into a replaced document |
 | R04 | partial | Rust Session real hard-kill test passes; full Tauri/macOS recovery not run |
 | R05 | partial | Corrupt asset prepare cannot replace current document (job test); real native hash/byte rejection; full OS dialog flow untested |
-| R06 | passed | Work-order user command project reopened in fresh page after global command definitions were removed; exact geometry restored |
+| R06 | passed | Work-order user command project reopened in fresh page after global command definitions were removed; exact geometry restored. Issue #11 additionally holds initial library loading and rejects shared saves; project definition retained ([evidence](cad-phase1-regression-verification.md)). Real OS app-data/restart remains M05 |
 | R07 | partial | alias collision unit test; import collision UI pending |
 | R08 | partial | Browser recovery restores real assets and history; failed feature + lastValid saved in v2; complete failed-draft restart matrix pending |
 | R09 | partial | existing representative JS fixtures + browser regressions; complete legacy asset matrix pending |
@@ -206,3 +206,81 @@ have not been run on this partial change. CI, merge and auto-close are recorded
 in the Draft PR and board when actually observed. Actual macOS GUI/Tauri IPC/OS
 dialogs, local Rust and physical printing are unexecuted. Existing maintenance
 frame/notification intermittency is outside this change and remains unresolved.
+
+
+## 2026-10-27 JST — Issue #34 targeted section evidence (second checkpoint)
+
+The native section adapter now takes oriented topological vertices as edge
+endpoints. In the 70×40 rounded-R3 Rectangle→Extrude25→bottom-edge Fillet R2
+fixture, an extended line parameter introduced a ~6e-7 mm backwards segment
+within OCCT vertex tolerance. This was a generated-polyline defect, not a reason
+to relax output validation. Interior samples, CAD B-rep, output rounding and all
+validation tolerances remain unchanged. The same B-rep hash and 42 layers now
+pass both raw and six-decimal output validation.
+
+New native tests first reproduced the short-segment failure (1 pass/1 fail),
+then passed 2/2 after the adapter change. All 20 tests in test_occt_brep_bridge.py
+pass, including periodic/curved and open sections. Three existing Node24 test
+files pass 21/21, retaining genuine crossing/zero-length/intro-collision rejection.
+The new packaged-browser fixture verifies the same length-64 bottom edge and
+B-rep hash, actual OCCT sections, 42 output paths and G-code for all 42 Z levels.
+Its first run failed on 0.6 versus 0.600 text formatting; a numerical comparison
+of all 42 layers passes on re-run (1 pass, no failure/skip/retry). The initial
+failed run remains in the PR and development log.
+
+These are targeted results, not local full-suite completion. Node24 all JS,
+Node20.20.2 all JS, native all and browser all remain unrun locally for this
+change. The two successful preparation-head CI runs have 192 JS, native49/2skip,
+Rust21 and browser32 each, and do not validate the later product change.
+No A/T/R status is promoted here. In particular, #9 reference-loss recovery
+remains outside #34, and actual macOS IPC/dialogs/printer were not exercised.
+
+
+## Issue #34 — full-suite fixture correction
+
+On ff19d401, full local Node24 and Node20.20.2 each pass192/0fail/0skip;
+native53 discovered passes51/skips2 optional USD. Full browser first gives
+32pass/1fail, matching push40510652145 and PR40510663843 (both attempt1 failure).
+Their JS192, native51+2skip and Rust21 pass; only the newly added browser case
+lacks Tauri initialization. The shared module registered hooks as an import
+side effect, so its second importing spec had no setup (trace: no goto/hook).
+The helper is now an extended per-test page fixture with local daemon/requests
+and awaited cleanup. Geometry, assertions and timeout/retry are unchanged.
+Full browser and new-head CI results are recorded after completion below.
+No unrelated A/T/R status is promoted and no macOS/printer claim is added.
+
+Fixture-corrected full local browser passes33/0fail/0skip/0retry (103.673s),
+including the seven earlier imports and the same bottom-edge G-code scenario.
+The product/JS/native test blobs and package/lock remain those used by the
+Node24/20/native full runs above; only the browser fixture code changed, and
+the full browser suite was rerun. Old failures remain part of the evidence.
+Final CI run outcomes are recorded in PR #35 and the board after inspection.
+The PR remains Draft at the user's pre-merge checkpoint.
+
+
+## 2026-10-28 JST — Issue #34 after #11's automated fixes
+
+The latest-main integration retains #11's A04/R06 evidence and #34's S05/D05
+scope without promoting any A/T/R states. Revalidation: Node24/20.20.2 each192
+passed; native53 discovered,51 passed/2 optional USD skips; browser36 passed,
+0 failures/skips/retries/flaky and no reporter errors. The identical length-64
+bottom edge/B-rep yields42 paths and complete G-code. See the updated section
+[evidence](cad-native-section-intersection.md) and dated execution log for initial
+entrypoint/logging obstacles, retries and final-head CI. Actual macOS remains
+unrun and is tracked separately by Issue #37, not marked passed by this check.
+
+
+## 2026-10-28 JST — Issue #9 recovery after #11 / #34
+
+The three issue acceptance scenarios now pass on the integrated main: exact
+Extrude volume60000→80000 and paths/G-code width60→80 with the same edge;
+missing references retain lastValid, reject a delayed section and block output
+until explicit edge repair; independent and inactive shared graphs keep their
+correct scope and recalculate when selected. Difference's three visible-tool
+regressions were reproduced and traced to binding refresh restoring an
+intentionally null ready-body tip. A null-tip guard and a failing-then-passing
+store contract regression retain consumption without losing pending terminal
+results. Source geometry checks and the per-test native fixture remain real OCP;
+transport/OS storage are substituted. States are not broadly promoted. See the
+[scoped proof](cad-generation-recovery.md) for normal/failure/recovery evidence,
+full runs and final-head CI; real macOS acceptance remains unrun in Issue #37.

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { CadStore } from "../cad/store.js";
+import { deriveVisibleEntities } from "../cad/document.js";
 import { syncCadBindingSources } from "../cad/generation-adapter.js";
 
 function bodyChain(status = "failed") {
@@ -122,4 +123,19 @@ test("P1-06 pending bindings preserve old geometry and identical ready input doe
   assert.deepEqual(definition.inputs[0].curve, old.curve);
   assert.match(source.generationError, /CAD input Local label: pending/);
   assert.equal(old.cadBinding.status, "ready");
+});
+
+
+test("P1-06 binding refresh does not resurrect an intentionally consumed ready body", () => {
+  for (const status of ["valid", "dirty", "running", "blocked", "failed", "cancelled"]) {
+    const store = bodyChain(status), consumed = store.document.bodies[1];
+    consumed.tipEntityId = null; // The replace/consume policy leaves this body ready.
+    store.resolveBindings();
+    assert.equal(consumed.status, "ready");
+    assert.equal(consumed.tipEntityId, null, status);
+    assert.equal(deriveVisibleEntities(store.document).some(e => e.id === "e-independent"), false, status);
+    assert.equal(store.document.outputBindings[1].status, "missing");
+    assert.equal(store.document.outputBindings[0].status, status === "valid" ? "ready" : "pending");
+    assert.equal(store.document.bodies[0].tipEntityId, "e-fillet");
+  }
 });

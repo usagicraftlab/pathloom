@@ -897,7 +897,9 @@ export class CadStore {
         tips.set(slot.bodyId, { entityId: slot.entityId, feature });
     }
     for (const body of this.document.bodies)
-      if (body.status === "ready" && tips.has(body.id))
+      // A ready body with no tip can be intentionally consumed by a replace
+      // operation (including Difference tools). Binding refresh must not undo it.
+      if (body.status === "ready" && body.tipEntityId != null && tips.has(body.id))
         body.tipEntityId = tips.get(body.id).entityId;
     for (const b of this.document.outputBindings) {
       const body =

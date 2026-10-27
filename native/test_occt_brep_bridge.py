@@ -198,4 +198,82 @@ class OpenBrepAndPlacementTests(unittest.TestCase):
         restored=read_brep(moved['brep']['data'],self.root);props=GProp_GProps();BRepGProp.VolumeProperties_s(restored,props)
         self.assertAlmostEqual(props.Mass(),6000);self.assertEqual(moved['brep']['history'][-1]['operation'],'translate')
 
+class FilletedSectionTests(unittest.TestCase):
+    def test_rounded_rectangle_bottom_fillet_sections_have_no_junction_backtracking(self):
+        import math
+        from cad_runtime import Runtime, TOLERANCES
+        runtime = Runtime()
+        serial = 0
+
+        def evaluate(operation, parameters, inputs=None):
+            nonlocal serial
+            serial += 1
+            request = dict(
+                protocolVersion=1, requestId=str(serial), documentId='section-regression',
+                documentRevision=0, workspaceEpoch=1, runtimeEpoch=1, sessionId=None,
+                featureId=str(serial), featureRevision=1, requestedHash='section-regression',
+                previewSequence=0, intent='commit', operation=dict(id=operation, version=1),
+                parameters=parameters, inputs=inputs or {}, tolerances=TOLERANCES,
+            )
+            result = runtime.handle(dict(type='evaluate', request=request))
+            self.assertEqual(result['status'], 'ok', result.get('diagnostics'))
+            return result['outputs'][0]
+
+        def ref(output, selector=None):
+            return dict(handle=output['handle'], geometryHash=output['geometryHash'], selector=selector)
+
+        rectangle = evaluate('curve.rectangle', dict(
+            plane=dict(origin=[0, 0, 0], xAxis=[1, 0, 0], yAxis=[0, 1, 0]),
+            anchorMode='center', anchor=[0, 0, 0], widthMm=70, heightMm=40,
+            rounding=True, cornerRadiusMm=3,
+        ))
+        extrude = evaluate('shape.extrude', dict(
+            direction=[0, 0, 1], distanceMm=25, bothSides=False, cap=True,
+        ), dict(profile=[ref(rectangle)]))
+        edge = next(t for t in extrude['summary']['topology'] if t['kind'] == 'edge'
+                    and abs(t['fingerprint']['bbox']['max'][2] - t['fingerprint']['bbox']['min'][2]) < 1e-5
+                    and t['fingerprint']['lengthMm'] > 30)
+        self.assertEqual(edge['fingerprint']['bbox'], dict(min=[-32., -20., 0.], max=[32., -20., 0.]))
+        self.assertEqual(edge['fingerprint']['lengthMm'], 64)
+        fillet = evaluate('solid.fillet', dict(radiusMm=2, tangentChain=False), dict(
+            body=[ref(extrude)],
+            edges=[ref(extrude, dict(kind='edge', topologyId=edge['topologyId'], orientation='forward'))],
+        ))
+        self.assertTrue(fillet['summary']['valid'])
+        asset = runtime.handle(dict(type='export', handles=[fillet['handle']]))['assets'][fillet['geometryHash']]
+        original = asset['data']
+        paths = process(dict(action='slice', brep=dict(format='occt-brep', version=1, data=original),
+                             layerHeight=.6, tolerance=.02))['paths']
+        self.assertEqual(len(paths), 42)
+        for layer, path in enumerate(paths):
+            points = path['points']
+            self.assertEqual(points[0], points[-1])
+            self.assertTrue(all(abs(p[2] - (layer + 1) * .6) < 1e-8 for p in points))
+            for a, b in zip(points, points[1:]):
+                self.assertGreaterEqual(math.dist(a, b), 1e-6, (layer, a, b))
+        # At sample Z=.3, a radius-2 bottom fillet moves the straight sides
+        # inward by 2 - sqrt(2^2 - (2-.3)^2), without changing the B-rep.
+        inset = 2 - math.sqrt(4 - 1.7 ** 2)
+        first = paths[0]['points']
+        self.assertAlmostEqual(max(p[0] for p in first) - min(p[0] for p in first), 70 - 2 * inset)
+        self.assertAlmostEqual(max(p[1] for p in first) - min(p[1] for p in first), 40 - 2 * inset)
+
+    def test_open_face_sections_keep_their_distinct_endpoints(self):
+        from OCP.BRepBuilderAPI import BRepBuilderAPI_MakePolygon, BRepBuilderAPI_MakeFace
+        from OCP.gp import gp_Pnt
+        from occt_brep_bridge import inspect_shape
+        polygon = BRepBuilderAPI_MakePolygon()
+        for point in [(0, 0, 0), (10, 0, 0), (10, 0, 3), (0, 0, 3)]:
+            polygon.Add(gp_Pnt(*point))
+        polygon.Close()
+        with tempfile.TemporaryDirectory() as directory:
+            shape = inspect_shape(BRepBuilderAPI_MakeFace(polygon.Wire()).Face(), Path(directory), 'open face')
+        paths = process(dict(action='slice', brep=shape['brep'], layerHeight=1, tolerance=.02))['paths']
+        self.assertEqual(len(paths), 3)
+        for layer, path in enumerate(paths):
+            self.assertEqual(len(path['points']), 2)
+            self.assertEqual(sorted(p[0] for p in path['points']), [0, 10])
+            self.assertTrue(all(p[1] == 0 and p[2] == layer + 1 for p in path['points']))
+
+
 if __name__=='__main__':unittest.main()
