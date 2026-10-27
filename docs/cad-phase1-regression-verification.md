@@ -4,8 +4,12 @@
 基準mainは `5defb1778f2058940c0d54e91b747d7ef8b2a71c`。
 指示007 / PR #35のnative修正やfixture変更は、このブランチに取り込まない。
 
-**Issue #11全体は未完了。macOS実機のM01〜M07と、未完のP1-06/07を含む
-Phase 1最終照合は完了していない。自動テストの成功だけでマージ・自動closeしない。**
+**2026-10-28 08:15 JSTの範囲決定：Issue #11 / 指示006は自動対策の先行範囲とする。**
+macOS実機M01〜M07・実Tauri/OS保存回復・Phase 1最終照合は、
+[Issue #37](https://github.com/usagicraftlab/pathloom/issues/37)へ移管した。
+「Phase 1 完了後の実機検証フェーズ」で、#34/#9/#10の完成後に実施する。
+移管は実施済み・合格の意味ではなく、M各項目は未実施のまま保持する。
+Issue #11は整理後の自動対策・全検証・最終head CIを満たしたら通常のmerge条件で閉じる。
 
 ## frame数の瞬間値を描画完了と取り違えない
 
@@ -63,7 +67,8 @@ Playwright1.64.1 / Chrome Headless Shell156.0.8078.4。packaged frontendを使�
 | Node20.20.2で全28 JSファイルを明示展開 | 192成功/失敗・skip0、test7.113秒/runner7.220秒。直接binaryのversionも確認 |
 | Python `-B -m unittest discover -s native -p 'test*.py'` | 51検出＝49成功/任意NVIDIA USD依存2skip、test5.016秒/runner6.756秒 |
 | 全browser | 35成功/失敗・skip・retry・flaky0、errors[]、test145.509秒/runner147.606秒 |
-| このheadのCI | 未実行。push/PR後の全runをPR本文とボードへ追記する |
+| source head f6d85208のCI | push40592375358/PR40592463574、各attempt1 success。各JS192/native49+2skip/macOS Rust21/browser35成功。全6 jobログ確認。docs更新後の最終head CIはPR本文とボードへ追記 |
+| 対象5ケース×5巡 / Node20.20.2 | 25成功/失敗・skip・retry・flaky0、errors[]、test84.238秒/runner85.096秒 |
 | ローカルRust | cargo未導入のため未実行。CIのmacOS Rust結果とは分けて記録する |
 
 最初のnpm exec経由Node20実行はexit0だったが、保存したTAPが66件までで集計がなく、
@@ -91,5 +96,5 @@ CIリンク・PR・マージとIssue自動closeの結果は実際の確認後に
 
 実行者はmacOS/CPU、対象commit、Node/Rust/Python/OCP版、日時、各操作の実測結果と
 証拠を[ロードマップM01〜M07](cad-roadmap.md)に対応付けて残す必要がある。
-実機検証の実行結果または明確な作業範囲変更が得られるまで、Issue #11全体は完了にしない。
-指示006完了前に007や004を再開しない。
+未実施の全条件と実機で必要な証拠をIssue #37へ引き継いだ。指示006の完了で
+実機検証を完了とせず、#37はopenで残す。006完了後の007/004はボードの依存に従う。
