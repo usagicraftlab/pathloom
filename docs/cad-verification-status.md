@@ -181,3 +181,65 @@ and ran no tests; the expanded-file retry is the successful 192-case execution.
 Full commands, source identities, helper-check corrections and limits are in
 the development log. Final-head CI runs and merge/auto-close confirmation are
 recorded separately in PR #30 and the board after they actually occur.
+
+
+## 2026-10-27 JST — Issue #34 targeted section evidence (second checkpoint)
+
+The native section adapter now takes oriented topological vertices as edge
+endpoints. In the 70×40 rounded-R3 Rectangle→Extrude25→bottom-edge Fillet R2
+fixture, an extended line parameter introduced a ~6e-7 mm backwards segment
+within OCCT vertex tolerance. This was a generated-polyline defect, not a reason
+to relax output validation. Interior samples, CAD B-rep, output rounding and all
+validation tolerances remain unchanged. The same B-rep hash and 42 layers now
+pass both raw and six-decimal output validation.
+
+New native tests first reproduced the short-segment failure (1 pass/1 fail),
+then passed 2/2 after the adapter change. All 20 tests in test_occt_brep_bridge.py
+pass, including periodic/curved and open sections. Three existing Node24 test
+files pass 21/21, retaining genuine crossing/zero-length/intro-collision rejection.
+The new packaged-browser fixture verifies the same length-64 bottom edge and
+B-rep hash, actual OCCT sections, 42 output paths and G-code for all 42 Z levels.
+Its first run failed on 0.6 versus 0.600 text formatting; a numerical comparison
+of all 42 layers passes on re-run (1 pass, no failure/skip/retry). The initial
+failed run remains in the PR and development log.
+
+These are targeted results, not local full-suite completion. Node24 all JS,
+Node20.20.2 all JS, native all and browser all remain unrun locally for this
+change. The two successful preparation-head CI runs have 192 JS, native49/2skip,
+Rust21 and browser32 each, and do not validate the later product change.
+No A/T/R status is promoted here. In particular, #9 reference-loss recovery
+remains outside #34, and actual macOS IPC/dialogs/printer were not exercised.
+
+
+## Issue #34 — full-suite fixture correction
+
+On ff19d401, full local Node24 and Node20.20.2 each pass192/0fail/0skip;
+native53 discovered passes51/skips2 optional USD. Full browser first gives
+32pass/1fail, matching push40510652145 and PR40510663843 (both attempt1 failure).
+Their JS192, native51+2skip and Rust21 pass; only the newly added browser case
+lacks Tauri initialization. The shared module registered hooks as an import
+side effect, so its second importing spec had no setup (trace: no goto/hook).
+The helper is now an extended per-test page fixture with local daemon/requests
+and awaited cleanup. Geometry, assertions and timeout/retry are unchanged.
+Full browser and new-head CI results are recorded after completion below.
+No unrelated A/T/R status is promoted and no macOS/printer claim is added.
+
+Fixture-corrected full local browser passes33/0fail/0skip/0retry (103.673s),
+including the seven earlier imports and the same bottom-edge G-code scenario.
+The product/JS/native test blobs and package/lock remain those used by the
+Node24/20/native full runs above; only the browser fixture code changed, and
+the full browser suite was rerun. Old failures remain part of the evidence.
+Final CI run outcomes are recorded in PR #35 and the board after inspection.
+The PR remains Draft at the user's pre-merge checkpoint.
+
+
+## 2026-10-28 JST — Issue #34 after #11's automated fixes
+
+The latest-main integration retains #11's A04/R06 evidence and #34's S05/D05
+scope without promoting any A/T/R states. Revalidation: Node24/20.20.2 each192
+passed; native53 discovered,51 passed/2 optional USD skips; browser36 passed,
+0 failures/skips/retries/flaky and no reporter errors. The identical length-64
+bottom edge/B-rep yields42 paths and complete G-code. See the updated section
+[evidence](cad-native-section-intersection.md) and dated execution log for initial
+entrypoint/logging obstacles, retries and final-head CI. Actual macOS remains
+unrun and is tracked separately by Issue #37, not marked passed by this check.

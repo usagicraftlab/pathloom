@@ -223,11 +223,12 @@ def move_connected_open_faces(shape,faces,selected,offset):
 
 
 def slice_brep(shape, height, tolerance):
+    from OCP.BRep import BRep_Tool
     from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
     from OCP.BRepBndLib import BRepBndLib
     from OCP.Bnd import Bnd_Box
     from OCP.gp import gp_Pln, gp_Pnt, gp_Dir
-    from OCP.TopExp import TopExp_Explorer
+    from OCP.TopExp import TopExp, TopExp_Explorer
     from OCP.TopAbs import TopAbs_EDGE, TopAbs_REVERSED
     from OCP.TopoDS import TopoDS
     from OCP.TopTools import TopTools_HSequenceOfShape
@@ -271,6 +272,12 @@ def slice_brep(shape, height, tolerance):
                     if not sample.IsDone():raise ValueError('Unable to discretize section curve')
                     samples=[sample.Value(j) for j in range(1,sample.NbPoints()+1)]
                 if edge.Orientation()==TopAbs_REVERSED:samples.reverse()
+                # Section curve ranges can extend beyond their shared vertices
+                # within OCCT tolerance. Joining those evaluated endpoints adds
+                # tiny backwards segments. Use the wire's oriented vertices as
+                # the endpoints, keeping every interior curve sample unchanged.
+                samples[0]=BRep_Tool.Pnt_s(TopExp.FirstVertex_s(edge,True))
+                samples[-1]=BRep_Tool.Pnt_s(TopExp.LastVertex_s(edge,True))
                 for point in samples:
                     p=[point.X(),point.Y(),z]
                     if not points or math.dist(points[-1],p)>1e-7:points.append(p)

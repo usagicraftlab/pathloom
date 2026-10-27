@@ -977,6 +977,122 @@ JSON集計もexpected32/unexpected0/skipped0/flaky0、errors=[]で一致する�
 この段階のログだけでCI成功やマージ完了とは扱わない。#9/#10へは先行着手しない。
 
 
+## 2026-10-27 JST — 指示007 / Issue #34：既存断面交差問題の準備
+
+Issue #9 / Draft PR #33とは分け、変更なしmain
+`5defb1778f2058940c0d54e91b747d7ef8b2a71c`をbaseとする
+`fix/34-native-section-intersection`で既存問題を扱う。
+[Issue #34](https://github.com/usagicraftlab/pathloom/issues/34)に固定する再現条件、
+同一B-rep hash・同一42 paths、小数6桁化後の交差エラーの証拠と完了条件を記録した。
+詳細は`docs/cad-native-section-intersection.md`。
+
+ユーザーから「007だけを実行」「ちょこちょこ止めて報告」と指定されたため、
+Issue・専用branch・Draft PRと修正前の記録を用意した時点で一度停止する。
+指示004は再開せず、Issue #9の変更も取り込まない。
+
+今回の差分は再現記録とこの開発ログだけ。製品コード・テスト・交差判定・
+assertion・timeoutは変更していない。新しいローカル検証
+（Node24全JS、Node20.20.2全JS、native全件、browser全件）と実機確認は未実行。
+以前の指示004で取得した再現証拠を、今回実行した検証と混同しない。
+Draft PRのCI結果は確認後にPR本文とボードへ記録する。修正完了・Ready化・
+マージ・Issue自動クローズは未実施であり、この準備を完了条件の達成と扱わない。
+
+
+## 2026-10-27 JST — 指示007 / Issue #34：原因側の修正案と第2停止点
+
+ユーザーの「続けてください」で同じbranch/PR #35を再開。今回は原因特定・
+修正案と対象検証までで再び停止する。004の再開・Ready化・マージはしない。
+
+実測：Section右側直線の開始parameter=-5.999999999062311e-7、
+評価点Y=-17.0000006に対し、共有する位相頂点はY=-17、
+vertex toleranceは約1.0000000071e-6 mm。曲線のパラメータ端を別々に
+polylineへ足していたため、微小折返しが生成された。出力検証が不正な
+polylineを拒否しているので、検証側を緩めない。
+
+修正案：slice_brepの曲線サンプル列の両端だけを向き付きFirstVertex/LastVertexの
+座標へ揃える。内部サンプル、B-rep、断面高さ/許容差、dedup閾値、JS交差判定、
+丸め、assertion/timeoutは変更しない。B-rep hashは修正前後で
+3a68ff555efce4f349936b1a378c10d0129f600834cea730c659249c31a98ea5のまま。
+42 pathsを維持し、第1層41点→37点、全層最短segmentは約6e-7→0.40256835 mm。
+同じ既存validateOutputが生断面・小数6桁化後とも成功する。
+
+今回のローカル対象検証（Linux/Node24.22.1/Python3.12.14/OCP7.8.1.1）：
+
+| 実行 | 結果 |
+| --- | --- |
+| 追加native回帰2件、修正前 | 1成功/1失敗。約6e-7 mmの短いsegmentを再現、約0.877秒 |
+| 同じ2件、修正後 | 2成功、失敗/skip0、約1.095秒 |
+| native/test_occt_brep_bridge.py 全件 | 20成功、失敗/skip0、約1.573秒。native全件ではない |
+| node --test tests/open-print-output.test.mjs tests/print-intro.test.mjs tests/cad.test.mjs | 21成功、失敗/skip0、約0.507秒 |
+| 追加browser1件の初回 | 生成は成功したがZ0.600を文字列Z0.6で期待して失敗、約11.54秒 |
+| 同browserの数値表記訂正後 | 1成功、失敗/skip/retry0、約10.77秒（runner11.79秒） |
+| 生断面/小数6桁化後の出力検証 | 修正前はZero-length/Intersecting、修正案は両方成功 |
+| 構文・git diff --check | 成功 |
+
+Browserは旧fixtureのCAD daemonを使い、追加した当該テスト内だけで実native
+occt_brep_bridge.pyのslice IPCと取消を代替。normal v2 projectで生成配線だけを
+seedし、edge長64/bbox・同一B-rep hash・42 paths・全42層のG-codeを確認した。
+fixtureのedge条件、assertionの意味、timeout/retryを緩和していない。初回の
+表記失敗は数値で全層を比較する検証へ訂正し、成功結果と区別する。
+
+S05/D05の証拠欄とA/T/R台帳に対象結果と残件を追記し、既存partialや未実施を
+promoteしない。ローカルNode24全JS、Node20.20.2全JS、native全件、browser全件、
+実Mac GUI/Tauri IPC/OS dialog/実機プリンター、ローカルRustは未実施。
+全検証前の第2停止点として残し、Ready/merge/Issue自動closeは未実施。
+
+準備head46f7daedb7ac234baadbf63e1d22baca9901f87dのCIは、push40506774872・
+PR40506779845ともattempt1 success。各runのログでNode20.20.2 JS192成功、
+native51検出=49成功/2skip、Rust21成功、browser32成功を確認した。
+製品修正前の結果であり、修正headのCI結果は確認後にPR本文とボードへ別記する。
+
+生ログ/JSON/trace：work/board-verification/007/のnative-red.log、native-green.log、
+native-bridge.log、js-guards.log、endpoint-comparison.json、junctions.json、
+section-target.json/log/traceとsection-target-numeric.json/log。文書patchの初回は
+文脈行不一致で適用されず、実際の行を読み直して適用した。製品/検証失敗とは区別する。
+
+
+## 2026-10-27 JST — 指示007 / Issue #34：全件実行でのfixture初期化失敗
+
+ユーザーの「つづけてください」を受け、007だけの全件検証を再開。マージ前で停止する。
+ff19d401/tree2966b28dのローカル全件結果：Node24.22.1 npm testは192成功/失敗skip0
+（test3.143秒/runner3.409秒）、Node20.20.2は全28 JSファイル・192成功/失敗skip0
+（test4.546秒/npm起動含む36.052秒）、nativeは53検出=51成功/任意USD2skip
+（test4.580秒/runner6.346秒）。Node20はpackage指定と別途node --versionでも20.20.2を確認。
+Browserは33件中32成功/1失敗、skip/retry0（test100.03秒/runner101.42秒）。
+
+修正headのCI push40510652145/PR40510663843は各attempt1 failure。
+全3 jobの生ログを照合し、各runのNode20.20.2 JS192成功、native51成功/2skip、
+Rust21成功、browser32成功/1失敗を確認。追加native-section caseだけが開始直後の
+__TAURI__.core未定義で停止し、断面処理へ到達していない。失敗artifactは
+push12737426744、PR12738170023。未知の製品失敗や既知maintenanceと混同しない。
+
+原因は共有fixtureのbeforeEach登録をmodule importの副作用にしていたこと。
+単独実行では動くが、全件ではbasic-drawingが先に同じmoduleを読み込み、
+2番目のspecへhookが登録されない。ローカルtraceにgoto0/beforeEach0、空pageの
+ままExposeBinding/Evaluateして失敗することを確認。
+テストごとに実行されるtest.extendのpage fixtureへ変え、daemon/queue/serialを
+各testのclosureに置く。終了時はpending拒否/readline close/child終了待機を行う。
+製品native/JS・既存の全JS/nativeテスト・追加native-section spec・package/lockは
+ローカル全件実行時と同一blobで、fixtureだけを変更。assertion/timeout/retryは不変。
+Node/JS/nativeの成功をfixtureだけの変更で再実行したとは書かず、変更範囲と
+結果が適用されるsourceを区別する。browser全件を再実行し、結果を続けて追記する。
+
+
+第3段階のbrowser再実行は全33件成功・失敗/skip/retry0、test103.673秒・
+runner104.64秒。先に同じfixtureを使うbasic-drawing7件が走った後でも、
+追加native-section caseが起動し同じB-rep/edgeからG-codeまで成功する。
+既存Difference3件、Split/Library/寸法追従・修復、maintenanceもこのrunで成功。
+既知のframe数/保存通知の間欠失敗を恒久解決したとは扱わない。
+
+製品native/JS、JS/nativeテスト、追加native-section spec、package/lockは
+Node24/20/nativeの全件検証時と同一blob。テスト実行コードの変更はfixtureのみで、
+それを含めてbrowser全件を再実行した。8ファイルのPR範囲と台帳65行/14列を
+確認し、全結果と初回CI2 failureをPR/ボードへ残す。新しいfixture修正headの
+CI結果はPR本文とボードに確認後追記する。未確定を成功と書かない。
+実macOS GUI/IPC/OS dialog、ローカルRust、実プリンターは未実施を維持。
+ユーザー指定のマージ前停止点とし、Ready/merge/Issue自動close・004再開はしない。
+
+
 ## 2026-10-28 JST — Issue #11 / 指示006の先行実施
 
 ユーザーの再開指示とボード06:54の範囲確認に従い、006を取得して作業中への変更・
@@ -1035,3 +1151,32 @@ browser35の全件実測は同じ実行コードに対するものとして保�
 文書追加後の最終headの全CIはPR #36とボードへ追記する。全条件が成立してから
 Ready化・merge commit・Issue #11自動closeを実際に確認し、006を完了へ進める。
 Issue #37はopenで残し、006完了前に007/004を再開しない。
+
+
+## 2026-10-28 JST — Issue #34 / 指示007、006完了による再開
+
+006/PR36のmerge aa4338d7・Issue11自動close・ボード完了を確認し、007を作業中へ
+戻したことをreadback確認。既存branch fix/34-native-section-intersection / PR35へ
+最新main aa4338d7を取り込む。競合は本ログ末尾の追記だけで、両側がbase5defb177の
+全文をprefixとして保持していることを検証し、旧007追記8346 bytesと006追記4628 bytesを
+byte単位でそのまま連結した。コード競合や仕様の推測での採用/破棄はない。
+台帳の006 A04/R06証拠、65 ID/状態、007 S05/D05証拠の双方を保持する。
+
+同じ実行コードで全件を再実行：Node24.22.1 npm test192成功/失敗・skip0
+（test2.744秒/runner2.995秒）、Node20.20.2全28 JS192成功/失敗・skip0
+（test4.160秒/runner4.233秒）、native全53検出＝51成功/任意USD2skip
+（test4.673秒/runner6.348秒）、Node20/Chromium156のbrowser全36件は36成功/
+失敗・skip・retry・flaky0/errors[]（test103.178秒/runner104.552秒）。
+同じ下端edge長64、同じB-rep hash、42 paths/G-codeのattachmentも照合。
+
+環境履歴を区別：最初のNode20/ブラウザーentrypointは旧npm cache binaryの欠落で
+本体未到達。ignored work/toolchainへNode20.20.2を準備し、versionを確認して再実行。
+nativeの非verbose初回はexit0でもlogに最終集計がなく全件未確認で、成功数に含めず
+verboseで全53件/OK skipped2まで確認した。これらをアプリのassertion failureと混同しない。
+rawはwork/board-verification/007-resume-006/に置いた。
+
+実機macOS/Tauri/OSダイアログ・ローカルRust・実プリンターは未実施。Mac条件は
+未実施のまま後段Issue #37へ移管済みで、本Issue #34の完了に置き換えない。
+main aa4338d7のpost-merge checks40601895904とPages40602176848はsuccessを確認。
+旧headのCI失敗/再実行をすべて保持し、新headで全CI（frame成功を含む）を確認後に
+PR35/ボードへ記録し、通常条件でReady→merge commit→Issue34自動closeへ進める。
