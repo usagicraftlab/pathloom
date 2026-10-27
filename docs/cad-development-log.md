@@ -678,3 +678,88 @@ APIのPR専用取得だけで済ませず、同一headのpush/PR全runを公開A
 
 台帳はD02/E06のmain行とD04の更新を保持。A/T/Rの#5/#6両方の証拠も維持した。
 本節以後のCI結果とマージ後の自動クローズ確認は、PR #28本文とIssue #6の完了報告に記録する。
+
+## 2026-10-27 JST — 指示003【改訂】 / Issue #31 — Difference browser fixtureの隔離
+
+指示ボードの改訂指示に従い、main `c3655574468cd8a299adf3b173eba4c021ab650c`
+のbrowser失敗2種類を調べた。製品コードに原因があれば修正せず停止する契約である。
+今回確認したのはテストfixtureの問題であり、製品のpreview/commit・Store・native、
+Difference/Split/Offsetの演算、CI設定、Issue #8のブランチには変更を加えない。
+
+### 失敗の再現と通信の証拠
+
+前回の対象ケース単独5回はすべて成功したが、同じmainの全体実行では最初のBoxの履歴0件と、
+Save/reload後のdialog遮蔽が発生した。今回は診断用コピーで要求ID、応答ID、daemon PID、
+テスト開始/終了、失敗時のUI/native jobsを観測した。要求を遅延させたり混入させたりする
+故障注入は行っていない。最初の診断用3ケースは3成功、その後3ケースを5巡した結果は
+**13成功/2失敗**（98.6秒、retryなし）。2失敗は別々の巡の次の症状である。
+
+1. `cad-difference.spec.mjs:201`：回復確認dialogがクリックを遮蔽。履歴のBox3件と
+   Differenceはすべてvalidで、nativeの未完了jobsは0件だった。通常の自動保存が
+   reload前に間に合うかどうかで回復確認が現れるのに、テストは応答せず次へ進んでいた。
+2. 同`:308`：前のT19/T20ケース終了後に旧pageのimport要求が共有queueへ入り、
+   次ケースのhello応答を横取り。最初のBox確定後の履歴が期待1件に対し0件のまま失敗した。
+
+後者は観測した通信の次の順序で特定できた。時刻は前ケース終了を0msとする。
+
+| 時差 | 観測 |
+| --- | --- |
+| 0ms | T19/T20終了、共有queueは空 |
+| +5ms | 旧pageのimport要求44が旧daemon PID1036へ送信され、共有queueへ追加 |
+| +10ms | 旧daemonがSIGTERMで終了。応答44は来ない |
+| +53ms | 次の並べ替えケース開始時にも旧要求44がqueueへ残存 |
+| +591ms | 新daemon PID1055へのhello要求45を追加 |
+| +689ms | 新daemonの応答45が到着したが、queueの先頭は旧要求44。`queue.shift()`は44側へ渡す |
+| +5868ms | 新しいhello45のPromiseは未完了のまま、最初のBox履歴数のassertionが失敗 |
+
+生ログはローカル `work/board-verification/003r/wire-natural-five.jsonl` の1050行目付近。
+SHA-256は `f8a4ba0bc723e9695edd2c9f2f7c4d02e12bd2ee99c96ce3c895fc0b913545a5`。
+同ディレクトリの`report-five.json`は15件中13成功/2失敗/0skipを記録している。
+診断用コピーの初回はafterEach引数のfixture宣言形式で読込エラーとなり、製品テストは
+実行されなかった。診断用コードだけを直した後の計測結果が上記であり、読込失敗を
+成功runに含めない。前回の未知失敗を「再現せず」とする結論には進まなかった。
+
+### テストだけに加えた修正
+
+- native childとpending要求をbeforeEach内の各テストに閉じ、応答IDで対応付ける。
+  旧pageのbindingが終了後に呼ばれても、新しいchildやpending要求へ接続しない。
+- 終了済みfixtureへの要求を拒否し、未完了要求をrejectしてreadlineを閉じ、childの
+  close完了までafterEachで待つ。旧プロセスの要求を次ケースへ持ち越さない。
+- 通常Save/reopenのテストでは回復データを明示的に用意し、reload後に正規の
+  「回復データを破棄」操作をしてから保存ファイルを開く。既存のSplit browser fixtureと
+  同じく、回復確認を自動保存タイマーとの競争にしない。project保存内容は変更しない。
+
+形状、体積、entity/bodyのID、工具保持、Undo/Redo、v2保存の既存assertionは維持した。
+固定sleep、assertionのtimeout延長、retry、maintenanceのframe/通知待ちの変更はない。
+機能台帳D02とA/T/R台帳にはこの検証の範囲を追記し、他の機能を完了へ昇格させない。
+
+### 修正後の検証
+
+修正した元のDifference spec全3ケースを5巡し、**15成功/0失敗/0skip**、exit0、54.5秒。
+計測用コピーではなく、PRへ含める元のテストを実行した。JSON reporterでも集計を確認した。
+全件検証結果はこの節の末尾に記録する。新headの全CI runとマージ・自動クローズの
+確認結果は、Issue #31を閉じるPR本文と指示ボードのCodexログへ記録する。
+
+
+| 修正後の全件コマンド | 今回のローカル実測 |
+| --- | --- |
+| `NODE_OPTIONS=--test-reporter=tap npm test` / Node24.22.1 | 185成功/0失敗/0skip、exit0、約2.00秒。TAPの総件数でも確認 |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | 185成功/0失敗/0skip、exit0、約2.83秒 |
+| `"$CODEX_PRIMARY_RUNTIME_PYTHON" -B -m unittest discover -s native -p 'test*.py'` | 51検出＝49成功/任意USD2skip、exit0、約2.32秒 |
+| packaged frontendの `npm run test:browser` 全体（下記） | 25成功/0失敗/0skip、exit0、59.5秒。Difference3/Split1/既存21 |
+| `node --check tests/browser/cad-difference.spec.mjs` / `git diff --check` | 成功 |
+
+browserの環境は `CI=1 PATHLOOM_FRONTEND_DIR=desktop-dist
+PATHLOOM_BREP_PYTHON="$CODEX_PRIMARY_RUNTIME_PYTHON"
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/workspace/scratch/1318e0e6fc5b/pathloom/work/chromium-local/chromium`。
+既存playwright.config.mjsを継承したローカル計測用config
+`work/board-verification/003r/main-tests.config.mjs`でJSON reporterを追加し、
+全体は`--output work/board-verification/003r/full-final-artifacts --max-failures=1`を指定した。
+テスト本体、timeout45秒、assertion待ち時間は同じで、retryは0のまま。JSONの25件成功も確認した。
+Python3.12.14/OCP7.8.1.1/Chromium153.0.8010.0で、Tauri transport・OSの保存/回復はfixture。
+実macOS GUI・実Tauri IPC・OS保存/回復ダイアログ、ローカルRust、実機プリンターは未実施である。
+known maintenanceのframe/通知待ちは今回のローカル全件では再発していないが、修正済みとはしない。
+
+本件は[Issue #31](https://github.com/usagicraftlab/pathloom/issues/31)を追跡先とし、
+`fix/31-browser-fixture-isolation`の1ブランチ・1PRで提出する。診断用コピーや計測用configは
+PRへ含めず、テスト1ファイルと台帳2件・本ログだけを含める。

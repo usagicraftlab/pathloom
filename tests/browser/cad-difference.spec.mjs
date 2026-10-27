@@ -3,22 +3,57 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 // Real OCCT daemon behind browser IPC. Only the OS-specific Tauri transport is substituted.
-let daemon,
-  queue = [],
-  serial = 0;
+let closeRuntime = async () => {};
 test.beforeEach(async ({ page }) => {
   page.on("dialog", (dialog) => dialog.accept());
-  daemon = spawn(
+  // Exposed bindings can still receive requests while the previous page tears
+  // down. Keep both the child and its requests local to this test, never FIFO
+  // match a new child's reply to an old page's unfinished request.
+  const daemon = spawn(
     process.env.PATHLOOM_BREP_PYTHON ||
       resolve(".pathloom-runtime/python/bin/python"),
     ["-u", "native/cad_runtime.py"],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
+  const pending = new Map();
+  let serial = 0,
+    closed = false;
+  const failPending = (error) => {
+    for (const task of pending.values()) task.reject(error);
+    pending.clear();
+  };
+  const exited = new Promise((resolve) => {
+    daemon.once("close", () => {
+      closed = true;
+      failPending(new Error("Browser CAD fixture stopped"));
+      resolve();
+    });
+  });
+  daemon.on("error", failPending);
+  daemon.stdin.on("error", failPending);
   daemon.stderr.on("data", () => {});
-  createInterface({ input: daemon.stdout }).on("line", (line) => {
-    const reply = JSON.parse(line),
-      task = queue.shift();
+  const replies = createInterface({ input: daemon.stdout });
+  closeRuntime = async () => {
+    if (!closed) {
+      closed = true;
+      failPending(new Error("Browser CAD fixture stopped"));
+      replies.close();
+      daemon.kill();
+    }
+    await exited;
+  };
+  replies.on("line", (line) => {
+    if (closed) return;
+    let reply;
+    try {
+      reply = JSON.parse(line);
+    } catch (error) {
+      failPending(error);
+      return;
+    }
+    const task = pending.get(reply.id);
     if (!task) return;
+    pending.delete(reply.id);
     reply.ok
       ? task.resolve(reply.result)
       : task.reject(new Error(reply.error.message));
@@ -33,10 +68,17 @@ test.beforeEach(async ({ page }) => {
     );
   });
   await page.exposeBinding("__cadKernel", async (_, message) => {
+    if (closed) throw new Error("Browser CAD fixture stopped");
     return new Promise((resolve, reject) => {
-      queue.push({ resolve, reject });
+      const id = String(++serial);
+      pending.set(id, { resolve, reject });
       daemon.stdin.write(
-        JSON.stringify({ ...message, id: String(++serial) }) + "\n",
+        JSON.stringify({ ...message, id }) + "\n",
+        (error) => {
+          if (!error) return;
+          pending.get(id)?.reject(error);
+          pending.delete(id);
+        },
       );
     });
   });
@@ -125,9 +167,8 @@ test.beforeEach(async ({ page }) => {
   await page.locator("#modeModel").click();
   await expect(page.locator("#modelStatus")).toContainText("正確な形状");
 });
-test.afterEach(() => {
-  daemon?.kill();
-  queue = [];
+test.afterEach(async () => {
+  await closeRuntime();
 });
 async function boxes(page, positions = [0, 20, 5]) {
   for (const x of positions) {
@@ -226,10 +267,22 @@ test("#5 AUD-002: UI preserves both targets, tool retention, Undo/Redo and v2 sa
   expect((await cutState(page)).slots).toEqual(initial.slots);
   await page.evaluate(() => document.querySelector("#projectSave").click());
   await expect.poll(() => page.evaluate(() => window.__saved?.version)).toBe(2);
+  // Recovery is a separate, legitimate prompt. Seed it explicitly rather than
+  // racing the autosave timer, and dismiss it before opening the saved file.
+  await page.evaluate(() =>
+    window.__cadStorage({
+      key: "recovery",
+      content: JSON.stringify(window.__saved.cadDocument),
+    }),
+  );
   await page.reload();
-  await page.waitForFunction(() => window.PathloomModel);
+  await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
+  await page.evaluate(() => document.querySelector("#modeModel").click());
+  await page
+    .getByRole("button", { name: "回復データを破棄", exact: true })
+    .click();
+  await expect(page.locator("dialog[open]")).toHaveCount(0);
   await page.evaluate(() => document.querySelector("#projectOpen").click());
-  await page.locator("#modeModel").click();
   await expect(page.locator(".model-history-entry")).toHaveCount(4);
   expect((await cutState(page)).slots).toEqual(initial.slots);
   expect((await cutState(page)).visible).toContain(tool);
