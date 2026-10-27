@@ -82,6 +82,7 @@ export function initModelWorkspace(api) {
     previewAgain = false,
     previewHandles = [],
     ready = false,
+    runtimeStart = null,
     selection = [],
     view;
   const solver = new SketchSolverClient();
@@ -156,20 +157,31 @@ export function initModelWorkspace(api) {
     return plane;
   }
   async function startRuntime() {
+    // Readiness includes the initial libraries: registration must not race an
+    // older library snapshot or a second initialization's status update.
+    if (runtimeStart) return runtimeStart;
     if (ready) return;
+    runtimeStart = (async () => {
+      try {
+        const hello = await native.start();
+        ready = true;
+        store.document.kernel.version = hello.occtVersion ?? null;
+        store.document.kernel.bindingVersion = hello.ocpVersion;
+        setStatus(`OCCT（OCP ${hello.ocpVersion}） · 正確な形状で作図できます`);
+        await loadCommands();
+        await loadLibrary();
+        await checkRecovery();
+      } catch (error) {
+        report(error);
+      }
+    })();
     try {
-      const hello = await native.start();
-      ready = true;
-      store.document.kernel.version = hello.occtVersion ?? null;
-      store.document.kernel.bindingVersion = hello.ocpVersion;
-      setStatus(`OCCT（OCP ${hello.ocpVersion}） · 正確な形状で作図できます`);
-      await loadCommands();
-      await loadLibrary();
-      await checkRecovery();
-    } catch (error) {
-      report(error);
+      return await runtimeStart;
+    } finally {
+      runtimeStart = null;
     }
   }
+
   function saveDraft() {
     if (session && !["committed", "cancelled"].includes(session.state)) {
       const draft = clone(session);
@@ -1183,9 +1195,10 @@ export function initModelWorkspace(api) {
         f.status = "dirty";
     store.recompute().catch(report);
   };
-  $("modelRegister").onclick = () => {
+  $("modelRegister").onclick = async () => {
     try {
       const d = JSON.parse($("modelCommandDefinition").value);
+      await startRuntime();
       const normalized = registerCommand(d);
       store.document.commandDefinitions.push(clone(normalized));
       store.document.documentRevision++;

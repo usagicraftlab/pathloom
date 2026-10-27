@@ -975,3 +975,63 @@ JSON集計もexpected32/unexpected0/skipped0/flaky0、errors=[]で一致する�
 別の履歴としてPR本文に保持する。最新mainへrebaseした新headの全CI、Ready化、
 マージコミットとIssue #8自動クローズの結果はPR本文とボードへ実際の確認後に記録する。
 この段階のログだけでCI成功やマージ完了とは扱わない。#9/#10へは先行着手しない。
+
+
+## 2026-10-28 JST — Issue #11 / 指示006の先行実施
+
+ユーザーの再開指示とボード06:54の範囲確認に従い、006を取得して作業中への変更・
+読戻しを済ませた。旧007限定・確認のみという制限の解消も既存3時間タスクへ反映した。
+main5defb177から専用branch `fix/11-regression-verification` を作成した。
+007/PR35のnative修正は含めず、007は要判断・006完了待ちを維持する。
+
+frameはaxisの同期更新とRAF callback実行の非同期境界を区別する。既存の
+`frames > 0` をexpect.pollで待ち、idle `<4`、axis=top、timeout45秒・retry0を維持。
+実appの描画callbackを保留し、axis=top/frames=0の中間状態を検証してから解放する
+追加回帰も入れた。単に閾値やtimeoutを緩めたり、失敗をretryで隠したりしない。
+
+保存側は初期command libraryのreplyを保留する回帰で、未完の初期読込と登録が
+並行することを製品修正前に確認した（追加2ケース中1成功/1失敗、24.520秒）。
+workspaceの初期化全体を進行中promiseへ集約し、登録は初期library/recovery確認まで待つ。
+共有保存失敗時には失敗通知・project内定義保持・共有保存先未更新を確認する。
+修正後は従来のA04/R06とframeを含む対象5ケースすべて成功（15.186秒、retry0）。
+
+全件実測：Node24.22.1 npm testは192成功/失敗・skip0（test6.333秒/runner6.715秒）。
+Node20.20.2 binaryで全28 JSファイルを明示展開した実行は192成功/失敗・skip0
+（test7.113秒/runner7.220秒）。先のnpm exec entrypointはexit0でもTAPが66件までで
+集計がなく全件未確認だったため、成功扱いせず直接binaryのversionと最終集計を照合した。
+Python3.12.14/OCP7.8.1.1のnative全51件は49成功/任意USD2skip
+（test5.016秒/runner6.756秒）。全browser35件は35成功/失敗・skip・retry・flaky0、errors[]
+（test145.509秒/runner147.606秒）。新headの全CIはこの記録時点では未実行。
+
+P1-01〜04の既存回帰への対応、全件の各結果、M01〜M07の未実施範囲は
+[cad-phase1-regression-verification.md](cad-phase1-regression-verification.md)へ集約した。
+A04/R06の証拠を追記し、A/T/R状態と65機能IDの状態は昇格しない。
+この環境はLinuxでcargoもなく、実macOS GUI/Tauri/OS保存回復・WebView/VoiceOver・
+.app/.dmg build・M07は実施できていない。既存CIのRust成功でそれらを代替しない。
+Issue11の実機完了条件と、先行実施時点では#9/#10が未完という残件を保持する。
+実施済みをPRへ保存して全CIを照合し、実機証拠/範囲決定なしに完了やmergeとしない。
+
+
+### 2026-10-28 08:15 JST方針後 — Issue #11の範囲整理と再開
+
+ユーザーの「次進めて」とボード08:15回答に従い、006を作業中へ戻して読戻し確認。
+未実施macOS M01〜M07、実Tauri/OS保存回復、M07とPhase 1最終照合を
+[Issue #37](https://github.com/usagicraftlab/pathloom/issues/37)へ移した。
+元の完了条件、各Mの操作/証拠、#34/#9/#10の完成後に扱う依存を引き継いだ。
+新Issue本文を読み返して一致を確認し、Issue #11を自動対策の先行範囲へ整理した。
+移管先は「Phase 1 完了後の実機検証フェーズ」であり、M各項目は未実施のまま。
+実機の合格や成功に置き換えず、元の停止記録も履歴として保持する。
+
+source head f6d85208204e632d46be9717fcbc58a19adeba82のCIは
+push40592375358 / PR40592463574の各attempt1がsuccess。
+全6 jobのログで各JS192成功、native49成功/任意USD2skip、macOS Rust21成功、
+browser35成功（元frame/追加保留frame/保存競合と拒否caseを含む）を確認。
+対象5ケース×5巡のNode20.20.2実測も25成功/失敗・skip・retry・flaky0、errors[]
+（test84.238秒/runner85.096秒）。CI再実行なし。
+
+今回の追加変更は移管先・範囲・履歴を示す文書のみで、製品/JS/native/browser test・
+package/lockはf6d85208から不変。前段階のNode24/20各192、native49+2skip、
+browser35の全件実測は同じ実行コードに対するものとして保持し、再実行したとは書かない。
+文書追加後の最終headの全CIはPR #36とボードへ追記する。全条件が成立してから
+Ready化・merge commit・Issue #11自動closeを実際に確認し、006を完了へ進める。
+Issue #37はopenで残し、006完了前に007/004を再開しない。

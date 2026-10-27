@@ -15,7 +15,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | A01 | partial | 4 stages; shared camera + document preserved in browser; full keyboard/selection paths pending |
 | A02 | not-run | 未実装または未検証。合格としない。 |
 | A03 | passed | Issue #8: center(10,20),60×40 and constrained width80 retain center; two-corner input is distinct; three-mode browser Save/Undo. Scoped to this fixture |
-| A04 | partial | Work-order command JSON creates real rectangle, persists globally and inside v2; explicit command upgrade/rollback UI pending |
+| A04 | partial | Work-order command JSON creates real rectangle, persists globally and inside v2; Issue #11 adds initial-library/registration ordering and shared-save failure coverage ([evidence](cad-phase1-regression-verification.md)); explicit command upgrade/rollback UI pending |
 | A05 | partial | T03/T05 plus Issue #8 real Worker width60→80, center/height retained, Undo/Redo and normal Save/reopen; all constraint types/drag pending |
 | A06 | partial | Issue #8 conflicting width20 produces no-convergence; previous exact asset hash/bbox survives, draft is retained through Undo/Redo/Save/reopen; broader conflict/recovery cases pending |
 | A07 | partial | native T10/T11 + sketch->extrude and semantic fillet browser paths; full chained generation numerical test pending |
@@ -69,7 +69,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | R03 | passed | Issue #4: Undo/delete/Open during export cannot adopt the old result; add initialization cannot insert into a replaced document |
 | R04 | partial | Rust Session real hard-kill test passes; full Tauri/macOS recovery not run |
 | R05 | partial | Corrupt asset prepare cannot replace current document (job test); real native hash/byte rejection; full OS dialog flow untested |
-| R06 | passed | Work-order user command project reopened in fresh page after global command definitions were removed; exact geometry restored |
+| R06 | passed | Work-order user command project reopened in fresh page after global command definitions were removed; exact geometry restored. Issue #11 additionally holds initial library loading and rejects shared saves; project definition retained ([evidence](cad-phase1-regression-verification.md)). Real OS app-data/restart remains M05 |
 | R07 | partial | alias collision unit test; import collision UI pending |
 | R08 | partial | Browser recovery restores real assets and history; failed feature + lastValid saved in v2; complete failed-draft restart matrix pending |
 | R09 | partial | existing representative JS fixtures + browser regressions; complete legacy asset matrix pending |

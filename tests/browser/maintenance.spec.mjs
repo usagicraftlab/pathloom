@@ -112,7 +112,7 @@ test('failure in final printable generation rolls back and is never reported as 
 test('idle viewport stops frame polling and camera changes still render',async({page})=>{
   await page.addInitScript(()=>{const request=window.requestAnimationFrame.bind(window);window.__frames=0;window.requestAnimationFrame=callback=>request(time=>{window.__frames++;callback(time)})});
   await start(page);await page.waitForTimeout(400);await page.evaluate(()=>window.__frames=0);await page.waitForTimeout(400);expect(await page.evaluate(()=>window.__frames)).toBeLessThan(4);
-  await page.getByRole('button',{name:'top view',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.Pathloom.viewState().axis)).toBe('top');expect(await page.evaluate(()=>window.__frames)).toBeGreaterThan(0);
+  await page.getByRole('button',{name:'top view',exact:true}).click();await expect.poll(()=>page.evaluate(()=>window.Pathloom.viewState().axis)).toBe('top');await expect.poll(()=>page.evaluate(()=>window.__frames)).toBeGreaterThan(0);
 });
 
 test('invalid numeric edits keep a clearly stale preview, block output, and recover on correction',async({page})=>{
@@ -143,4 +143,26 @@ test('AI settings live in a dialog and shared Output tool behavior is preserved'
   await start(page);await page.getByRole('button',{name:'AI settings',exact:true}).click();await expect(page.locator('#aiSettingsDialog')).toBeVisible();await expect(page.locator('#cadAiModel')).toHaveValue('test-mini');await page.getByRole('button',{name:'Close AI settings'}).click();
   await page.evaluate(()=>{window.Pathloom.upsertLiveToolpath({source:'other',label:'Other',paths:[{tool:0,points:[[0,0,.6],[10,0,.6]]}]});const select=document.querySelector('.tool-output');select.value='2';select.dispatchEvent(new Event('change',{bubbles:true}))});
   expect(await page.locator('.tool-output').evaluateAll(selects=>selects.map(s=>s.value))).toEqual(['2','2']);
+});
+
+
+test('#11: a camera change waits for a deferred render callback',async({page})=>{
+  await page.addInitScript(()=>{
+    const request=window.requestAnimationFrame.bind(window);
+    window.__frames=0;window.__holdFrames=false;window.__heldFrames=[];
+    window.requestAnimationFrame=callback=>request(time=>{
+      const render=()=>{window.__frames++;callback(time)};
+      if(window.__holdFrames)window.__heldFrames.push(render);else render();
+    });
+  });
+  await start(page);await page.waitForTimeout(400);
+  await page.evaluate(()=>{window.__frames=0;window.__holdFrames=true});
+  await page.getByRole('button',{name:'top view',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window.Pathloom.viewState().axis)).toBe('top');
+  await expect.poll(()=>page.evaluate(()=>window.__heldFrames.length)).toBeGreaterThan(0);
+  // The synchronous camera state is already top, while the render is pending.
+  expect(await page.evaluate(()=>window.__frames)).toBe(0);
+  const rendered=expect.poll(()=>page.evaluate(()=>window.__frames)).toBeGreaterThan(0);
+  await page.evaluate(()=>{window.__holdFrames=false;for(const render of window.__heldFrames.splice(0))setTimeout(render,0)});
+  await rendered;
 });

@@ -2,6 +2,32 @@ import { test, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
+
+function rectangleCommand(id = "user.rectangle.center", displayName = "Custom Center Rectangle") {
+  return {
+    format: "pathloom-command",
+    schemaVersion: 1,
+    id,
+    version: 1,
+    displayName,
+    aliases: ["独自矩形"],
+    category: "curve.create",
+    baseOperation: { id: "curve.rectangle", version: 1 },
+    mode: "center",
+    inputs: [
+      { key: "plane", kind: "plane", default: "activeWorkPlane" },
+      { key: "center", kind: "point", minCount: 1, maxCount: 1 },
+      { key: "corner", kind: "point", minCount: 1, maxCount: 1 },
+    ],
+    settings: {
+      rounded: { type: "boolean", default: false },
+      radius: { type: "length", default: 1 },
+    },
+    adapter: "rectangle.center.v1",
+    resultPolicy: "copy",
+  };
+}
+
 // Real OCCT daemon behind browser IPC. Only the OS-specific Tauri transport is substituted.
 let daemon,
   queue = [],
@@ -85,8 +111,14 @@ test.beforeEach(async ({ page }) => {
             });
           if (name === "cad_cancel") return;
           if (name === "cad_library") return "[]";
-          if (name === "cad_command_library")
-            return window.__cadStorage({ key: "commands", ...args });
+          if (name === "cad_command_library") {
+            if (args.content !== undefined && window.__failCommandSave)
+              throw new Error("test command storage denied");
+            const result = await window.__cadStorage({ key: "commands", ...args });
+            if (args.content === undefined && location.search.includes("defer-command-load"))
+              await window.__commandLoadGate();
+            return result;
+          }
           if (name === "cad_shape_library")
             return window.__cadStorage({ key: "library", ...args });
           if (name === "cad_recovery")
@@ -654,28 +686,7 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
 test("A04/R06: work-order command definition creates real geometry and persists without AI", async ({
   page,
 }) => {
-  const definition = {
-    format: "pathloom-command",
-    schemaVersion: 1,
-    id: "user.rectangle.center",
-    version: 1,
-    displayName: "Custom Center Rectangle",
-    aliases: ["独自矩形"],
-    category: "curve.create",
-    baseOperation: { id: "curve.rectangle", version: 1 },
-    mode: "center",
-    inputs: [
-      { key: "plane", kind: "plane", default: "activeWorkPlane" },
-      { key: "center", kind: "point", minCount: 1, maxCount: 1 },
-      { key: "corner", kind: "point", minCount: 1, maxCount: 1 },
-    ],
-    settings: {
-      rounded: { type: "boolean", default: false },
-      radius: { type: "length", default: 1 },
-    },
-    adapter: "rectangle.center.v1",
-    resultPolicy: "copy",
-  };
+  const definition = rectangleCommand();
   await page.getByText("コマンドを追加", { exact: true }).click();
   await page
     .locator("#modelCommandDefinition")
@@ -786,4 +797,42 @@ test("A11/T07: Join gap remains until the user explicitly changes tolerance", as
         window.PathloomModel.store.document.entities.at(-1).closure.curveClosed,
     ),
   ).toBe(false);
+});
+
+
+test("#11: registration waits for the initial command library before saving", async ({ page }) => {
+  let release;
+  await page.exposeBinding("__commandLoadGate", () => new Promise(resolve => { release = resolve; }));
+  await page.goto("/?defer-command-load");
+  await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
+  await page.locator("#modeModel").click();
+  await expect.poll(() => typeof release).toBe("function");
+  const definition = rectangleCommand("user.rectangle.deferred", "Deferred Rectangle");
+  await page.getByText("コマンドを追加", { exact: true }).click();
+  await page.locator("#modelCommandDefinition").fill(JSON.stringify(definition));
+  try {
+    await page.getByRole("button", { name: "定義を検証して追加", exact: true }).click();
+    // Loading an older library must finish before this registration can mutate it.
+    expect(await page.evaluate(() => window.PathloomModel.store.document.commandDefinitions.map(d => d.id))).not.toContain(definition.id);
+    release();
+    await expect(page.locator("#modelStatus")).toContainText("登録・保存");
+    await expect.poll(() => page.evaluate(async () => JSON.parse(await window.__cadStorage({ key: "commands" })).map(d => d.id))).toContain(definition.id);
+    await expect(page.getByRole("button", { name: definition.displayName, exact: true })).toBeVisible();
+    await page.evaluate(() => window.PathloomModel.render());
+    await expect(page.locator("#modelStatus")).toContainText("登録・保存");
+  } finally { release?.(); }
+});
+
+test("#11: failed command storage keeps the project definition and reports failure", async ({ page }) => {
+  const definition = rectangleCommand("user.rectangle.storage-failure", "Unsaved Shared Rectangle");
+  await page.evaluate(() => { window.__failCommandSave = true; });
+  await page.getByText("コマンドを追加", { exact: true }).click();
+  await page.locator("#modelCommandDefinition").fill(JSON.stringify(definition));
+  await page.getByRole("button", { name: "定義を検証して追加", exact: true }).click();
+  await expect(page.locator("#modelStatus")).toContainText("共有コマンド保存に失敗");
+  await expect(page.locator("#modelStatus")).toContainText("test command storage denied");
+  expect(await page.evaluate(() => window.PathloomModel.store.document.commandDefinitions.map(d => d.id))).toContain(definition.id);
+  expect(await page.evaluate(async () => JSON.parse(await window.__cadStorage({ key: "commands" })).map(d => d.id))).not.toContain(definition.id);
+  await page.evaluate(() => document.querySelector("#projectSave").click());
+  await expect.poll(() => page.evaluate(() => window.__saved?.cadDocument?.commandDefinitions?.map(d => d.id) || [])).toContain(definition.id);
 });
