@@ -1,6 +1,6 @@
 # 指示007 / Issue #34：native断面出力の交差エラー
 
-2026-10-27 JST。原因特定・修正案と対象検証まで進めた第2停止点。
+2026-10-27 JST。ローカル全件検証を完了し、fixture修正headのCIを照合する第3停止点。マージ前で停止する。
 対象Issue: https://github.com/usagicraftlab/pathloom/issues/34
 
 ## 範囲と現状
@@ -12,7 +12,7 @@ treeは`c302dc84bbca55e88bcce057a61bfc6bd906a8c1`。
 Issue #9のStore・CAD binding・graph更新の差分は取り込まない。
 
 第1停止点ではIssue・専用branch・Draft PRと再現記録の準備までで停止した。
-ユーザーの「続けてください」を受け、原因特定・修正案・対象検証まで実施し、再び停止する。
+ユーザーの再開指示ごとに段階を区切り、原因特定・対象検証を経て全件検証へ進む。
 指示004の再開は今回の作業範囲に含めない。
 
 ## 固定する再現条件
@@ -104,16 +104,46 @@ Issue #9のStore・CAD binding・graph更新の差分は取り込まない。
 - [x] 実交差／丸め精度を含む検証の誤検出を証拠で切り分ける。
 - [x] 原因側の修正案と、本来の交差・無効出力の拒否を両立する。
 - [x] 同じ形状から断面→toolpath→G-code生成まで対象検証で確認する。
-- [ ] Node24のnpm test、Node20.20.2全JS、native全件、browser全件を実行する。
+- [x] Node24のnpm test、Node20.20.2全JS、native全件、browser全件を実行する。
 - [ ] CIの全run/attemptを確認し、失敗・skip・未実行も保持する。
 - [ ] 機能台帳・A/T/R台帳・開発ログを最終結果へ更新する。
 - [ ] 全条件成立後のみReady化・merge commit・Issue自動クローズを確認する。
 
-## 全件検証前の状態
+## 第3段階：全件検証とfixtureの修正
 
-Node24全JS、Node20.20.2全JS、native全件、browser全件：ローカル未実行。
-実機確認、Ready化、マージ、Issue自動クローズ：未実施。
-準備headのpush/PR CIは両方attempt1 success（JS各192成功、native各49成功/2skip、
-Rust各21成功、browser各32成功）。これは製品修正前の結果であり、修正headの検証とは分ける。
-修正headのCIは開始後の実際の結果をPR本文とボードへ追記する。
-全件検証と最終判定の前に、ユーザー指定の第2停止点で待機する。
+ff19d401のローカル全件検証は、Node24 npm test 192成功、Node20.20.2全JS192成功、
+native53検出=51成功/任意USD2skip。browserは33件中32成功/1失敗だった。
+修正headのpush40510652145/PR40510663843も各attempt1 failureで、同じ追加caseの
+`window.__TAURI__.core`参照が初期化前に失敗した。各runのJS192/native51+2skip/Rust21は成功。
+
+### 単独実行では見えなかった初期化の原因
+
+`fixtures/cad.mjs`はimportの副作用でbeforeEach/afterEachを登録し、baseのtestを
+そのままexportしていた。同じworkerでbasic-drawingが先にmoduleを読み込むと、
+module cacheにより2番目のnative-section specへhookが登録されず、空のpageから始まる。
+ローカル全件でも同じ失敗を再現し、traceで当該caseのgoto呼出し0・beforeEach hook0を確認した。
+断面生成前のfixture不具合で、既知maintenanceの間欠失敗として除外しない。
+
+共有ヘルパーを`test.extend({page: ...})`へ変更し、各testでsetupを実行する。
+CAD daemon/queue/serialをtestごとのclosureに置き、終了時は残要求を拒否し、
+readlineを閉じ、childのcloseまで待つ。製品コード・assertion・timeout/retryは変更しない。
+実装根拠は[Playwrightのfixture/override仕様](https://playwright.dev/docs/test-fixtures)。
+この変更後の全件browser再実行結果と新CI結果は、確認後に下へ追記する。
+
+製品変更前の準備head40506774872/40506779845は各attempt1 success
+（JS各192、native各49+2skip、Rust各21、browser各32）。
+初回修正headの2 failureと、fixture修正後のrunを分け、過去の失敗を消さない。
+実macOS GUI/IPC/dialog、実プリンターは未実施。Ready化・merge・Issue自動closeは未実施。
+
+### fixture修正後のローカル全件結果
+
+Browser全33件は33成功/0失敗/0skip/0retry（テスト103.673秒、runner104.64秒）。
+同じworkerで先にbasic-drawing7件が走った後に新caseが実行され、同じB-repから
+42層のG-codeまで成功した。単独実行だけでの成功と混同しない。
+以前の32成功/1失敗を保持し、成功で上書きしない。
+
+Node24/Node20/nativeの全件結果はff19d401と同一の製品・JS/nativeテストblobに
+対して実測したもの。今回その後に変えた実行コードはbrowser fixtureのみであり、
+そのfixtureを含めbrowser全件を再実行した。package/lock/全製品・assertionは不変。
+新headのCI全runはPR本文とボードへ実測結果を記録し、未確認を成功扱いしない。
+Ready化・merge commit・Issue自動closeの前でユーザー指定の停止点とする。

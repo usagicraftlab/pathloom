@@ -1049,3 +1049,45 @@ native51検出=49成功/2skip、Rust21成功、browser32成功を確認した。
 native-bridge.log、js-guards.log、endpoint-comparison.json、junctions.json、
 section-target.json/log/traceとsection-target-numeric.json/log。文書patchの初回は
 文脈行不一致で適用されず、実際の行を読み直して適用した。製品/検証失敗とは区別する。
+
+
+## 2026-10-27 JST — 指示007 / Issue #34：全件実行でのfixture初期化失敗
+
+ユーザーの「つづけてください」を受け、007だけの全件検証を再開。マージ前で停止する。
+ff19d401/tree2966b28dのローカル全件結果：Node24.22.1 npm testは192成功/失敗skip0
+（test3.143秒/runner3.409秒）、Node20.20.2は全28 JSファイル・192成功/失敗skip0
+（test4.546秒/npm起動含む36.052秒）、nativeは53検出=51成功/任意USD2skip
+（test4.580秒/runner6.346秒）。Node20はpackage指定と別途node --versionでも20.20.2を確認。
+Browserは33件中32成功/1失敗、skip/retry0（test100.03秒/runner101.42秒）。
+
+修正headのCI push40510652145/PR40510663843は各attempt1 failure。
+全3 jobの生ログを照合し、各runのNode20.20.2 JS192成功、native51成功/2skip、
+Rust21成功、browser32成功/1失敗を確認。追加native-section caseだけが開始直後の
+__TAURI__.core未定義で停止し、断面処理へ到達していない。失敗artifactは
+push12737426744、PR12738170023。未知の製品失敗や既知maintenanceと混同しない。
+
+原因は共有fixtureのbeforeEach登録をmodule importの副作用にしていたこと。
+単独実行では動くが、全件ではbasic-drawingが先に同じmoduleを読み込み、
+2番目のspecへhookが登録されない。ローカルtraceにgoto0/beforeEach0、空pageの
+ままExposeBinding/Evaluateして失敗することを確認。
+テストごとに実行されるtest.extendのpage fixtureへ変え、daemon/queue/serialを
+各testのclosureに置く。終了時はpending拒否/readline close/child終了待機を行う。
+製品native/JS・既存の全JS/nativeテスト・追加native-section spec・package/lockは
+ローカル全件実行時と同一blobで、fixtureだけを変更。assertion/timeout/retryは不変。
+Node/JS/nativeの成功をfixtureだけの変更で再実行したとは書かず、変更範囲と
+結果が適用されるsourceを区別する。browser全件を再実行し、結果を続けて追記する。
+
+
+第3段階のbrowser再実行は全33件成功・失敗/skip/retry0、test103.673秒・
+runner104.64秒。先に同じfixtureを使うbasic-drawing7件が走った後でも、
+追加native-section caseが起動し同じB-rep/edgeからG-codeまで成功する。
+既存Difference3件、Split/Library/寸法追従・修復、maintenanceもこのrunで成功。
+既知のframe数/保存通知の間欠失敗を恒久解決したとは扱わない。
+
+製品native/JS、JS/nativeテスト、追加native-section spec、package/lockは
+Node24/20/nativeの全件検証時と同一blob。テスト実行コードの変更はfixtureのみで、
+それを含めてbrowser全件を再実行した。8ファイルのPR範囲と台帳65行/14列を
+確認し、全結果と初回CI2 failureをPR/ボードへ残す。新しいfixture修正headの
+CI結果はPR本文とボードに確認後追記する。未確定を成功と書かない。
+実macOS GUI/IPC/OS dialog、ローカルRust、実プリンターは未実施を維持。
+ユーザー指定のマージ前停止点とし、Ready/merge/Issue自動close・004再開はしない。

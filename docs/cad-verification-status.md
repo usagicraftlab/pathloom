@@ -209,3 +209,25 @@ change. The two successful preparation-head CI runs have 192 JS, native49/2skip,
 Rust21 and browser32 each, and do not validate the later product change.
 No A/T/R status is promoted here. In particular, #9 reference-loss recovery
 remains outside #34, and actual macOS IPC/dialogs/printer were not exercised.
+
+
+## Issue #34 — full-suite fixture correction
+
+On ff19d401, full local Node24 and Node20.20.2 each pass192/0fail/0skip;
+native53 discovered passes51/skips2 optional USD. Full browser first gives
+32pass/1fail, matching push40510652145 and PR40510663843 (both attempt1 failure).
+Their JS192, native51+2skip and Rust21 pass; only the newly added browser case
+lacks Tauri initialization. The shared module registered hooks as an import
+side effect, so its second importing spec had no setup (trace: no goto/hook).
+The helper is now an extended per-test page fixture with local daemon/requests
+and awaited cleanup. Geometry, assertions and timeout/retry are unchanged.
+Full browser and new-head CI results are recorded after completion below.
+No unrelated A/T/R status is promoted and no macOS/printer claim is added.
+
+Fixture-corrected full local browser passes33/0fail/0skip/0retry (103.673s),
+including the seven earlier imports and the same bottom-edge G-code scenario.
+The product/JS/native test blobs and package/lock remain those used by the
+Node24/20/native full runs above; only the browser fixture code changed, and
+the full browser suite was rerun. Old failures remain part of the evidence.
+Final CI run outcomes are recorded in PR #35 and the board after inspection.
+The PR remains Draft at the user's pre-merge checkpoint.
