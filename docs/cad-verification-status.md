@@ -14,10 +14,10 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | --- | --- | --- |
 | A01 | partial | 4 stages; shared camera + document preserved in browser; full keyboard/selection paths pending |
 | A02 | not-run | 未実装または未検証。合格としない。 |
-| A03 | partial | T01 native + center width edit browser; other rectangle modes not complete |
+| A03 | passed | Issue #8: center(10,20),60×40 and constrained width80 retain center; two-corner input is distinct; three-mode browser Save/Undo. Scoped to this fixture |
 | A04 | partial | Work-order command JSON creates real rectangle, persists globally and inside v2; explicit command upgrade/rollback UI pending |
-| A05 | partial | T03/T05 solver + constrained rectangle browser; all constraint types/drag pending |
-| A06 | partial | T04 no-convergence preserves geometry and draft; not all conflict UI cases tested |
+| A05 | partial | T03/T05 plus Issue #8 real Worker width60→80, center/height retained, Undo/Redo and normal Save/reopen; all constraint types/drag pending |
+| A06 | partial | Issue #8 conflicting width20 produces no-convergence; previous exact asset hash/bbox survives, draft is retained through Undo/Redo/Save/reopen; broader conflict/recovery cases pending |
 | A07 | partial | native T10/T11 + sketch->extrude and semantic fillet browser paths; full chained generation numerical test pending |
 | A08 | partial | Existing fillet repair plus Issue #6 Split exact source/asset identity, disappearance/candidates and explicit reselection; no ordinal/proximity remap. Generalized topology mapping pending |
 | A09 | partial | branch-local DAG invalidation implemented; full failed-branch UI scenario pending |
@@ -37,12 +37,12 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | A23 | partial | Issue #4: document/feature/input/epoch guards through asset export; transport races17 pass, real OCCT width70→80 probe and existing browser21 pass. Actual macOS drag/load remains untested |
 | A24 | partial | Issue #6: exact Split rerun preserves binding ID; changed/count results block, v2 reopen retains candidates, explicit same-kind repair preserves binding ID. Full CAD-to-G-code chain remains #9 |
 | A25 | not-run | immutable command registry exists; explicit version upgrade/rollback UI pending |
-| A26 | partial | 1280x800 Library/recovery browser and reachable panels; all shortcuts/VoiceOver/drag combinations pending |
+| A26 | partial | Issue #8 1440×1000 real mouse/keyboard: Enter/Esc, text Delete/Ctrl+Z/IME, Shift add/remove, overlapping picks and snap; actual macOS/VoiceOver/all drag combinations pending |
 | A27 | partial | original UI/code, vendor notice retention, actual OCP/VTK wheel texts; full distribution/license audit unfinished |
 | T01 | passed | native test_T01_rectangle_center + browser center/width/save/Undo |
-| T02 | partial | three-point orthogonal adapter unit test; real native fixture/save test pending |
+| T02 | partial | Issue #8 real OCCT browser: A(0,0,-10),B(10,0,-10),C(4,0,10) gives width10,height20 and exact bbox; plane/mode survive Save. Original rotated-XY numeric case remains unrun |
 | T03 | passed | solver test: rectangle zero DOF, width80, center retained; browser Worker result |
-| T04 | partial | solver rejects conflicting dimensions with candidates and retains input; complete recovery UI not exercised |
+| T04 | partial | Issue #8 real Worker conflict plus exact lastValid hash, Undo/Redo and Save/reopen with draft; full recovery/OS UI not exercised |
 | T05 | passed | solver fixed line/center x; radius7 -> center(5,7) |
 | T06 | passed | real native open Join length 10+sqrt(125), Explode 2 exact edges |
 | T07 | partial | real native .01 rejection/.1 join; measured no-extension proof still pending |
@@ -86,6 +86,24 @@ Tauri transport, OS dialogs and project storage are substituted. See the exact
 commands, counts and initial fixture failures in [the execution log](cad-development-log.md).
 Actual macOS GUI/IPC/save dialogs, distribution and printer integration were not
 executed. D04/Split and the other assigned Issues retain their existing states.
+
+## Issue #8 — basic drawing evidence
+
+`tests/cad-basic-drawing.test.mjs` adds seven arithmetic/session contract tests.
+`tests/browser/cad-basic-drawing.spec.mjs` adds seven packaged-browser scenarios,
+with actual mouse/keyboard events and a real Python/OCP daemon. The dedicated
+fixture substitutes only Tauri IPC, OS dialogs and storage. Assertions distinguish
+exact numeric input from mouse coordinates quantized at the camera's pixel scale.
+The tests cover three Rectangle modes and stored mode, free negative-Z/nonplanar
+input, Circle center/radius and failures, single-object Move, selection/snap,
+work planes and #7's Offset plane diagnostic, and constrained Rectangle failure
+with lastValid/Undo/normal Save. Command rows retain unsupported modes explicitly.
+The Circle failure fixture holds an older real-kernel preview until after an
+invalid point, then checks that the released result cannot overwrite the error.
+
+This does not complete #9 generation/G-code or #10 general save/recovery.
+Actual macOS GUI/IPC/dialogs, Cmd-key behavior and distribution remain unrun here.
+See [the dated execution log](cad-development-log.md) for commands and outcomes.
 
 ## 2026-10-21 checkpoint results (historical)
 
@@ -146,3 +164,20 @@ packaged browser25 passed/0 failed/0 skipped, including Difference3 and Split1.
 The repeated Difference scenarios also pass 15/15 without retries. Actual
 macOS GUI/Tauri IPC/OS dialogs and local Rust remain unexecuted; CI is recorded
 separately rather than substituted for those checks.
+
+## 2026-10-27 JST — Issue #8 / instruction 002 continuation: latest-main integration
+
+PR #30 is resumed under the board's explicit Ready/merge authorization. The
+post-PR-#32 main tree and the existing #8 product/tests are retained together;
+the only conflict is two independent development-log appendices, both preserved.
+The D02 fixture and ledger evidence from #31 remain unchanged. Existing partial
+and unexecuted A/T/R coverage is not promoted by this integration.
+
+Fresh local full suites on the combined source pass: Node24.22.1 and Node20.20.2
+each192/0 failed/0 skipped; native51 discovered,49 passed/2 optional USD skips;
+packaged browser32 passed/0 failed/0 skipped/0 flaky, including #8's seven cases,
+Difference3 and Split1. The first Node20 invocation found no literal glob path
+and ran no tests; the expanded-file retry is the successful 192-case execution.
+Full commands, source identities, helper-check corrections and limits are in
+the development log. Final-head CI runs and merge/auto-close confirmation are
+recorded separately in PR #30 and the board after they actually occur.

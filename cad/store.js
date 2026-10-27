@@ -257,7 +257,7 @@ export class CadStore {
       command: {
         id: session.command.id,
         version: session.command.version,
-        mode: session.command.mode,
+        mode: session.drawingMode || session.command.mode,
         inputs: clone(session.inputValues || {}),
       },
       name: session.command.displayName,
