@@ -318,6 +318,71 @@ test("shape Library remaps typed references without rewriting parameter strings"
   assert.equal(snapshot.features[0].operation.id, "asset.snapshot");
   assert.equal(snapshot.entities[0].id, snapshot.selectedEntityIds[0]);
 });
+test("Issue15 Library placement appends an exact transform after an independently remapped closure", () => {
+  const d = createCadDocument(),
+    root = feature("root"),
+    dependent = feature("dependent", ["e-root"]);
+  root.outputSlots[0].bodyId = "b-root";
+  dependent.outputSlots[0].bodyId = "b-root";
+  const entity = (featureId, assetHash) => ({
+    id: `e-${featureId}`,
+    bodyId: "b-root",
+    producer: { featureId, slotKey: "result" },
+    kind: "solid",
+    geometry: { assetHash, format: "occt-brep" },
+    resultHash: assetHash,
+    visibility: "visible",
+    locked: false,
+  });
+  d.features = [root, dependent];
+  d.entities = [entity("root", "root-hash"), entity("dependent", "tip-hash")];
+  d.bodies = [
+    {
+      id: "b-root",
+      name: "part",
+      tipEntityId: "e-dependent",
+      splitIntoBodyIds: [],
+      status: "ready",
+    },
+  ];
+  d.assets = {
+    "root-hash": { data: "root", format: "occt-brep" },
+    "tip-hash": { data: "tip", format: "occt-brep" },
+  };
+  const entry = packageShapes(d, ["e-dependent"]),
+    first = insertShapes(d, entry, { translation: [10, -2, 3] }),
+    second = insertShapes(d, entry, { translation: [10, -2, 3] });
+  assert.equal(entry.features.length, 2);
+  assert.equal(first.features.length, 3);
+  assert.equal(first.features.at(-1).operation.id, "shape.transform");
+  assert.deepEqual(first.features.at(-1).parameters, {
+    mode: "move",
+    translation: [10, -2, 3],
+  });
+  assert.equal(
+    first.features.at(-1).inputs.object[0].entityId,
+    first.features[1].outputSlots[0].entityId,
+  );
+  assert.equal(first.bodies[0].tipEntityId, first.selectedEntityIds[0]);
+  assert.notEqual(first.selectedEntityIds[0], second.selectedEntityIds[0]);
+  assert.equal(
+    new Set([
+      ...first.features.map((item) => item.id),
+      ...first.entities.map((item) => item.id),
+      ...first.bodies.map((item) => item.id),
+      ...second.features.map((item) => item.id),
+      ...second.entities.map((item) => item.id),
+      ...second.bodies.map((item) => item.id),
+    ]).size,
+    12,
+  );
+  const unchanged = insertShapes(d, entry);
+  assert.equal(unchanged.features.length, 2);
+  assert.throws(
+    () => insertShapes(d, entry, { translation: [0, Infinity, 0] }),
+    /有限のXYZ/,
+  );
+});
 import { createCommandSession, sessionReady } from "../cad/commands/session.js";
 test("preselection never silently assigns the same solids to both Difference roles", () => {
   const selection = [
