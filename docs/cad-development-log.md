@@ -1528,3 +1528,17 @@ raw log/JSON/失敗traceはwork/board-verification/009/に保持。
 計画head a880d202（docsだけ）のpush40669634225/PR40669640655各attempt1 successを全6job生ログで確認。
 各JS202/native68成功USD2skip/macOS Rust21/browser51。この成功を製品変更headへ転用しない。
 最終head公開後のpush/PR全CIは別に確認してPR/Codexログへ記録する。
+
+## 2026-10-28 JST — 指示010 / Issue #14 実装前の具体化
+
+009のmerge 7075be3後main checks40675529462はattempt1 success。全3job生ログで
+JS204、native83件81成功/任意USD2skip、macOS Rust21、browser58を確認した。
+ボード20:22の有効化を読み、指示010だけをrequiredRevisionId付きで未着手→作業中へ更新し、
+読戻し確認した。既存#14用branch/PRがないことを確認してfeat/14-step-connectionを作成。
+
+[対応表](cad-step-connection-plan.md)で、既存`importedShapes`のうち埋込exact B-repを
+`cadDocument`の明示的`import.step`履歴へ取り込むadapter、mm単位・placement・正本hash・
+由来保持、OCCT STEP書出しと別runtime再読込数値比較をIssueの3条件へ対応づけた。
+display-only meshから形状を捏造せず、既存v1入力/保存を変更しない。実Macのdialog/保存は
+Issue37の未実施範囲として残し、011予約と#37へ先行着手しない。この時点で製品変更と
+010の全ローカル検証は未実施。Draft PRとIssue本文へ同じ契約を記録してから実装する。
