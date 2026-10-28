@@ -1,6 +1,3 @@
-Total output lines: 1606
-
-f8aee2395477fd3484ca4534cc5087949029ae6a
 # 共通操作・再利用 実装計画（Issue #15）
 
 指示011では、既存の `shape.transform` カーネル演算を正本履歴として公開し、形状Libraryの依存closureを独立IDで配置できるところまでをPhase 2の完了範囲とする。

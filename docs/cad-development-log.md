@@ -729,7 +729,79 @@ SHA-256は `f8a4ba0bc723e9695edd2c9f2f7c4d02e12bd2ee99c96ce3c895fc0b913545a5`。
   「回復データを破棄」操作をしてから保存ファイルを開く。既存のSplit browser fixtureと
   同じく、回復確認を自動保存タイマーとの競争にしない。project保存内容は変更しない。
 
-形状、体積、entity/bodyのID、工具保…1441 tokens truncated…の無効な値はその場の編集状態に保持し、前の値でプレビュー/確定しない。
+形状、体積、entity/bodyのID、工具保持、Undo/Redo、v2保存の既存assertionは維持した。
+固定sleep、assertionのtimeout延長、retry、maintenanceのframe/通知待ちの変更はない。
+機能台帳D02とA/T/R台帳にはこの検証の範囲を追記し、他の機能を完了へ昇格させない。
+
+### 修正後の検証
+
+修正した元のDifference spec全3ケースを5巡し、**15成功/0失敗/0skip**、exit0、54.5秒。
+計測用コピーではなく、PRへ含める元のテストを実行した。JSON reporterでも集計を確認した。
+全件検証結果はこの節の末尾に記録する。新headの全CI runとマージ・自動クローズの
+確認結果は、Issue #31を閉じるPR本文と指示ボードのCodexログへ記録する。
+
+
+| 修正後の全件コマンド | 今回のローカル実測 |
+| --- | --- |
+| `NODE_OPTIONS=--test-reporter=tap npm test` / Node24.22.1 | 185成功/0失敗/0skip、exit0、約2.00秒。TAPの総件数でも確認 |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | 185成功/0失敗/0skip、exit0、約2.83秒 |
+| `"$CODEX_PRIMARY_RUNTIME_PYTHON" -B -m unittest discover -s native -p 'test*.py'` | 51検出＝49成功/任意USD2skip、exit0、約2.32秒 |
+| packaged frontendの `npm run test:browser` 全体（下記） | 25成功/0失敗/0skip、exit0、59.5秒。Difference3/Split1/既存21 |
+| `node --check tests/browser/cad-difference.spec.mjs` / `git diff --check` | 成功 |
+
+browserの環境は `CI=1 PATHLOOM_FRONTEND_DIR=desktop-dist
+PATHLOOM_BREP_PYTHON="$CODEX_PRIMARY_RUNTIME_PYTHON"
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/workspace/scratch/1318e0e6fc5b/pathloom/work/chromium-local/chromium`。
+既存playwright.config.mjsを継承したローカル計測用config
+`work/board-verification/003r/main-tests.config.mjs`でJSON reporterを追加し、
+全体は`--output work/board-verification/003r/full-final-artifacts --max-failures=1`を指定した。
+テスト本体、timeout45秒、assertion待ち時間は同じで、retryは0のまま。JSONの25件成功も確認した。
+Python3.12.14/OCP7.8.1.1/Chromium153.0.8010.0で、Tauri transport・OSの保存/回復はfixture。
+実macOS GUI・実Tauri IPC・OS保存/回復ダイアログ、ローカルRust、実機プリンターは未実施である。
+known maintenanceのframe/通知待ちは今回のローカル全件では再発していないが、修正済みとはしない。
+
+本件は[Issue #31](https://github.com/usagicraftlab/pathloom/issues/31)を追跡先とし、
+`fix/31-browser-fixture-isolation`の1ブランチ・1PRで提出する。診断用コピーや計測用configは
+PRへ含めず、テスト1ファイルと台帳2件・本ログだけを含める。
+
+
+## 2026-10-27 JST — Issue #8 / P1-05 基本作図の操作経路
+
+契約は Issue #8 本文。先行の計画コメント
+<https://github.com/usagicraftlab/pathloom/issues/8#issuecomment-6429031348>
+に続き、ユーザー経由で「#7完了」の開始合図を受けた。
+#7 本文・Muse完了報告・PR #29 本文/コメントを再読し、main の merge
+`225e1774f2e2de7fb44a3db23ea9a16e5799fc6a` と CI run
+[40414667194](https://github.com/usagicraftlab/pathloom/actions/runs/40414667194)
+の全3ジョブ成功を確認して、同 main から `fix/8-basic-drawing` を作成した。
+同一headの別run 40414630011の失敗は成功扱いに置き換えず、今回の成功数にも含めない。
+PR #2 (`25170e43`) は #8 相当の input/session/UI/store の参考とし、
+丸ごとの取り込みや古い成功数の転記は行っていない。
+
+### 対象・入力モード・変更理由
+
+- C02 Line：始点→終点のクリック/座標欄、world XYZ・plane UV、相対指定。
+  直前に受理した点を相対起点にする。方向＋長さは未対応とUIに表示する。
+- C03 Polyline：連続クリック/座標欄、open/closed、相対XYZ、Backspace。
+  点を戻すと入力点順と相対起点も戻す。自由な負Z/非平面入力を維持する。
+- C04 Rectangle：中心＋幅/高さ、2コーナー、3点を専用UI/sessionで切り替える。
+  逆順2コーナーは指定平面のmin/maxへ正規化する。3点は既存adapter通り
+  A→Bを辺とし、CのABに垂直な成分を高さにする。零長/一直線/平面不一致を拒否。
+  modeの往復では形状を保ち、登録済みcommand定義を書き換えない。
+- C06 Circle：中心＋半径数値と中心→半径点。同一点/平面外/半径0を失敗表示。
+  直径/2端点/3点は追加しておらず、未対応をUIと台帳に残す。
+- Move（transform.move / shape.transform）：X/Y/Zを個別入力しmm/cm/mを処理する。
+  objectは既存通り1形状。複数の事前選択を暗黙に先頭へ切り詰めず、対象選択を求める。
+  事後選択、Shift追加/解除、重なり候補、ロック/非表示の除外を確認した。
+- 作業平面：クリックが現在のsession planeを参照し、半径/中心長方形の第2点は
+  中心を通る同方向の平面で取得する。UVの相対値にplane.originを重ねて足さない。
+  #7と同じ有限ベクトル・正規直交軸の契約（1e-6）で座標変換を検証する。
+  Offset固有の平面所属・設定診断は#7のnativeへ任せ、演算は変更しない。
+- snap：endpoint、Circle/Rectangle中心、OFF、ロック/非表示除外。
+  平面作図の第2点に平面外候補を渡さない。3点Rectangleや自由XYZ全体は平面に縛らない。
+- キー：座標欄Enterは点を入力、canvas側Enterは1回だけ確定、Escは中断。
+  formの暗黙submitを抑え、text編集中のDelete/Backspace/Ctrl+Z、IME Enterを奪わない。
+  入力途中の無効な値はその場の編集状態に保持し、前の値でプレビュー/確定しない。
   有効なクリック/座標/平面選択で置き換えた欄だけ、その編集エラーを解除する。
 
 ### 共通ファイルと互換性
