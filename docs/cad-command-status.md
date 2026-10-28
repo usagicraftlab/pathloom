@@ -167,3 +167,11 @@ and CI history. macOS acceptance remains unrun in the follow-up Issue #37.
 failed + lastValid、未完draft、固定command版をv2保存/新Storeと別Pythonプロセスへ復元する。
 v1はOpenだけでは書換せず、次の明示Saveがv2。回復候補保留は明示破棄/回復まで維持する。
 65機能の状態をこの共有基盤の検査だけで昇格しない。全OS/実機/全command版の互換行列は未検証。
+
+## Issue #12 Draft checkpoint — incomplete / 要判断
+
+E01〜E11の具体化は[cad-curve-editing-plan.md](cad-curve-editing-plan.md)。
+E05試作はLine tangent/continuation・NURBS tangentのみ実測成功。
+NURBS continuationは正本端点を検証できず3成功/1失敗で停止した。
+その他native試作・UI・履歴/全出力/Undo/保存は未検証/未接続であり、
+既存65 ID行や能力の状態をdoneへ昇格しない。Draft PR39は未Ready/未マージ。

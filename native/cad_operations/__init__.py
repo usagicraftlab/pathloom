@@ -76,6 +76,9 @@ def input_one(inputs,key):
 def evaluate(op,p,inputs,tol,selectors=None):
     """Return immutable output shapes; display tessellations are never operands."""
     selectors=selectors or {};semantic={};mapping=[]
+    from . import curve_editing
+    if op in curve_editing.OPERATIONS:
+        return curve_editing.evaluate(op,p,inputs,tol,selectors)
     boolean_fields={'closed','periodic','cap','bothSides','rounding','solidify','tangentChain','reverse','preserveBoundary'}
     for key in boolean_fields & p.keys():
         if not isinstance(p[key],bool):raise CadError('CAD_INPUT_TYPE',f'{key} はtrue/falseで指定してください。')
@@ -414,3 +417,4 @@ def evaluate(op,p,inputs,tol,selectors=None):
     return [('result',result,semantic)]
 
 OPERATIONS={'curve.join','curve.split','curve.offset','surface.corners','surface.edges','surface.offset','surface.untrim','solid.split','surface.split','shape.section','point.create','curve.line','curve.polyline','curve.rectangle','curve.polygon','curve.circle','curve.arc','curve.ellipse','curve.nurbs','curve.interpolate','shape.extrude','shape.revolve','solid.box','solid.sphere','shape.cylinder','shape.cone','solid.torus','solid.union','solid.difference','solid.intersection','surface.plane','surface.planarRegion','surface.join','surface.explode','curve.explode','surface.reverse','curve.reverse','surface.extract','curve.extractBoundary','surface.loft','surface.sweep1','solid.fillet','solid.chamfer','solid.shell','shape.transform'}
+OPERATIONS.update({'curve.trim','curve.extend','curve.fillet','curve.chamfer','curve.blend','curve.rebuild','curve.seam','curve.editPoles'})

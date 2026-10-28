@@ -28,3 +28,51 @@ parameterは正本曲線のparameterであり表示頂点indexへ置換しない
 開始ゲート：005マージ後main checks40622549025はattempt1 successを確認。
 全ローカルNode24 npm test/Node20.20.2全JS/native全件/browserと最終head全CIを実行する。
 失敗時は変更なしmainとの比較で分類し、未知の失敗が残ればマージせず@Museへ記録する。
+
+## 2026-10-28 実装中チェックポイント：要判断、未完了
+
+Draft PR #39。E03/E04/E05/E07/E08/E09/E10/E11のnative試作を追加したが、
+E05 NURBS continuationが以下の受入で失敗したため中断する。
+UI/registry/session、曖昧候補の操作、入力保持/全出力/履歴/Undo/v2、
+その他native試作の実測と全ローカル検証は未完了。Issue全体を完成とはしない。
+試作Rebuildの偏差はサンプルparameter対応点の計測であり、Hausdorff上限保証ではない。
+warning/accuracyのUI・永続化と明示確定はまだ接続しておらず、実装済みとしない。
+到達対象Extend、Join複数group、FilletのkeepInputsとStore連携なども未実装。
+
+### 実際に確認したもの
+
+| 実曲線 / 方式 | 結果 |
+| --- | --- |
+| Line [0,0,0]→[20,0,0] / tangent5 | ok、長さ25、bbox[0,0,0]→[25,0,0] |
+| 同Line / continuation5 | ok、長さ25、同bbox |
+| cubic NURBS / tangent5 | ok、長さ34.43380283706037→39.43380283706037 |
+| 同NURBS / continuation5 | failed/CAD_KERNEL_FAILED、出力0、正本端点検証不成立 |
+
+NURBSはpoles=[[0,0,0],[10,10,0],[20,10,0],[30,0,0]]、degree3、
+knots[0,1]、multiplicities[4,4]、weights[1,1,1,1]、periodic=false。
+`native/test_cad_curve_editing.py`の4回帰は3成功/1失敗。失敗はskip/expected-failureにせず保持。
+再照合はexit1、Ran4/FAILED(failures=1)、test0.009秒/runner1.000秒。
+native全件、Node24 npm test、Node20全JS、browser全件はこの実装headでは未実施。
+
+### main比較とOCP単独実測
+
+変更なしmain a8c51d3の独立checkoutでtracked diff空を確認。
+mainのcurve.extendはCAD_SCHEMA_UNSUPPORTED（未実装）なので、この機能はmainの合格済み機能ではない。
+main既存の間欠失敗として除外しない。
+
+[scripts/probe-curve-extension.py](../scripts/probe-curve-extension.py)を変更なしmainと試作側で
+同じPython3.12.14/OCP7.8.1.1に対して実行するとJSONが完全一致する。
+`GeomLib.ExtendCurveToPoint_s`へ上記の元BSplineとtrimmed→BSpline変換後の2通りを渡し、
+目標[33.53553390593274,-3.5355339059327373,0]、Cont=1、After=trueを指定。
+双方return=None、呼出前後ともdegree3/4poles/parameter[0,1]/端点[30,0,0]で変化なし、
+目標との距離5mm。これは呼出側から観測した結果で、C++内部での原因は確定していない。
+
+OCCT一次資料：[GeomLib](https://www.occt3d.com/dev/doc/refman/html/class_geom_lib.html)は
+bounded curve handleをin/outに取るAPIとして説明する。
+Python binding経由で置換後handleを取得できていない可能性はあるが推測であり、
+それを原因確定やOCP全体の不具合と断定しない。
+直線/接線延長の成功をNURBS継続延長の合格へ置換せず、接線への無断fallbackも行わない。
+正本を検証できる代替実装/境界の判断が残るため要判断、Ready/mergeなし。
+
+計画だけの旧head2bad91fのCI push40641285516/PR40641291766は各attempt1 success。
+それは本試作headの成功ではない。更新headのCIはPR本文/Codexログで別に記録する。

@@ -1344,3 +1344,16 @@ browser全45成功/失敗・skip・retry・flaky0、errors[]（test161.626秒/ru
 Trimの削除区間/保持区間、Extendの端点/方式/到達候補、平面2曲線Fillet/Chamferの側/trim/保持、
 G1/G2 Blend、固定次数/制御点数Rebuildの近似表示、Seam、制御点編集を含む。
 この時点で実装/全検証は未実施。実機#37/予約009〜011へは先行着手しない。
+
+### 指示008：E05 NURBS継続延長の未解決失敗
+
+Issue12/PR39の実装前対応表を記録後、native曲線編集の試作に着手した。
+E05の4ケースはLine tangent/continuation・NURBS tangentが成功、NURBS continuationが
+CAD_KERNEL_FAILED/出力0で失敗。回帰4件は3成功1失敗、再照合exit1/test0.009秒/runner1.000秒。
+変更なしmain a8c51d3はcurve.extend自体が未実装であり、既存合格や間欠失敗として除外しない。
+mainと試作側のOCP API単独probeはJSON完全一致。元/trimmed変換後のBSpline双方で
+ExtendCurveToPoint_sはNoneを返し、元端点/次数/制御点数/domainが変わらず目標との距離5mm。
+C++側の原因・安全な代替は未確定で、接線延長へ置換して完了とせず要判断で停止する。
+[scripts/probe-curve-extension.py](../scripts/probe-curve-extension.py)とnative回帰、
+[実測と残件](cad-curve-editing-plan.md)を保存する。試作の他機能/UI/全出力/Undo/保存/
+全ローカル検証は未完了、台帳の既存状態は昇格しない。実機#37/予約009〜011は未取得。

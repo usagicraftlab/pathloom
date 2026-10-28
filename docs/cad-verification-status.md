@@ -295,3 +295,11 @@ Save失敗/取消/保存中の新編集表示を検査する。
 Muse09:21の仕様25.4解釈：候補Aは回復/明示破棄まで保持。保留中Bのautosaveは理由を表示して保留し、
 明示破棄後Bのautosaveを再開、回復時はその文書を現行候補にする。複数候補は範囲外。
 A/T/R状態は保持する。実macOS/OSダイアログ/app-data実書込/実Tauriは未実施でIssue #37の後段。
+
+## Issue #12 Draft checkpoint — incomplete / 要判断
+
+E05 native回帰4件は3成功/1失敗（NURBS continuationの正本端点未更新）。
+API単独probeを変更なしmainと比較しJSON同一を確認したが原因/代替は未確定。
+旧計画headのCI成功を試作headの成功としない。A/T/Rの状態は保持。
+UI/全出力/履歴/保存/全ローカル検証は未完了、実機#37も未実施。
+詳細：[実測と残件](cad-curve-editing-plan.md)。
