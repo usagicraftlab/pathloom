@@ -1335,3 +1335,12 @@ browser全45成功/失敗・skip・retry・flaky0、errors[]（test161.626秒/ru
 製品コードは不変で、この2件を改めて実行し成功を確認した。
 先行失敗traceは標準出力先が後続runに置換されており、初回全trace保持とはしない。
 失敗ログと今回のJSON集計/別プロセス正本attachmentは保持する。最終CIはpush/PR後に照合する。
+
+## 2026-10-28 JST — 指示008 / Issue #12 実装前の具体化
+
+基準main a8c51d3、既存#12用branch/PRなし。main checks40622549025 attempt1 success確認。
+[実装前対応表](cad-curve-editing-plan.md)でIssue12の2完了条件をE01〜E11の
+明示入力、正常/不成立/曖昧候補、全出力/正本/履歴保持へ対応付けた。
+Trimの削除区間/保持区間、Extendの端点/方式/到達候補、平面2曲線Fillet/Chamferの側/trim/保持、
+G1/G2 Blend、固定次数/制御点数Rebuildの近似表示、Seam、制御点編集を含む。
+この時点で実装/全検証は未実施。実機#37/予約009〜011へは先行着手しない。
