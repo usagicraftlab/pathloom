@@ -175,7 +175,24 @@ export function initCad(api){
 
   function download(name,text){const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
   $('cadExportPaths').addEventListener('click',()=>{const source=api.sources().find(s=>s.id===sourceId);if(!source||source.generationError){status('Generate a valid object first');return}download(`${source.label}.toolpath`,JSON.stringify({paths:source.paths},null,2))});
-  async function saveProject(as=false){try{if(pending)throw new Error('Wait for generation to finish');if(generationError&&!definition.inputs.some(i=>i.cadBinding))throw new Error('Fix the generation error before saving');const base=api.captureProject({allowCadDraft:true});const cadDocument=await window.PathloomModel.snapshot();const project=validateProject({...base,version:2,cadDocument});const path=await invoke('save_pathloom_project',{content:JSON.stringify(compactProjectGenerators(project)),currentPath:as?null:projectPath});if(path){projectPath=path;api.toast('Project saved');$('projectName').textContent=path.split('/').pop();$('projectName').title=path}}catch(error){api.toast(error.message,'error')}}
+  async function saveProject(as=false){
+    try{
+      if(pending)throw new Error('Wait for generation to finish');
+      if(generationError&&!definition.inputs.some(i=>i.cadBinding))throw new Error('Fix the generation error before saving');
+      const base=api.captureProject({allowCadDraft:true}),baseStamp=JSON.stringify(base);
+      const documentIdentity=window.PathloomModel.store.document,cadDocument=await window.PathloomModel.snapshot();
+      const project=validateProject({...base,version:2,cadDocument});
+      const path=await invoke('save_pathloom_project',{content:JSON.stringify(compactProjectGenerators(project)),currentPath:as?null:projectPath});
+      if(path){
+        projectPath=path;
+        const current=window.PathloomModel.store.document;
+        let changed=current!==documentIdentity||current.documentRevision!==cadDocument.documentRevision||JSON.stringify(current.draftSessions)!==JSON.stringify(cadDocument.draftSessions);
+        if(!changed){try{changed=JSON.stringify(api.captureProject({allowCadDraft:true}))!==baseStamp}catch{changed=true}}
+        api.toast(changed?'Project saved; newer changes remain unsaved':'Project saved');
+        $('projectName').textContent=path.split('/').pop()+(changed?' · 未保存の変更あり':'');$('projectName').title=path;
+      }
+    }catch(error){api.toast(error.message,'error')}
+  }
   window.__TAURI__?.event?.listen('project-menu',event=>{const id={open:'projectOpen',save:'projectSave','save-as':'projectSaveAs',settings:'openSettings'}[event.payload];if(event.payload==='ai-settings')document.dispatchEvent(new Event('pathloom:ai-settings'));if(id)$(id).click()});
   $('projectSave').addEventListener('click',()=>saveProject());$('projectSaveAs').addEventListener('click',()=>saveProject(true));
   $('projectOpen').addEventListener('click',async()=>{if(!window.confirm('Open a project and replace the current workspace? Save your work first.'))return;
