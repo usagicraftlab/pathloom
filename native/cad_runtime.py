@@ -26,7 +26,10 @@ def bounds(s):
     v=b.Get();return dict(min=list(v[:3]),max=list(v[3:]))
 def xyz(p):return [p.X(),p.Y(),p.Z()]
 def metric(s,kind):
-    p=GProp_GProps();getattr(BRepGProp,kind+'Properties_s')(s,p);return p.Mass()
+    p=GProp_GProps()
+    if kind in ('Surface','Volume'):getattr(BRepGProp,kind+'Properties_s')(s,p,1e-10)
+    else:getattr(BRepGProp,kind+'Properties_s')(s,p)
+    return p.Mass()
 def curve_length(edges):
     # Fixed-order BRepGProp quadrature varies when a spline is split or gains
     # knots. Integrate each exact bounded curve adaptively, not its preview.
@@ -182,7 +185,7 @@ class Runtime:
                         # Only exact source/asset equality permits continuation.
                         # Never use traversal order or geometric proximity.
                         if any(o['slotKey']==slot for o in published):raise CadError('CAD_REFERENCE_AMBIGUOUS','分割結果の由来が重複しています。対象を分けて実行してください。',('reselectReference',))
-                    if op in ('curve.explode','curve.extractBoundary','surface.explode','surface.extract') or op=='curve.join' and len(output)>1:
+                    if op in ('curve.explode','curve.extractBoundary','surface.explode','surface.extract','surface.planarRegion','shape.cap','solid.assemble') or op=='curve.join' and len(output)>1:
                         slot=op+'/'+pub['geometryHash']
                         if any(o['slotKey']==slot for o in published):raise CadError('CAD_REFERENCE_AMBIGUOUS','同一正本の複数出力の由来を一意に識別できません。対象を分けてください。')
                     pub['slotKey']=slot;published.append(pub)

@@ -63,6 +63,9 @@ test("#34: the same rounded Rectangle bottom edge reaches exact sections and G-c
     await commit(page, 2);
     await page.locator(".model-history-entry").last().click();
     await page.getByRole("button", { name: "Fillet Edges", exact: true }).click();
+  // Preserve the baseline OCCT tangent contour through the explicit v2 choice.
+  await page.locator('[data-parameter="chainPolicy"]').selectOption("tangent");
+  await page.locator('[data-parameter="chainPolicy"]').dispatchEvent("input");
     const selected = await page.evaluate(() => {
       const store = window.PathloomModel.store, feature = store.document.features[1];
       const entity = store.getEntity(feature.outputSlots[0].entityId);

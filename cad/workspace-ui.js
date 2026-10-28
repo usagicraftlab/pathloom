@@ -34,6 +34,7 @@ import {
 import { makeSubshapeRef } from "./references.js";
 const $ = (id) => document.getElementById(id);
 const labels = {
+  points:"底面の作図点 XYZ（順序付き）",chainPolicy:"edge連鎖の選択",radiiMm:"3軸半径 XYZ mm",transitionMode:"Pipe角部の方式",frameMode:"掃引フレーム",distance1Mm:"距離1 mm（指定face側）",distance2Mm:"距離2 mm（nullは等距離）",
   anchor: "基準点 XYZ",
   point: "点 XYZ",
   start: "始点 XYZ",
@@ -289,6 +290,17 @@ export function initModelWorkspace(api) {
         const button=document.createElement('button');button.textContent='区間・接続側を画面で指定';
         button.onclick=()=>{curvePointPicking=true;setStatus('作業平面上の区間内部・継ぎ目・接続側をクリックしてください。正本へ投影して検査します。');};host.append(button);
       }
+    }
+    if(params){
+      const help={
+        'solid.box':'幅・奥行・高さ、底面2点、底面3点を選択できます。2点は指定平面に平行、3点は基準点→幅方向→奥行側の順です。高さは底面法線方向です。',
+        'surface.planarRegion':'同じ平面の閉輪郭を複数選択できます。内側の輪郭は穴、その内側は島として保持します。開輪郭や交差輪郭は自動補完しません。',
+        'shape.cap':'開口のうち平面の閉輪郭だけを塞ぎます。非平面の穴を勝手に平面で塞ぎません。閉じた結果と開いた結果を区別して保持します。',
+        'solid.assemble':'面を接続許容差内でつなぎ、閉じたShellは立体、閉じなければ開いた形状として保持します。独立した閉体積は全て出力します。',
+        'solid.chamfer':'2距離の場合は、各edgeの距離1側の隣接faceをedgeと同じ順序で指定してください。距離2のnullは等距離です。',
+        'solid.fillet':'選択edgeのみ、または接線でつながる連鎖を明示します。カーネルが連鎖を必要とする場合は、許可せずに勝手に対象を増やしません。'
+      }[editingOperation];
+      if(help){const p=document.createElement('p');p.textContent=help;host.append(p);}
     }
     if (!params) {
       const e = store.getEntity(selection[0]?.entityId);
@@ -621,14 +633,15 @@ export function initModelWorkspace(api) {
         continue;
       }
       const label = document.createElement("label");
-      const parameterLabel=key==='end'&&editingOperation==='curve.extend'?'延長する端点':labels[key]||key;
+      const parameterLabel=key==='end'&&editingOperation==='curve.extend'?'延長する端点':key==='mode'&&editingOperation==='solid.box'?'Boxの作図モード':labels[key]||key;
       label.textContent = parameterLabel;
-      const enumValues=editingOperation?.startsWith('curve.')&&typeof value==='string'?({end:['start','end'],method:['continuation','tangent'],firstEnd:['start','end'],secondEnd:['start','end'],continuity:['G1','G2'],firstSide:['start','end'],secondSide:['start','end'],...(editingOperation==='curve.editPoles'?{mode:['move','insertKnot','removeKnot']}:{})})[key]:null;
+      const solidEnums=({chainPolicy:['selected','tangent'],transitionMode:['transformed','rightCorner','roundCorner'],frameMode:['corrected-frame','frenet'],directionMode:['inward','outward'],...(editingOperation==='solid.box'?{mode:['dimensions','twoCorners','threePoints'],anchorMode:['center','corner']}:{})})[key];
+      const enumValues=solidEnums || (editingOperation?.startsWith('curve.')&&typeof value==='string'?({end:['start','end'],method:['continuation','tangent'],firstEnd:['start','end'],secondEnd:['start','end'],continuity:['G1','G2'],firstSide:['start','end'],secondSide:['start','end'],...(editingOperation==='curve.editPoles'?{mode:['move','insertKnot','removeKnot']}:{})})[key]:null);
       const input = enumValues?document.createElement('select'):
         typeof value === "object" && value !== null && !Array.isArray(value)
           ? document.createElement("textarea")
           : document.createElement("input");
-      if(enumValues)for(const value of enumValues){const option=document.createElement('option');option.value=value;option.textContent=value;input.append(option);}
+      if(enumValues)for(const value of enumValues){const option=document.createElement('option');option.value=value;option.textContent=solidEnums?({selected:'選択edgeのみ',tangent:'接線でつながる連鎖',dimensions:'幅・奥行・高さ',twoCorners:'底面2点',threePoints:'底面3点',rightCorner:'角を交差で接続',roundCorner:'角を丸く接続',transformed:'フレーム変換','corrected-frame':'補正フレーム',frenet:'Frenet',inward:'内側',outward:'外側'}[value]||value):value;input.append(option);}
       input.dataset.parameter = key;
       input.setAttribute("aria-label", parameterLabel);
       const operation = session?.command.baseOperation.id || f?.operation.id;
@@ -639,8 +652,8 @@ export function initModelWorkspace(api) {
           ["bothSides", "solidify"].includes(key))
       ) {
         input.disabled = true;
-        input.title =
-          "このオプションは未実装です。現在の対応範囲はコマンド台帳を参照してください。";
+        input.title = key==='tangentChain'?'旧版の保存挙動を保持しています。新規Filletでは連鎖を明示選択できます。':
+          'このオプションは未実装です。現在の対応範囲はコマンド台帳を参照してください。';
       }
       if (typeof value === "boolean") {
         input.type = "checkbox";
@@ -688,6 +701,7 @@ export function initModelWorkspace(api) {
             queuePreview();
           }
           input.setCustomValidity("");
+          if(editingOperation==='solid.box'&&key==='mode')updateBoxFields();
         } catch (error) {
           invalidInput(input, key, error);
           if (session) {
@@ -700,6 +714,15 @@ export function initModelWorkspace(api) {
       settingsForm.append(label);
     }
     host.append(settingsForm);
+    function updateBoxFields(){
+      if(editingOperation!=='solid.box')return;
+      const mode=(session?.parameters||draft).mode||'dimensions';
+      for(const field of settingsForm.querySelectorAll('[data-parameter]')){
+        const key=field.dataset.parameter;
+        field.parentElement.hidden=(mode==='dimensions'&&key==='points')||(mode!=='dimensions'&&['anchor','anchorMode','widthMm','depthMm'].includes(key))||(mode==='threePoints'&&key==='plane');
+      }
+    }
+    updateBoxFields();
     if (
       (session?.command.baseOperation.id || f?.operation.id)?.endsWith(".join")
     ) {

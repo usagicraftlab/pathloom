@@ -27,3 +27,44 @@ macOS Rust21/browser51成功を確認。009の未着手→作業中をrevision�
 全検証：Node24 npm test、Node20.20.2全JS、native全件、packaged browser、最終head push/PR CI全job。
 機能台帳の対象IDだけを証拠範囲で更新し、A/T/R既存状態/未実機項目は保持して証拠追加。
 この計画段階で実装・検証の成功を宣言しない。Draftから同一branch/PRで仕上げる。
+
+## 実装時の契約・境界
+
+- S03は同一平面の閉loopをexact sectionで交差検査し、包含深さで穴/島を決定。
+  開loop/接触/重複/非平面はtyped診断。独立faceを全出力しslotは正本hash由来。
+- B01 v2はdimensions/twoCorners/threePoints。モードで使わない欄を隠し、底面/高さを明示。
+  v1定義は不変。B02 ellipsoidはunit sphereの一般アフィン変換を正本へ適用。
+- Pipeは円断面をrail始点/接線へ配置し実OCCT掃引。frameと角部の方式、Capを明示。
+  成立しない掃引は正本検査で拒否。Torusは非自己交差の管半径<主半径を基本契約とする。
+- B07は穴付きfaceの正本押出。Cap=falseは外/内壁を開いた結果として保持する。
+- Capはsew後の位相的自由境界を平面ごとにgroup化し、穴を保つ領域を加える。
+  Assembleは閉shellをSolidに、開shell/faceをwarning付きで保持。Boolean Unionは別操作。
+- Intersectionは体積共通が空でも正本境界をCommon/Sectionし、被覆部分をCutで除いた
+  面/edge/点接触を保持する。重複加算/表示mesh/近傍による参照付替えは用いない。
+- Fillet v2はchainPolicy=selected/tangentを明示。selectedでkernelが未選択連鎖を要求すれば
+  曖昧診断、tangentで許可。旧v1のtangentChain=falseでもkernelが連鎖を採用していた挙動は
+  保存互換のため保持する。旧browser基準シーンは新UIでtangentを明示し同じ形状条件を維持。
+- Chamfer v2のdistance2=nullは等距離。2距離には各edgeと同順のdistance1Facesが必要。
+  Shellは除去面所属/正厚さ/内外を検査。kernel成功でも内側の体積が減らない結果を採用しない。
+
+## 検出した失敗と修正
+
+- 既存native初回70件は67成功1失敗2skip。Filletに新しい連鎖拒否を一律適用すると
+  旧v1の丸角Rectangle下端edgeの基準を壊した。旧定義を変えずv2明示契約へ分けて解消。
+- 追加native初回は24件21成功3失敗（うち12件はhelper classの重複収集で後に解消）。
+  楕円体の既定volume積分誤差0.04396687183499637mm³は適応Surface/Volume積分へ修正。
+  非平面faceの自由境界をtolerance版で拾えない問題は位相版へ、Shell厚さ100が元Box
+  volume1000のまま成功になる問題は内側体積減少の検査で修正。追加12件再実行12成功。
+- 新Fillet連鎖と面/edge/点接触の受入を加え、native全83件81成功/任意USD2skip。
+  接触fallback初回のFuseは異なる次元の重複除去で不成立。kernel set差分Cutへ変更し、
+  面接触area100/周長40、edge接触長10、点接触、非接触emptyを正確に区別した。
+- 追加browser初回4成功2失敗はRectangle中心adapterのfixture座標/位相bboxの参照箇所を修正。
+  次5成功1失敗はRedo再計算完了前のassertionで、同じ開閉値をpollして6成功へ回復。
+- 初回全browser57件54成功3失敗は、Box v2のanchorMode selectへ旧fixtureがfillした停止。
+  同じcorner値と全assertionを保ちselectOptionへ変更。最終全件は接触UIを加え58件で再実行。
+
+実機#37/Phase3/予約010〜011へ着手せず、未実施を成功と書かない。
+
+19:39 JST最終local：Node24/20各204成功、native全83件81成功/任意USD2skip、browser全58成功。
+失敗/JS・browser skip/retry/flaky0、browser errors[]。コマンド/時間/全履歴は開発ログ。
+公開後の最終head全CIを別途照合するまでDraft/未マージを維持する。

@@ -177,7 +177,8 @@ async function boxes(page, positions = [0, 20, 5]) {
     await page
       .getByRole("textbox", { name: "基準点 XYZ", exact: true })
       .fill(JSON.stringify([x, 0, 0]));
-    await page.locator('[data-parameter="anchorMode"]').fill("corner");
+    // Box v2 exposes the same anchor setting as an explicit choice.
+    await page.locator('[data-parameter="anchorMode"]').selectOption("corner");
     for (const key of ["widthMm", "depthMm", "heightMm"])
       await page.locator(`[data-parameter="${key}"]`).fill("10");
     await page.getByRole("button", { name: "確定", exact: true }).click();
