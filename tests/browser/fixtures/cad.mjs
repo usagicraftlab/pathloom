@@ -153,6 +153,18 @@ const test = base.extend({
                   type: "export",
                   handles: args.handles,
                 });
+              if (name === "cad_export_step")
+                return window.__cadKernel({
+                  type: "export-step",
+                  handle: args.handle,
+                });
+              if (name === "save_cad_step") {
+                window.__savedStep = {
+                  content: args.content,
+                  filename: args.filename,
+                };
+                return "/tmp/" + args.filename;
+              }
               if (name === "cad_release_handles")
                 return window.__cadKernel({
                   type: "release",

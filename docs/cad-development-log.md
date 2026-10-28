@@ -1528,3 +1528,52 @@ raw log/JSON/失敗traceはwork/board-verification/009/に保持。
 計画head a880d202（docsだけ）のpush40669634225/PR40669640655各attempt1 successを全6job生ログで確認。
 各JS202/native68成功USD2skip/macOS Rust21/browser51。この成功を製品変更headへ転用しない。
 最終head公開後のpush/PR全CIは別に確認してPR/Codexログへ記録する。
+
+## 2026-10-28 JST — 指示010 / Issue #14 実装前の具体化
+
+009のmerge 7075be3後main checks40675529462はattempt1 success。全3job生ログで
+JS204、native83件81成功/任意USD2skip、macOS Rust21、browser58を確認した。
+ボード20:22の有効化を読み、指示010だけをrequiredRevisionId付きで未着手→作業中へ更新し、
+読戻し確認した。既存#14用branch/PRがないことを確認してfeat/14-step-connectionを作成。
+
+[対応表](cad-step-connection-plan.md)で、既存`importedShapes`のうち埋込exact B-repを
+`cadDocument`の明示的`import.step`履歴へ取り込むadapter、mm単位・placement・正本hash・
+由来保持、OCCT STEP書出しと別runtime再読込数値比較をIssueの3条件へ対応づけた。
+display-only meshから形状を捏造せず、既存v1入力/保存を変更しない。実Macのdialog/保存は
+Issue37の未実施範囲として残し、011予約と#37へ先行着手しない。この時点で製品変更と
+010の全ローカル検証は未実施。Draft PRとIssue本文へ同じ契約を記録してから実装する。
+
+## 2026-10-28 JST — 指示010 / Issue #14 実装・ローカル検証
+
+埋込exact B-repを持つ既存`importedShapes`へだけ「CAD履歴へ取り込む」を表示し、
+`import.step` feature/body/entityへ原子的に追加した。mm単位、配置行列、source shape
+ID/name/kernel、source/original hashをfeatureとasset provenanceへ保存し、同じshapeの重複取込を拒否。
+display-only STEPは既存表示を維持し「CAD履歴化には正確なB-repが必要」と明示する。
+
+現在bodyのexact handleをOCCT `STEPControl_Writer`へ渡し、100 MB上限・STEP header/footer・
+`.step`/`.stp`保存名を検査してTauriのatomic writeへ接続。fresh `Runtime`のreaderでbbox、
+area、volume、closure、validityを比較した。browserは既存cube→履歴取込→Move→v2保存・再Open→
+STEP書出し→実OCP再読込を確認し、legacy importedShapesとcadDocumentの両方を保持した。
+
+### 最終ローカル検証
+
+| 実行 | 結果 |
+| --- | --- |
+| Node24.22.1 `npm test` | 206成功、失敗/skip/todo 0 |
+| Node20.20.2 全JS | 206成功、失敗/skip/todo 0 |
+| Python3.12.14/OCP7.8.1.1 native全件 | 85件中83成功、任意NVIDIA USD 2skip、失敗0 |
+| packaged browser全件 | 初回最終source 60成功。表示文言追加後の再実行は59成功1失敗、A19/A20/R08のRectangle確定が5秒内に履歴化せず失敗。直後の同一test単独再実行は1成功。今回のSTEP接続2件は各run成功、retry設定0 |
+
+browserはTauri IPC/OS保存/storageだけfixtureで、Python/OCPは実daemon。ローカルのPlaywright
+browserがなくCDN取得も0 byteで失敗したため、ignored領域へ展開したChromium153を標準config
+（workers1/retries0/timeout45000）で使用した。初期診断では、実行ファイル欠落、fixtureのfile fetch、
+非表示Save/Open/buttonのactionability、回復dialog、期待filename、`--single-process`終了を順に検出し、
+製品条件を緩めずfixture操作と環境configを修正した。native初回はPYTHONPATHなしでimport失敗、
+次に古いBox parameter fixtureで失敗し、製品schemaへ合わせた後2件成功。これらを最終成功へ置換しない。
+
+ローカルRustは`cargo`不在で未実行。計画だけのhead `4ca12c0`のpush
+[40683356270](https://github.com/usagicraftlab/pathloom/actions/runs/40683356270)とPR
+[40683447913](https://github.com/usagicraftlab/pathloom/actions/runs/40683447913)は各attempt1 success。
+全6job生ログで各JS204、native83件81成功/任意USD2skip、macOS Rust21、browser58を確認。
+計画CIを製品変更の合格へ転用せず、最終headのpush/PR CIを別に確認する。実Mac GUI/Tauri IPC/
+OS dialog、実機Issue #37、指示011は未実施・未着手。

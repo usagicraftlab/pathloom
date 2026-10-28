@@ -15,6 +15,7 @@ function validateLegacyProject(input){
   const shapeIds=new Set();
   for(const shape of project.importedShapes||[]){
     if(shape.brep!==undefined)validateEditableShape(shape);
+    if(shape.placementMatrix!==undefined&&(!Array.isArray(shape.placementMatrix)||shape.placementMatrix.length!==16||!shape.placementMatrix.every(finite)))throw new Error('Invalid imported shape placement');
     if(!shape||typeof shape.id!=='string'||!shape.id||shapeIds.has(shape.id)||typeof shape.name!=='string'||typeof shape.visible!=='boolean'||shape.sliceLayerHeight!==undefined&&(!finite(shape.sliceLayerHeight)||shape.sliceLayerHeight<.05||shape.sliceLayerHeight>10)||shape.faces!==undefined&&(!Array.isArray(shape.faces)||shape.faces.length>200000||shape.faces.some((face,index)=>!face||face.index!==index||!finite(face.area)||face.area<0||typeof face.planar!=='boolean'||!Array.isArray(face.bounds)||face.bounds.length!==2||face.bounds.some(point=>!Array.isArray(point)||point.length!==3||!point.every(finite))))||!Array.isArray(shape.meshes)||!shape.meshes.length)throw new Error('Invalid imported shape');shapeIds.add(shape.id);
     if(shape.assetId!==undefined&&(!/^[a-zA-Z0-9-]{1,96}$/.test(shape.assetId)||!Number.isInteger(shape.brepIndex)||shape.brepIndex<0||!shape.faces?.length))throw new Error('Invalid editable CAD asset reference');
     for(const mesh of shape.meshes){

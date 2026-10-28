@@ -19,6 +19,7 @@ import {
 import { createTransactions } from "./transactions.js";
 import { resolveSubshape } from "./references.js";
 import { diagnostic } from "./diagnostics.js";
+import { validateEditableShape } from "../step-import.js";
 import {
   differenceOutputs,
   validateDifferenceTargets,
@@ -465,6 +466,28 @@ export class CadStore {
       const operation = clone(feature.operation),
         parameters = clone(feature.parameters),
         inputs = clone(feature.inputs);
+      if (operation.id === "import.step") {
+        const slot = feature.outputSlots[0],
+          entity = this.getEntity(slot?.entityId),
+          assetHash = feature.parameters?.sourceAssetHash;
+        if (!entity || entity.geometry.assetHash !== assetHash || !this.document.assets[assetHash]?.data) {
+          feature.status = "failed";
+          feature.diagnostics = [
+            diagnostic("CAD_ASSET_MISSING", "取り込んだSTEP正本がありません。", feature.id, ["reimportSource"]),
+          ];
+        } else {
+          await this.handle(entity);
+          feature.status = "valid";
+          feature.diagnostics = [];
+          const body = this.document.bodies.find((b) => b.id === slot.bodyId);
+          if (body) {
+            body.tipEntityId = entity.id;
+            body.status = "ready";
+          }
+        }
+        this.notify();
+        continue;
+      }
       const inputState = () =>
         references(inputs).map((ref) => {
           const entity = this.getEntity(ref.entityId);
@@ -888,6 +911,120 @@ export class CadStore {
     await this.recompute();
     this.notify();
     return patch.selectedEntityIds;
+  }
+  async importLegacyStep(shape) {
+    validateEditableShape(shape);
+    if (this.document.features.some((f) => f.operation.id === "import.step" && f.parameters?.source?.importedShapeId === shape.id))
+      throw new Error("このSTEPはすでにCAD履歴へ取り込まれています");
+    const data = shape.brep.data,
+      original = shape.brep.original,
+      assetHash = await sha256(data),
+      originalHash = await sha256(original),
+      byteLength = new TextEncoder().encode(data).byteLength,
+      matrix = shape.placementMatrix || [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    if (!Array.isArray(matrix) || matrix.length !== 16 || matrix.some((n) => !Number.isFinite(n)))
+      throw new Error("STEP配置行列が不正です");
+    const asset = {
+      format: "occt-brep",
+      encoding: "utf-8",
+      data,
+      byteLength,
+      sourceKernelVersion: shape.kernel || null,
+      provenance: {
+        type: "imported-step",
+        importedShapeId: shape.id,
+        name: shape.name,
+        units: "mm",
+        placementMatrix: clone(matrix),
+        originalHash,
+      },
+    };
+    const output = await this.native.importAsset(assetHash, asset);
+    if (output.geometryHash !== assetHash) {
+      this.native.release([output.handle]);
+      throw new Error("CAD_ASSET_MISSING: STEP正本hashが一致しません");
+    }
+    const before = checkpoint(this.document),
+      featureId = id(),
+      entityId = id(),
+      bodyId = id(),
+      parameters = {
+        units: "mm",
+        placementMatrix: clone(matrix),
+        placementAppliedToAsset: true,
+        source: {
+          type: "importedShape",
+          importedShapeId: shape.id,
+          name: shape.name,
+          kernel: shape.kernel || null,
+        },
+        sourceAssetHash: assetHash,
+        originalAssetHash: originalHash,
+      },
+      resultHash = await sha256({ operation: { id: "import.step", version: 1 }, parameters });
+    const feature = {
+        id: featureId,
+        operation: { id: "import.step", version: 1 },
+        command: { id: "import.step", version: 1, mode: "adapter" },
+        name: shape.name,
+        featureRevision: 1,
+        parameters,
+        inputs: {},
+        outputSlots: [{ key: "import.step/" + assetHash, entityId, bodyId }],
+        status: "valid",
+        diagnostics: [],
+        requestedHash: resultHash,
+        resultHash,
+        resultPolicy: "add",
+      },
+      entity = {
+        id: entityId,
+        bodyId,
+        producer: { featureId, slotKey: feature.outputSlots[0].key },
+        name: shape.name,
+        kind: output.kind,
+        geometry: { assetHash, format: "occt-brep" },
+        closure: output.summary.closure,
+        exactness: output.summary.exactness,
+        accuracy: output.summary.accuracy,
+        bbox: output.summary.bbox,
+        visibility: "visible",
+        locked: false,
+        resultHash,
+        displayCache: output.summary,
+      };
+    feature.lastValid = { resultHash, entitySnapshots: [clone(entity)], inputRevisionHashes: [] };
+    const candidate = {
+      ...this.document,
+      assets: { ...this.document.assets, [assetHash]: asset },
+      features: [...this.document.features, feature],
+      entities: [...this.document.entities, entity],
+      bodies: [...this.document.bodies, { id: bodyId, name: shape.name, tipEntityId: entityId, splitIntoBodyIds: [], status: "ready" }],
+      documentRevision: this.document.documentRevision + 1,
+    };
+    try {
+      validateCadDocument(candidate);
+    } catch (error) {
+      this.native.release([output.handle]);
+      throw error;
+    }
+    this.document = candidate;
+    this.handles.set(assetHash, { value: output, epoch: this.native.runtimeEpoch });
+    this.transactions.record(before, this.document, "既存STEPをCAD履歴へ取り込み");
+    this.notify();
+    return entityId;
+  }
+  async exportStep(entityId) {
+    const entity = this.getEntity(entityId),
+      body = this.document.bodies.find((b) => b.id === entity?.bodyId),
+      feature = entity && this.getFeature(entity.producer.featureId);
+    if (!entity || body?.tipEntityId !== entity.id || !["valid", "warning"].includes(feature?.status))
+      throw new Error("確定した現在のCAD bodyを選択してください");
+    const value = await this.handle(entity),
+      result = await this.native.exportStep(value.handle);
+    if (result.sourceGeometryHash !== entity.geometry.assetHash || result.units !== "mm")
+      throw new Error("STEP書出し元の正本または単位が一致しません");
+    return result;
   }
   resolveBindings() {
     // Recomputing an upstream feature must not turn it into the body's final
