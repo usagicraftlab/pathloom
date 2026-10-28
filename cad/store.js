@@ -864,9 +864,9 @@ export class CadStore {
     this.notify();
     return this.recompute();
   }
-  async insertLibrary(entry, options = {}) {
+  async insertLibrary(entry) {
     const before = checkpoint(this.document),
-      patch = insertShapes(this.document, entry, options);
+      patch = insertShapes(this.document, entry);
     for (const [hash, asset] of Object.entries(patch.assets))
       if (
         (await sha256(asset.data)) !== hash ||

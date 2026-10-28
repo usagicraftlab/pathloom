@@ -20,7 +20,7 @@ export function createCommandSession(
           !used.has(r.entityId),
     );
     const picked =
-      command.baseOperation.id === "shape.transform" && eligible.length > 1
+      command.id === "transform.move" && eligible.length > 1
         ? []
         : eligible.slice(0, slot.maxCount ?? undefined);
     inputs[slot.key] = picked.map(({ entityKind, ...ref }) =>

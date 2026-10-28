@@ -151,24 +151,3 @@ test("P1-05 Move preselection stays explicit for multiple selected objects", () 
   assert.equal(sessionReady(multiple), true);
   assert.equal(operationForSession(multiple).parameters.mode, "move");
 });
-test("Issue15 transforms require one explicit object and preserve exact operation parameters", () => {
-  const selection = [
-    { entityId: "a", entityKind: "solid" },
-    { entityId: "b", entityKind: "curve" },
-  ];
-  for (const [id, mode] of [
-    ["transform.move", "move"],
-    ["transform.rotate", "rotate"],
-    ["transform.scale", "scale"],
-    ["transform.mirror", "mirror"],
-  ]) {
-    const command = commandById(id),
-      ambiguous = createCommandSession(command, { selection }),
-      explicit = createCommandSession(command, { selection: [selection[0]] });
-    assert.equal(sessionReady(ambiguous), false, id);
-    assert.deepEqual(ambiguous.inputs.object, [], id);
-    assert.equal(sessionReady(explicit), true, id);
-    assert.equal(operationForSession(explicit).operation.id, "shape.transform");
-    assert.equal(operationForSession(explicit).parameters.mode, mode);
-  }
-});

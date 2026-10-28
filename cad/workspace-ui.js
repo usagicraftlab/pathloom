@@ -58,7 +58,6 @@ const labels = {
   translation: "移動 XYZ",
   axis: "軸（原点・方向）",
   angleRad: "角度 rad",
-  factor: "倍率",
   anchorMode: "基準モード",
   keepTools: "工具を保持する",
   allowMultipleGroups:"離れた連結グループも全て保持",
@@ -104,13 +103,6 @@ export function initModelWorkspace(api) {
   panel.setAttribute("role", "tabpanel");
   panel.setAttribute("aria-labelledby", "modeModel");
   panel.innerHTML = `<aside class="model-left"><header><strong>CAD · 形状作成</strong><button id="modelUndo" aria-label="CAD Undo" title="Undo">↶</button><button id="modelRedo" aria-label="CAD Redo" title="Redo">↷</button></header><label>コマンド検索<input id="modelCommandSearch" placeholder="長方形 / Line / Extrude" autocomplete="off"></label><div id="modelCommands" class="model-command-list"></div><div id="modelSession" role="status"></div><div class="model-workplane"><label>作業平面<select id="modelPlane"><option>XY</option><option>XZ</option><option>YZ</option></select></label><label>選択<select id="modelPickFilter"><option value="object">形状</option><option value="face">面</option><option value="edge">edge</option><option value="vertex">頂点</option></select></label><label><input id="modelSnap" type="checkbox" checked>端点・中心スナップ</label><button id="modelFit">選択にFit</button><label>座標入力<input id="modelCoordinate" placeholder="x,y,z または @dx,dy,dz"></label></div><div class="model-actions"><button id="modelPreview">プレビュー</button><button id="modelCommit" class="primary">確定</button><button id="modelCancel">キャンセル</button></div><p id="modelStatus" role="status"></p><details id="modelDiagnostics"><summary>診断・解決</summary><div></div></details><details><summary>最近の操作</summary><ol id="modelLog"></ol></details><details><summary>コマンドを追加</summary><label>登録済み演算を使うJSON定義<textarea id="modelCommandDefinition" rows="8"></textarea></label><button id="modelRegister">定義を検証して追加</button></details><details><summary>形状Library</summary><label>保存名<input id="modelShapeName" value="CAD shape"></label><label><input id="modelShapeHistory" type="checkbox" checked>依存履歴を含める</label><button id="modelSaveShape">選択形状を保存</button><div id="modelShapeEntries"></div></details><details><summary>About · 依存・権利表示</summary><p>Pathloom独自のCAD操作。正確な演算にはOCP / OCCTを使用します。</p><a href="./THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">第三者ソフトウェアの表示と原文の場所</a><p>配布物の全依存監査・OCCT例外本文の照合は未完です。</p></details><small>左クリック：作図／選択 · Shift：追加選択<br>右ドラッグ：回転 · 中ドラッグ：移動<br>Enter：確定 · Esc：中断</small></aside><aside class="model-right"><section class="model-inspector"><header><strong>設定・プロパティ</strong></header><div id="modelProperties"></div></section><section class="model-history"><header><strong>作成履歴</strong><button id="modelRetry">再計算</button></header><div id="modelHistory"></div></section></aside>`;
-  const libraryPlacementLabel = document.createElement("label"),
-    libraryPlacementInput = document.createElement("input");
-  libraryPlacementLabel.textContent = "挿入位置 XYZ mm";
-  libraryPlacementInput.id = "modelShapePlacement";
-  libraryPlacementInput.value = "0,0,0";
-  libraryPlacementLabel.append(libraryPlacementInput);
-  panel.querySelector("#modelShapeEntries").before(libraryPlacementLabel);
   const exportStepButton = document.createElement("button");
   exportStepButton.id = "modelExportStep";
   exportStepButton.textContent = "STEP⇩";
@@ -279,9 +271,9 @@ export function initModelWorkspace(api) {
     if (command.defaults.plane)
       session.parameters.plane = clone(store.document.uiState.workPlane);
     setStatus("設定・入力を指定し、プレビューまたは確定してください。");
-    if (command.baseOperation.id === "shape.transform" && selection.length > 1)
+    if (command.id === "transform.move" && selection.length > 1)
       setStatus(
-        `${command.displayName}は形状1件が対象です。入力欄または重なり候補から対象を1件選んでください。`,
+        "Moveは形状1件が対象です。入力欄または画面から対象を1件選んでください。",
       );
     render();
     await startRuntime();
@@ -611,8 +603,8 @@ export function initModelWorkspace(api) {
         ? "始点・終点で作図します。方向＋長さモードは未対応です。"
         : commandId === "C06"
           ? "中心＋半径で作図します。直径・2端点・3点モードは未対応です。"
-          : editingOperation === "shape.transform"
-            ? "対象は形状1件です。複数形状の一括変換は未対応です。正本B-repへ適用します。"
+          : commandId === "transform.move"
+            ? "対象は形状1件です。複数形状の一括Moveは未対応です。"
             : "";
     if (note.textContent) settingsForm.append(note);
     for (const [key, value] of Object.entries(f?.sketchId ? {} : params)) {
@@ -1158,15 +1150,12 @@ export function initModelWorkspace(api) {
         b.textContent = `挿入 · ${entry.name}`;
         b.onclick = async () => {
           try {
-            const translation = parseCoordinate($("modelShapePlacement").value);
-            selection = (
-              await store.insertLibrary(entry, { translation })
-            ).map((entityId) => ({ entityId }));
+            selection = (await store.insertLibrary(entry)).map((entityId) => ({
+              entityId,
+            }));
             selectedFeature = null;
             render();
-            setStatus(
-              `独立したIDでLibrary形状を正本配置しました（${translation.join(", ")} mm）。`,
-            );
+            setStatus("独立したIDでLibrary形状を挿入しました。");
           } catch (error) {
             report(error);
           }

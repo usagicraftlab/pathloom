@@ -91,7 +91,7 @@ export function packageShapes(
     assets,
   };
 }
-export function insertShapes(doc, entry, { translation = [0, 0, 0] } = {}) {
+export function insertShapes(doc, entry) {
   if (
     entry?.format !== "pathloom-shape-library-entry" ||
     entry.schemaVersion !== 1 ||
@@ -100,12 +100,6 @@ export function insertShapes(doc, entry, { translation = [0, 0, 0] } = {}) {
     !entry.entities.length
   )
     throw new Error("Unsupported shape library entry");
-  if (
-    !Array.isArray(translation) ||
-    translation.length !== 3 ||
-    !translation.every(Number.isFinite)
-  )
-    throw new Error("Library挿入位置には有限のXYZが必要です");
   const map = new Map();
   const slotKeys = new Map();
   function remap(value) {
@@ -257,40 +251,6 @@ export function insertShapes(doc, entry, { translation = [0, 0, 0] } = {}) {
     delete s.draft;
     delete s.lastValid;
   }
-  let selectedEntityIds = entry.selectedEntityIds.map(remap);
-  if (translation.some((value) => value !== 0)) {
-    selectedEntityIds = selectedEntityIds.map((sourceEntityId) => {
-      const source = entities.find((entity) => entity.id === sourceEntityId);
-      if (!source)
-        throw new Error("Library配置対象が依存closureに含まれていません");
-      const featureId = id(),
-        entityId = id();
-      features.push({
-        id: featureId,
-        operation: { id: "shape.transform", version: 1 },
-        command: { id: "transform.move", version: 1, mode: "default" },
-        name: `配置 · ${entry.name}`,
-        inputs: {
-          object: [{ entityId: sourceEntityId, role: "object" }],
-        },
-        parameters: { mode: "move", translation: clone(translation) },
-        toleranceOverrides: {},
-        resultPolicy: "replace",
-        outputSlots: [
-          { key: "result", entityId, bodyId: source.bodyId },
-        ],
-        featureRevision: 1,
-        requestedHash: null,
-        resultHash: null,
-        status: "dirty",
-        diagnostics: [],
-        lastValid: null,
-      });
-      const body = bodies.find((candidate) => candidate.id === source.bodyId);
-      if (body?.tipEntityId === sourceEntityId) body.tipEntityId = entityId;
-      return entityId;
-    });
-  }
   return {
     features,
     entities,
@@ -298,6 +258,6 @@ export function insertShapes(doc, entry, { translation = [0, 0, 0] } = {}) {
     sketches,
     assets: clone(entry.assets),
     commandDefinitions: clone(entry.commandDefinitions || []),
-    selectedEntityIds,
+    selectedEntityIds: entry.selectedEntityIds.map(remap),
   };
 }

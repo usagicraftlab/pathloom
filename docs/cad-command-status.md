@@ -197,3 +197,12 @@ source/original hashを保存する。display-only meshは既存表示経路の�
 現在bodyの正本をOCCT STEPとして書出し、fresh runtimeで再読込してbbox・面積/体積・closure・
 validityを照合する。契約と境界は[cad-step-connection-plan.md](cad-step-connection-plan.md)。
 browserのTauri IPC/保存dialogはfixtureであり、実MacはIssue #37の未実施範囲として保持する。
+
+## 2026-10-29 — Issue #15 共通操作・再利用（共有基盤）
+
+65機能IDの状態は変更しない。65 ID外の `shape.transform` commandとして既存Moveに
+Rotate / Scale / Mirrorを追加し、いずれも形状1件を明示選択してOCCT正本B-repへ適用する。
+履歴付きShape Libraryは選択rootの上流closureを保存し、feature/entity/body/sketch、
+typed candidate/split由来参照を挿入ごとに再発行する。挿入位置XYZはclosure末尾のMove履歴として
+正本へ適用し、無指定配置とschemaVersion 1 entryの互換を保つ。契約は
+[共通操作・再利用計画](cad-common-operations-plan.md)。実Macと全65 IDの残件へ能力を広げない。

@@ -720,6 +720,7 @@ test("Issue15 Rotate Scale Mirror commit exact B-rep history through the workspa
   await page.getByLabel("角度 rad", { exact: true }).fill("90deg");
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
+  await expect(page.locator(".model-history-entry").last()).toContainText("valid");
   await page.locator(".model-history-entry").last().click();
 
   await page.getByRole("button", { name: "Scale", exact: true }).click();
@@ -727,6 +728,7 @@ test("Issue15 Rotate Scale Mirror commit exact B-rep history through the workspa
   await page.getByLabel("倍率", { exact: true }).fill("2");
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
+  await expect(page.locator(".model-history-entry").last()).toContainText("valid");
   await page.locator(".model-history-entry").last().click();
 
   await page.getByRole("button", { name: "Mirror", exact: true }).click();
@@ -740,6 +742,7 @@ test("Issue15 Rotate Scale Mirror commit exact B-rep history through the workspa
     }));
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(4);
+  await expect(page.locator(".model-history-entry").last()).toContainText("valid");
   const result = await page.evaluate(() => {
     const store = window.PathloomModel.store,
       feature = store.document.features.at(-1),
