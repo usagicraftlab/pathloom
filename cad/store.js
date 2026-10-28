@@ -888,6 +888,19 @@ export class CadStore {
     return patch.selectedEntityIds;
   }
   resolveBindings() {
+    // Recomputing an upstream feature must not turn it into the body's final
+    // result while a later feature is dirty, blocked or retaining lastValid.
+    const tips = new Map();
+    for (const feature of this.document.features) {
+      if (feature.status === "suppressed") continue;
+      for (const slot of feature.outputSlots)
+        tips.set(slot.bodyId, { entityId: slot.entityId, feature });
+    }
+    for (const body of this.document.bodies)
+      // A ready body with no tip can be intentionally consumed by a replace
+      // operation (including Difference tools). Binding refresh must not undo it.
+      if (body.status === "ready" && body.tipEntityId != null && tips.has(body.id))
+        body.tipEntityId = tips.get(body.id).entityId;
     for (const b of this.document.outputBindings) {
       const body =
         b.source.mode === "body-result"
@@ -900,7 +913,11 @@ export class CadStore {
                 ?.tipEntityId,
             )
           : this.getEntity(b.source.entityId);
-      const f = entity && this.getFeature(entity.producer.featureId);
+      const f = entity
+        ? this.getFeature(entity.producer.featureId)
+        : body?.status === "ready"
+          ? tips.get(body.id)?.feature
+          : null;
       b.candidateBodyIds = [
         ...new Set([
           ...(body?.status === "split" ? body.splitIntoBodyIds : []),
@@ -913,13 +930,19 @@ export class CadStore {
       );
       b.status = b.candidateBodyIds.length
         ? "split"
-        : !entity
+        : b.source.mode === "body-result" && body?.status !== "ready"
           ? "missing"
-          : !["valid", "warning"].includes(f?.status)
+          : f && !["valid", "warning"].includes(f.status)
             ? "pending"
-            : b.expectedKind === "curve" && entity.kind !== "curve"
-              ? "type-changed"
-              : "ready";
+            : !entity
+              ? "missing"
+              : !["valid", "warning"].includes(f?.status)
+                ? "pending"
+                : (b.expectedKind === "curve"
+                    ? entity.kind !== "curve"
+                    : !["surface", "shell", "solid", "compound"].includes(entity.kind))
+                  ? "type-changed"
+                  : "ready";
       b.resolvedEntityId = entity?.id || null;
       b.resolvedResultHash = f?.resultHash || null;
     }

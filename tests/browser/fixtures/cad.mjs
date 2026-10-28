@@ -3,35 +3,49 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
 // Real OCCT daemon behind browser IPC. Only the OS-specific Tauri transport is substituted.
-// Fixtures run for every test, even when another spec already imported this module.
 const test = base.extend({
   page: async ({ page }, use) => {
-    let queue = [], serial = 0, closed = false, replies;
-    page.on("dialog", (dialog) => dialog.accept());
-    const daemon = spawn(
-      process.env.PATHLOOM_BREP_PYTHON ||
-        resolve(".pathloom-runtime/python/bin/python"),
-      ["-u", "native/cad_runtime.py"],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
-    const exited = new Promise((resolveExit) => daemon.once("close", resolveExit));
-    const rejectPending = (error) => {
-      for (const task of queue.splice(0)) task.reject(error);
-    };
-    daemon.on("error", rejectPending);
-    daemon.stdin.on("error", rejectPending);
+    let closeRuntime = async () => {};
     try {
+      page.on("dialog", (dialog) => dialog.accept());
+      const daemon = spawn(
+        process.env.PATHLOOM_BREP_PYTHON ||
+          resolve(".pathloom-runtime/python/bin/python"),
+        ["-u", "native/cad_runtime.py"],
+        { stdio: ["pipe", "pipe", "pipe"] },
+      );
+      const pending = new Map(), slices = new Map();
+      let serial = 0, closed = false;
+      const rejectPending = (error) => {
+        for (const task of pending.values()) task.reject(error);
+        pending.clear();
+      };
+      const exited = new Promise((resolve) => daemon.once("close", resolve));
+      daemon.on("error", rejectPending);
+      daemon.stdin.on("error", rejectPending);
+      daemon.once("close", () => {
+        closed = true;
+        rejectPending(new Error("CAD fixture runtime closed"));
+      });
       daemon.stderr.on("data", () => {});
-      replies = createInterface({ input: daemon.stdout });
-      replies.on("line", (line) => {
-        if (closed) return;
-        const reply = JSON.parse(line),
-          task = queue.shift();
+      const lines = createInterface({ input: daemon.stdout });
+      lines.on("line", (line) => {
+        const reply = JSON.parse(line), task = pending.get(reply.id);
         if (!task) return;
+        pending.delete(reply.id);
         reply.ok
           ? task.resolve(reply.result)
           : task.reject(new Error(reply.error.message));
       });
+      closeRuntime = async () => {
+        closed = true;
+        rejectPending(new Error("CAD fixture ended"));
+        lines.close();
+        const active = [...slices.values()];
+        for (const task of active) task.child.kill();
+        daemon.kill();
+        await Promise.all([exited, ...active.map((task) => task.exited)]);
+      };
       const storage = new Map();
       await page.exposeBinding("__cadStorage", (_, args) => {
         if (args.discard) storage.delete(args.key);
@@ -44,15 +58,66 @@ const test = base.extend({
       await page.exposeBinding("__cadKernel", async (_, message) => {
         if (closed) throw new Error("CAD fixture ended");
         return new Promise((resolve, reject) => {
-          queue.push({ resolve, reject });
+          const id = String(++serial);
+          pending.set(id, { resolve, reject });
           daemon.stdin.write(
-            JSON.stringify({ ...message, id: String(++serial) }) + "\n",
+            JSON.stringify({ ...message, id }) + "\n",
+            (error) => {
+              if (!error) return;
+              pending.delete(id);
+              reject(error);
+            },
           );
+        });
+      });
+      await page.exposeBinding("__cadSlice", async (_, args) => {
+        if (args.cancel) {
+          slices.get(args.requestId)?.child.kill();
+          return;
+        }
+        if (closed) throw new Error("CAD fixture ended");
+        return new Promise((resolveResult, reject) => {
+          const child = spawn(process.env.PATHLOOM_BREP_PYTHON || resolve(".pathloom-runtime/python/bin/python"), ["native/occt_brep_bridge.py"]);
+          const task = { child, exited: new Promise((resolve) => child.once("close", resolve)) };
+          slices.set(args.requestId, task);
+          let stdout = "", stderr = "";
+          child.stdout.on("data", (data) => { stdout += data; });
+          child.stderr.on("data", (data) => { stderr += data; });
+          child.on("error", reject);
+          child.stdin.on("error", reject);
+          child.once("close", (code) => {
+            if (slices.get(args.requestId) === task) slices.delete(args.requestId);
+            try {
+              const result = JSON.parse(stdout);
+              if (code !== 0 || !result.success) throw new Error(result.error || stderr);
+              resolveResult(result.shape);
+            } catch (error) { reject(error); }
+          });
+          child.stdin.end(JSON.stringify({ action: "slice", ...args }));
         });
       });
       await page.addInitScript(() => {
         const listeners = new Map();
         window.__saved = null;
+        window.__saveCount = 0;
+        window.__cadWorkers = [];
+        const OriginalWorker = window.Worker;
+        window.Worker = class extends OriginalWorker {
+          constructor(url, options) {
+            super(url, options);
+            if (!String(url).includes("cad-worker.js")) return;
+            this.audit = { completed: 0, terminated: false };
+            window.__cadWorkers.push(this.audit);
+            this.addEventListener("message", (event) => {
+              if (event.data.nativeSlice && !event.data.request.preview) window.__lastNativeOwner = this.audit;
+              if (Object.hasOwn(event.data, "ok")) this.audit.completed++;
+            });
+          }
+          terminate() {
+            if (this.audit) this.audit.terminated = true;
+            return super.terminate();
+          }
+        };
         window.__TAURI__ = {
           event: {
             listen: async (name, cb) => {
@@ -94,6 +159,17 @@ const test = base.extend({
                   handles: args.handles,
                 });
               if (name === "cad_cancel") return;
+              if (name === "cancel_cad_request") return window.__cadSlice({ ...args, cancel: true });
+              if (name === "slice_step_brep") {
+                const result = await window.__cadSlice(args);
+                if (window.__holdNextSlice) {
+                  window.__holdNextSlice = false;
+                  const held = { owner: window.__lastNativeOwner, completedBefore: window.__lastNativeOwner.completed, returned: false };
+                  await new Promise((resolve) => { held.release = resolve; window.__heldSlice = held; });
+                  held.returned = true;
+                }
+                return result;
+              }
               if (name === "cad_library") return "[]";
               if (name === "cad_command_library")
                 return window.__cadStorage({ key: "commands", ...args });
@@ -113,6 +189,7 @@ const test = base.extend({
                 return { settings: {}, hasCredentials: false };
               if (name === "save_pathloom_project") {
                 window.__saved = JSON.parse(args.content);
+                window.__saveCount++;
                 await window.__cadStorage({
                   key: "project",
                   content: args.content,
@@ -136,11 +213,7 @@ const test = base.extend({
       await expect(page.locator("#modelStatus")).toContainText("正確な形状");
       await use(page);
     } finally {
-      closed = true;
-      rejectPending(new Error("CAD fixture ended"));
-      replies?.close();
-      daemon.kill();
-      await exited;
+      await closeRuntime();
     }
   },
 });

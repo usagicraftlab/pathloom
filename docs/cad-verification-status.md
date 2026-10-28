@@ -182,6 +182,31 @@ Full commands, source identities, helper-check corrections and limits are in
 the development log. Final-head CI runs and merge/auto-close confirmation are
 recorded separately in PR #30 and the board after they actually occur.
 
+## 2026-10-27 JST — Issue #9 / instruction 004: partial, awaiting a decision
+
+The new real-OCP browser route confirms Rectangle60×40 / capped Extrude25
+volume60000, then width80 / volume80000, unchanged semantic Fillet reference,
+updated exact sections and G-code XY width60→80. An inactive graph's shared
+outputs remain marked stale until selected; selection now recalculates them,
+and unrelated graph inputs/paths are unchanged. Explicitly connecting an
+existing binding to another graph is tested separately from automatic updates.
+Background generation for inactive graphs is not claimed as implemented.
+
+The terminal body feature is retained for dirty/failed lastValid rather than
+silently binding the recomputed Extrude. Pending bindings stop G-code and cancel
+old generation/preview jobs. Six new JS tests pass. The three new browser cases
+after the current changes have **2 passes / 1 failure**, not a full-suite pass.
+The failed case reaches an explicitly reselected valid Fillet but generation
+rejects its paths with `Intersecting output curves at Z 0.6`. The cause is not
+yet established, so downstream recovery is incomplete and no new A/T/R row is
+promoted. Existing T10/T11/T12 CAD-only evidence does not prove G-code recovery.
+
+Node24 full JS, Node20.20.2 full JS, native full suite and full browser suite
+have not been run on this partial change. CI, merge and auto-close are recorded
+in the Draft PR and board when actually observed. Actual macOS GUI/Tauri IPC/OS
+dialogs, local Rust and physical printing are unexecuted. Existing maintenance
+frame/notification intermittency is outside this change and remains unresolved.
+
 
 ## 2026-10-27 JST — Issue #34 targeted section evidence (second checkpoint)
 
@@ -243,3 +268,19 @@ bottom edge/B-rep yields42 paths and complete G-code. See the updated section
 [evidence](cad-native-section-intersection.md) and dated execution log for initial
 entrypoint/logging obstacles, retries and final-head CI. Actual macOS remains
 unrun and is tracked separately by Issue #37, not marked passed by this check.
+
+
+## 2026-10-28 JST — Issue #9 recovery after #11 / #34
+
+The three issue acceptance scenarios now pass on the integrated main: exact
+Extrude volume60000→80000 and paths/G-code width60→80 with the same edge;
+missing references retain lastValid, reject a delayed section and block output
+until explicit edge repair; independent and inactive shared graphs keep their
+correct scope and recalculate when selected. Difference's three visible-tool
+regressions were reproduced and traced to binding refresh restoring an
+intentionally null ready-body tip. A null-tip guard and a failing-then-passing
+store contract regression retain consumption without losing pending terminal
+results. Source geometry checks and the per-test native fixture remain real OCP;
+transport/OS storage are substituted. States are not broadly promoted. See the
+[scoped proof](cad-generation-recovery.md) for normal/failure/recovery evidence,
+full runs and final-head CI; real macOS acceptance remains unrun in Issue #37.

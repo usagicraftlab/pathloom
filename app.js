@@ -6,6 +6,7 @@ import {initCadGizmo} from './cad-gizmo.js';
 import {moveStepFaces} from './step-import.js';
 let hiddenStageGroups=[],stagePreviewGroup=null;
 import {cadInputUsed,printOutputNodes,numberParameters,pipelineLayerHeight,migrateDefinition} from './cad-pipeline.js';
+import {syncCadBindingSources} from './cad/generation-adapter.js';
 import { initCad } from './cad-ui.js';
 import { BASIC_FIELDS, LAYOUT_DEFAULTS, validateProject } from './pathloom-project.js';
 import { validatePauseLayers, pauseGcode, durationText, thumbnailBlock, encodeQoi, progressCommand, usageComments } from './gcode-metadata.js';
@@ -466,7 +467,7 @@ function exportThumbnails(){
   }
 }
 
-function generateGcode(){for(const source of sourceState.values())for(const input of source.generator?.inputs||[])if(input.cadBinding&&cadInputUsed(source.generator,input.id)){const binding=window.PathloomModel?.store.document.outputBindings.find(b=>b.id===input.cadBinding.id);if(binding?.status!=='ready'||binding.resolvedResultHash!==input.cadBinding.resultHash)throw new Error(`CAD input ${input.name}: update or repair the CAD binding before exporting`)}
+function generateGcode(){window.PathloomModel?.store.resolveBindings();for(const source of sourceState.values())for(const input of source.generator?.inputs||[])if(input.cadBinding&&cadInputUsed(source.generator,input.id)){const binding=window.PathloomModel?.store.document.outputBindings.find(b=>b.id===input.cadBinding.id);if(binding?.status!=='ready'||binding.resolvedResultHash!==input.cadBinding.resultHash)throw new Error(`CAD input ${input.name}: update or repair the CAD binding before exporting`)}
   if(!instanceState.size)throw new Error('Add a .toolpath file first');
   assertPrintReferencesCurrent();
   for(const source of sourceState.values())if(source.generator&&source.generationError)throw new Error(`${source.label}: ${source.generationError}`);
@@ -643,7 +644,7 @@ function restoreProject(raw){
 function clearStagePreview(){for(const group of hiddenStageGroups)group.visible=true;hiddenStageGroups=[];if(!stagePreviewGroup)return;scene?.remove(stagePreviewGroup);stagePreviewGroup.traverse(node=>{node.geometry?.dispose();node.material?.dispose()});stagePreviewGroup=null;requestPreviewRender()}
 initCad({
   setComponentMetadata(id,stepId,metadata){const step=sourceState.get(id)?.generator?.steps.find(s=>s.id===stepId);if(step)Object.assign(step,structuredClone(metadata))},
-  syncCadBinding({bindingId,status,input}){for(const source of sourceState.values()){const target=source.generator?.inputs?.find(i=>i.cadBinding?.id===bindingId);if(!target)continue;const changed=target.cadBinding.resultHash!==input?.cadBinding?.resultHash||target.cadBinding.status!==status;if(input)Object.assign(target,structuredClone({...input,name:target.name,exposed:target.exposed,visible:target.visible}));else target.cadBinding.status=status;if(changed&&cadInputUsed(source.generator,target.id))source.generationError=`CAD input ${target.name}: ${status==='ready'?'updated; select this graph to recalculate':status}`;}refreshVisibility();requestPreviewRender()},
+  syncCadBinding(update){syncCadBindingSources(sourceState.values(),update);refreshVisibility();requestPreviewRender()},
   syncCadInput(id,input){const source=sourceState.get(id);if(!source?.generator)return;for(const sibling of sourceState.values())if(sibling===source||source.generatorGroup&&sibling.generatorGroup===source.generatorGroup){const target=sibling.generator?.inputs?.find(i=>i.id===input.id);if(target)Object.assign(target,structuredClone(input))}},
   setEditorState(id,editor){const source=sourceState.get(id);if(source?.generator)source.generator.editor=structuredClone(editor)},
   lockPreview(active){if(active){$('#layerSlider').value=$('#layerSlider').max;$('#pathSlider').value=$('#pathSlider').max;inspectingLayerPaths=false}refreshVisibility()},
