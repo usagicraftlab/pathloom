@@ -1442,3 +1442,14 @@ local Rust/実OS操作は未実施。push/PR最終headの全CIは公開後に照
 各attempt1 failure（JS199/Rust21/browser45成功、native54成功1失敗2skip）。旧全6jobずつは照合済み。
 旧失敗は当時のNURBS continuationであり、ユーザー決定後の新契約成功へ書き換えない。
 CI再実行で隠さず、同branchの最終head push/PR CIと分けてPRへ保持する。
+
+## 2026-10-28 JST — 指示009 / Issue #13 実装前の具体化
+
+008のmerge f7f69e7後main checks40666332968はattempt1 success、全3job生ログで
+JS202/native68+USD2skip/macOS Rust21/browser51を確認。ボード18:53の有効化とIssue13を読み、
+009だけ未着手→作業中をrequiredRevisionId付き更新/全文保持読戻し確認。
+既存#13用branch/PRなしを確認し、feat/13-regions-and-solidsをmainから作成。
+[対応表](cad-regions-solids-plan.md)でS03/B01〜B08/D01〜D07とIssue3完了条件を具体化。
+穴/複数領域、Box作図/ellipsoid/開閉primitive、Pipe/Cap/assemble、面押出、Boolean全結果、
+Fillet連鎖/2距離Chamfer/隣接面、Shell失敗診断を含む。具体化をDraft PRへ記録してから実装する。
+この時点は製品変更/009検証未実施。010/011予約と実機#37を取得しない。
