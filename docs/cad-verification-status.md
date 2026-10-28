@@ -303,3 +303,16 @@ API単独probeを変更なしmainと比較しJSON同一を確認したが原因/
 旧計画headのCI成功を試作headの成功としない。A/T/Rの状態は保持。
 UI/全出力/履歴/保存/全ローカル検証は未完了、実機#37も未実施。
 詳細：[実測と残件](cad-curve-editing-plan.md)。
+
+## 2026-10-28 — Issue #12 / E01〜E11の追加証拠
+
+既存A/T/R62行の状態は保持する。曲線Trimとsurface Untrim（T22）は別演算であり、
+曲線編集の成功を未実装の面Trimや実Mac合格へ広げない。
+`native/test_curve_editing_modes.py`は全IDの正常/型・不成立・曖昧ケース、
+分岐Join/複数group、全区間・edge保持、到達候補、平面Offset/0/円消滅、
+2曲線corner全出力、G1/G2の接線と曲率、近似の明示確定、Seam/制御点を実OCCTで確認する。
+`tests/curve-editing.test.mjs`は旧command版不変とretention契約を確認する（geometry証拠とは分ける）。
+`tests/browser/cad-curve-editing.spec.mjs`は実OCCT daemonと画面入力で各演算を通し、
+Trimのmouse区間指定/全出力、Undo/Redo、失敗lastValidとv2、候補/近似warning保持を確認する。
+OSダイアログ/storage/Tauri transportはfixtureで代替、実機#37は未実施。
+全検証の実行日時・集計・旧失敗と再実行は開発ログ/PR39へ記録する。

@@ -1357,3 +1357,88 @@ C++側の原因・安全な代替は未確定で、接線延長へ置換して�
 [scripts/probe-curve-extension.py](../scripts/probe-curve-extension.py)とnative回帰、
 [実測と残件](cad-curve-editing-plan.md)を保存する。試作の他機能/UI/全出力/Undo/保存/
 全ローカル検証は未完了、台帳の既存状態は昇格しない。実機#37/予約009〜011は未取得。
+
+## 2026-10-28 JST — 指示008 / Issue #12 ユーザー判断後の曲線編集
+
+16:13 @codexのユーザー判断に従い、仕様22.2のNURBS continuationを正本保持＋接線延長へ
+置換して再開。仕様・機能台帳・PRに日付/根拠を残す。旧APIの原因確定や自動fallbackとはしない。
+同じPR39/branch feat/12-curve-editingを継続し、E05だけに範囲縮小せずE01〜E11を接続した。
+
+[契約と実測](cad-curve-editing-plan.md)に演算別の正常/不成立/曖昧、型/平面/次数等の境界、
+端点/交点/保持側/距離、全出力/未選択edge保持、近似偏差の意味を記載した。
+UIには端点/方式/側/G1・G2/制御点モードを明示。正本parameterとpole一覧、診断候補を提示し、
+Trim mouse/XYZ、cornerの点/候補番号、到達targetParameterを記録する。
+E01/E04はcommand v2を追加し保存済みv1を不変にした。Rebuildはpreview偏差確認と
+acceptApproximation=trueの明示確定が必要で、元正本を保持。knot削減も偏差warning付き。
+Storeはcutters/到達targetを消費せず、cornerのkeepInputs切替を他consumer/lastValidと整合させる。
+
+機能台帳65行のうちE01〜E11だけを記載fixture範囲で更新、他54行は保持。
+A/T/R62行の既存状態も保持し追加証拠を追記した。Constraints/一般mapping/実Mac合格へ広げない。
+
+再開後の失敗・修正：
+- 12モード初回11成功/1失敗。knot挿入の既定長さ差4.403828988586156e-6mmを検出。
+  正本257点一致・独立適応長さ差1e-10mm未満で形状不変を検証し、受入許容差を緩和しない。
+- native全件で閉clamped曲線Seamの既定長さ差0.0062561693378135885mmを検出し67成功/1失敗/2skip。
+  curve lengthMmの製品集計を正本の適応積分へ変更、同じSeam受入を保って68成功/2skipへ回復。
+- browser初回全51件は48成功/3失敗（300.337秒）。Lineのend配列が新Extendのenumになる退行を修正。
+  Joinの旧単一連鎖fixtureはv2複数groupを明示OFFにして従来gap/許容差受入を維持。
+  v1 Open直後Saveはtraceで生成中拒否を確認。cad-ui.jsの保存拒否経路は変更なし。
+  独立した変更なしmain a8c51d3（tracked diff空）の同test3反復は3成功で、main失敗再現とはしない。
+  fixtureが既存busy状態の終了を待つようにし、製品の保存禁止を緩めない。対象9件は9成功。
+- 別entityのedge混入を拒否する所属検査の初回はコピーshapeの位相を誤照合し67成功/1失敗/2skip。
+  コピー前の元位相で照合して正当edge/別edge拒否の両受入を保ち、全件68成功/2skip。
+
+raw log/JSON/失敗traceはwork/board-verification/008/（main比較は../pathloom-008-main-compare/work/board-verification/008/）。
+失敗をskip/xfail化しておらず、任意USDの既存2skipだけを区別する。
+Python3.12.14/OCP7.8.1.1、Node24.22.1/20.20.2、Playwright1.64.1/Chromium156で実行。
+browserは実Python/OCP・実mouse入力、Tauri/OSダイアログ/storage transportはfixture代替。
+実Mac M01〜M07/OS保存回復/実プリンター、local Rustは未実施。macOS RustはCI結果を別途確認。
+#37未実施、009〜011予約/未取得、Phase3は新規指示まで進めない。
+
+### 18:32 JST 最終ローカル検証
+
+| 実行 | 結果 | test秒 / runner秒 |
+| --- | --- | --- |
+| Node24.22.1 `npm test` | 全202成功、失敗/skip/todo0 | 5.401952 / 5.610 |
+| Node20.20.2 `node --test tests/*.test.mjs` | 全30 JSファイル202成功、失敗/skip/todo0 | 6.204283 / 6.352 |
+| Python3.12.14/OCP7.8.1.1 `python -B -m unittest discover -v -s native -p 'test*.py'` | 全70件68成功・任意USD2skip、失敗0 | 5.008 / 6.581 |
+| packaged browser全件（最終所属検査/accuracy保存照合を含む） | 全51成功、失敗/skip/retry/flaky0、errors[] | 228.755435 / 229.383 |
+
+browser実行前に`npm run desktop:prepare`、CI=1/PATHLOOM_FRONTEND_DIR=desktop-dist、
+PATHLOOM_BREP_PYTHON=上記Python、PLAYWRIGHT_CHROMIUM_EXECUTABLE=Chromium156を指定。
+標準playwright.configのtimeout45000/workers1/retry0を継承するfull.config.mjsを使用。
+最終全件はsource凍結後に実行し、保持する全entity.accuracyと全feature/command版/正本hashの
+新ページv2復元一致、別entity edge拒否を含む。git diff --check成功。
+local Rust/実OS操作は未実施。push/PR最終headの全CIは公開後に照合し、PR/Codexログへ追記する。
+
+### ローカル実行履歴（旧失敗を保持）
+
+| label（work/board-verification/008） | exit | runner秒 |
+| --- | --- | --- |
+| browser-final-identity | 0 | 229.383 |
+| browser-final | 0 | 198.756 |
+| browser-full | 1 | 300.337 |
+| curve-browser-first | 0 | 22.550 |
+| curve-browser-second | 0 | 26.379 |
+| editing-js | 0 | 0.212 |
+| extend-approved | 0 | 2.555 |
+| extend-regression-confirmed | 1 | 1.000 |
+| modes-first | 1 | 1.342 |
+| modes-retained | 0 | 1.110 |
+| modes-second | 0 | 1.068 |
+| native-final-identity | 0 | 6.581 |
+| native-final-metrics | 0 | 4.322 |
+| native-final | 1 | 7.345 |
+| native-final-scope | 1 | 4.986 |
+| native-full | 0 | 4.924 |
+| node20-final | 0 | 6.352 |
+| node20-full | 0 | 4.581 |
+| node24-final | 0 | 5.610 |
+| node24-full | 0 | 4.151 |
+| regression-target | 0 | 34.984 |
+
+旧計画head2bad91fのpush40641285516/PR40641291766は各attempt1 success
+（JS199/native51+USD2skip/Rust21/browser45）。旧試作a07003cのpush40642322179/PR40642329084は
+各attempt1 failure（JS199/Rust21/browser45成功、native54成功1失敗2skip）。旧全6jobずつは照合済み。
+旧失敗は当時のNURBS continuationであり、ユーザー決定後の新契約成功へ書き換えない。
+CI再実行で隠さず、同branchの最終head push/PR CIと分けてPRへ保持する。

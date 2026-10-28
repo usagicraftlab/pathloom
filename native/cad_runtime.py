@@ -27,6 +27,11 @@ def bounds(s):
 def xyz(p):return [p.X(),p.Y(),p.Z()]
 def metric(s,kind):
     p=GProp_GProps();getattr(BRepGProp,kind+'Properties_s')(s,p);return p.Mass()
+def curve_length(edges):
+    # Fixed-order BRepGProp quadrature varies when a spline is split or gains
+    # knots. Integrate each exact bounded curve adaptively, not its preview.
+    from OCP.GCPnts import GCPnts_AbscissaPoint
+    return sum(GCPnts_AbscissaPoint.Length_s(BRepAdaptor_Curve(e),1e-10) for e in edges)
 def sample_edge(edge,tolerance=.02):
     from OCP.GCPnts import GCPnts_QuasiUniformDeflection
     c=BRepAdaptor_Curve(edge);a,b=c.FirstParameter(),c.LastParameter();samples=GCPnts_QuasiUniformDeflection(c,tolerance)
@@ -75,6 +80,17 @@ class Runtime:
             if entry['kind']=='edge':preview['curves'].append(dict(topologyId=entry['topologyId'],points=sample_edge(slots[entry['topologyId']])))
             elif entry['kind']=='vertex':preview['points'].append(dict(topologyId=entry['topologyId'],point=xyz(BRep_Tool.Pnt_s(slots[entry['topologyId']]))))
         summary=dict(kind=kind,bbox=bounds(s),areaMm2=metric(s,'Surface') if faces else 0,volumeMm3=metric(s,'Volume') if solids else 0,lengthMm=metric(s,'Linear') if edges else 0,valid=True,empty=empty,exactness='nurbs' if nurbs else 'analytic',accuracy=None,closure=dict(curveClosed=s.Closed() if not faces else None,surfaceUClosed=None,surfaceVClosed=None,shellClosed=s.Closed() if faces else None,enclosesVolume=bool(solids)),topology=topology,faces=face_data,preview=preview)
+        if kind=='curve':
+            summary['lengthMm']=curve_length(edges)
+            definitions=[]
+            for e in edges:
+                ad=BRepAdaptor_Curve(e);info=dict(first=ad.FirstParameter(),last=ad.LastParameter(),type=str(ad.GetType()))
+                if ad.GetType() in (GeomAbs_BSplineCurve,GeomAbs_BezierCurve):
+                    curve=ad.BSpline() if ad.GetType()==GeomAbs_BSplineCurve else ad.Bezier()
+                    info.update(degree=curve.Degree(),poleCount=curve.NbPoles(),poles=[xyz(curve.Pole(i)) for i in range(1,min(256,curve.NbPoles())+1)])
+                info['topologyId']=next(t['topologyId'] for t in topology if t['kind']=='edge' and slots[t['topologyId']].IsSame(e))
+                definitions.append(info)
+            summary['curveParameters']=definitions
         if len(self.cache)>=1024 or sum(len(e['data']) for e in self.cache.values())+len(data)>512*1024*1024:raise CadError('CAD_RESOURCE_LIMIT','CADランタイムの正本cache上限です。保存して再起動してください。',('saveWork','restartRuntime'))
         self.cache[handle]=dict(shape=s,hash=hash,data=data,summary=summary,slots=slots)
         return dict(handle=handle,geometryHash=hash,kind=kind,summary=summary)
@@ -139,7 +155,9 @@ class Runtime:
                         else:inputs[key].append(entry['shape']);originals.setdefault(key,[]).append(entry)
                 tol={**TOLERANCES,**req['tolerances']}
                 if any(not isinstance(v,(int,float)) or not math.isfinite(v) or v<=0 for v in tol.values()):raise CadError('CAD_INPUT_DEGENERATE','許容差は有限の正数です。')
-                output=evaluate(op,req['parameters'],inputs,tol,selectors);published=[]
+                if op=='curve.rebuild' and req.get('intent')!='preview' and req['parameters'].get('acceptApproximation') is not True:
+                    raise CadError('CAD_APPROXIMATION_REQUIRES_CONFIRMATION','プレビューの計測偏差を確認し、近似曲線としての確定を明示してください。')
+                output=evaluate(op,req['parameters'],inputs,tol,selectors);published=[];warnings=[]
                 for slot,s,sem in output:
                     if op=='curve.rectangle' and not req['parameters'].get('rounding',False):sem['vertices']=['corner/00','corner/10','corner/11','corner/01']
                     if op=='shape.extrude' and originals.get('profile') and not req['parameters']['bothSides']:
@@ -150,6 +168,12 @@ class Runtime:
                             for new in builder.Generated(copied):generated.append((new,['side']+entry['semanticPath']))
                         sem['generated']=generated
                     pub=self.publish(s,root,sem)
+                    if slot.startswith('retained/'):
+                        slot='retained/'+pub['geometryHash']
+                        if any(o['slotKey']==slot for o in published):raise CadError('CAD_REFERENCE_AMBIGUOUS','保持する区間の由来が重複しています。')
+                    if sem.get('accuracy') is not None:pub['summary']['accuracy']=sem['accuracy']
+                    if sem.get('warning'):
+                        warnings.append(dict(code=sem.get('warningCode') or ('CAD_APPROXIMATION' if sem.get('accuracy') else 'CAD_NO_CHANGE'),severity='warning',featureId=req.get('featureId'),entityIds=[],subshapeRefs=[],causeFeatureIds=[],message=sem['warning'],actions=[],details=sem.get('accuracy') or {}))
                     if op in ('solid.split','surface.split'):
                         source=req['inputs']['targets'][sem['sourceIndex']]
                         source_key=source.get('sourceKey') or source['geometryHash']
@@ -158,12 +182,12 @@ class Runtime:
                         # Only exact source/asset equality permits continuation.
                         # Never use traversal order or geometric proximity.
                         if any(o['slotKey']==slot for o in published):raise CadError('CAD_REFERENCE_AMBIGUOUS','分割結果の由来が重複しています。対象を分けて実行してください。',('reselectReference',))
-                    if op in ('curve.explode','curve.extractBoundary','surface.explode','surface.extract'):
+                    if op in ('curve.explode','curve.extractBoundary','surface.explode','surface.extract') or op=='curve.join' and len(output)>1:
                         slot=op+'/'+pub['geometryHash']
-                        if any(o['slotKey']==slot for o in published):slot=op+'/'+str(uuid.uuid4())
+                        if any(o['slotKey']==slot for o in published):raise CadError('CAD_REFERENCE_AMBIGUOUS','同一正本の複数出力の由来を一意に識別できません。対象を分けてください。')
                     pub['slotKey']=slot;published.append(pub)
-                status='empty' if published and all(x['summary']['empty'] for x in published) else 'ok'
-                return dict(**stamp,status=status,outputs=published,topologyHistory=[],diagnostics=[],metrics=dict(elapsedMs=(time.monotonic()-start)*1000,cacheHit=False))
+                status='empty' if published and all(x['summary']['empty'] for x in published) else 'warning' if warnings else 'ok'
+                return dict(**stamp,status=status,outputs=published,topologyHistory=[],diagnostics=warnings,metrics=dict(elapsedMs=(time.monotonic()-start)*1000,cacheHit=False))
             except Exception as e:
                 for handle in set(self.cache)-owned:self.cache.pop(handle,None)
                 code=e.code if isinstance(e,CadError) else 'CAD_KERNEL_FAILED';actions=e.actions if isinstance(e,CadError) else ('editParameters','showProblem','retry')

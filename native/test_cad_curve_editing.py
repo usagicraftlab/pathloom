@@ -1,5 +1,5 @@
-"""Issue #12 implementation checkpoint: unresolved continuation remains a failing gate."""
-import unittest
+"""Issue #12: approved NURBS continuation is exact-source plus tangent extension."""
+import unittest,math
 from cad_runtime import Runtime,TOLERANCES
 
 class CurveEditingTests(unittest.TestCase):
@@ -24,4 +24,14 @@ class CurveEditingTests(unittest.TestCase):
     def test_line_tangent(self):self.extension(False,'tangent')
     def test_line_continuation(self):self.extension(False,'continuation')
     def test_nurbs_tangent(self):self.extension(True,'tangent')
-    def test_nurbs_continuation(self):self.extension(True,'continuation')
+    def test_nurbs_continuation(self):
+        out=self.extension(True,'continuation')
+        expected=[30+5/math.sqrt(2),-5/math.sqrt(2),0]
+        vertices=[entry['point'] for entry in out['summary']['preview']['points']]
+        self.assertTrue(any(math.dist(p,expected)<1e-6 for p in vertices),vertices)
+    def test_nurbs_continuation_start(self):
+        source=self.source(True)
+        result=self.run_op('curve.extend',dict(end='start',method='continuation',distanceMm=5),dict(object=[dict(handle=source['handle'],geometryHash=source['geometryHash'])]))
+        self.assertEqual(result['status'],'ok',str(result['diagnostics']))
+        expected=[-5/math.sqrt(2),-5/math.sqrt(2),0]
+        self.assertTrue(any(math.dist(p['point'],expected)<1e-6 for p in result['outputs'][0]['summary']['preview']['points']))

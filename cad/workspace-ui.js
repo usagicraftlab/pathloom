@@ -59,6 +59,14 @@ const labels = {
   angleRad: "角度 rad",
   anchorMode: "基準モード",
   keepTools: "工具を保持する",
+  allowMultipleGroups:"離れた連結グループも全て保持",
+  splitParameters:"切断parameter（正本の値）",removePoint:"削除区間内のXYZ",removeParameter:"削除区間内のparameter",
+  method:"延長方式",targetParameter:"到達交点のparameter（複数候補時）",
+  connectionPoint:"交点・接続側を示すXYZ",solutionIndex:"接続候補番号",trim:"元曲線をトリム",keepInputs:"元曲線を残す",
+  firstDistanceMm:"第1曲線の距離 mm",secondDistanceMm:"第2曲線の距離 mm",firstSide:"第1曲線の保持側",secondSide:"第2曲線の保持側",
+  firstEnd:"第1曲線の端点",secondEnd:"第2曲線の端点",continuity:"接続の連続性",handleLengthMm:"接線制御長 mm",
+  controlPointCount:"制御点数",acceptApproximation:"計測偏差を確認し近似として確定",seamParameter:"継ぎ目parameter",seamPoint:"継ぎ目のXYZ",
+  poleIndex:"制御点番号（1始まり）",position:"移動先XYZ",knot:"挿入するknot",knotIndex:"削除するknot番号",multiplicity:"knot多重度",toleranceMm:"削除許容差 mm",
 };
 export function initModelWorkspace(api) {
   let library = [],
@@ -69,7 +77,7 @@ export function initModelWorkspace(api) {
     autosaveRevision = -1,
     draftVersion = 0,
     savedDraftVersion = -1;
-  let lastCommand = null;
+  let lastCommand = null, curvePointPicking = false;
   let session = null,
     selectedFeature = null,
     status = "CADを開くと正確な形状ランタイムを起動します。",
@@ -195,6 +203,7 @@ export function initModelWorkspace(api) {
     }
   }
   function cancel() {
+    curvePointPicking=false;
     invalidFields.clear();
     clearTimeout(previewTimer);
     if (session) {
@@ -212,6 +221,7 @@ export function initModelWorkspace(api) {
     render();
   }
   async function begin(command) {
+    curvePointPicking=false;
     lastCommand = clone(command);
     if (session) {
       saveDraft();
@@ -258,6 +268,28 @@ export function initModelWorkspace(api) {
         : f?.operation.id === "solid.difference"
           ? { keepTools: false, ...f.parameters }
           : f?.parameters);
+    const editingOperation=session?.command.baseOperation.id||f?.operation.id;
+    if(params&&editingOperation?.startsWith('curve.')){
+      const refs=session?.inputs||f?.inputs||{};
+      const entity=store.getEntity((refs.object||refs.first||refs.curve||[])[0]?.entityId);
+      if(entity?.displayCache?.curveParameters){
+        const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('pre');
+        summary.textContent='正本のparameter・制御点';
+        text.style.whiteSpace='pre-wrap';
+        text.textContent=JSON.stringify(entity.displayCache.curveParameters.map(({first,last,type,degree,poleCount,poles})=>({first,last,type,degree,poleCount,poles})),null,2);
+        details.append(summary,text);host.append(details);
+      }
+      if(editingOperation==='curve.extend'){
+        const text=document.createElement('p');text.textContent='startは始点、endは終点。NURBS/Bezierのcontinuationは接線延長です。到達対象がある場合、距離は交点を探す上限です。';host.append(text);
+      }
+      if(editingOperation==='curve.editPoles'){
+        const text=document.createElement('p');text.textContent='moveは指定制御点を移動。insertKnotは形状を変えずに制御点を追加。removeKnotは許容差内でknotと対応する制御点を減らします。番号は1始まりです。';host.append(text);
+      }
+      if(session&&['curve.trim','curve.seam','curve.fillet','curve.chamfer'].includes(editingOperation)){
+        const button=document.createElement('button');button.textContent='区間・接続側を画面で指定';
+        button.onclick=()=>{curvePointPicking=true;setStatus('作業平面上の区間内部・継ぎ目・接続側をクリックしてください。正本へ投影して検査します。');};host.append(button);
+      }
+    }
     if (!params) {
       const e = store.getEntity(selection[0]?.entityId);
       if (e) {
@@ -589,13 +621,16 @@ export function initModelWorkspace(api) {
         continue;
       }
       const label = document.createElement("label");
-      label.textContent = labels[key] || key;
-      const input =
+      const parameterLabel=key==='end'&&editingOperation==='curve.extend'?'延長する端点':labels[key]||key;
+      label.textContent = parameterLabel;
+      const enumValues=editingOperation?.startsWith('curve.')&&typeof value==='string'?({end:['start','end'],method:['continuation','tangent'],firstEnd:['start','end'],secondEnd:['start','end'],continuity:['G1','G2'],firstSide:['start','end'],secondSide:['start','end'],...(editingOperation==='curve.editPoles'?{mode:['move','insertKnot','removeKnot']}:{})})[key]:null;
+      const input = enumValues?document.createElement('select'):
         typeof value === "object" && value !== null && !Array.isArray(value)
           ? document.createElement("textarea")
           : document.createElement("input");
+      if(enumValues)for(const value of enumValues){const option=document.createElement('option');option.value=value;option.textContent=value;input.append(option);}
       input.dataset.parameter = key;
-      input.setAttribute("aria-label", labels[key] || key);
+      input.setAttribute("aria-label", parameterLabel);
       const operation = session?.command.baseOperation.id || f?.operation.id;
       if (
         key === "tangentChain" ||
@@ -908,6 +943,7 @@ export function initModelWorkspace(api) {
     for (const d of diagnostics) {
       const p = document.createElement("p");
       p.textContent = `${d.code}: ${d.message}`;
+      if(d.details&&Object.keys(d.details).length)p.textContent+=' · '+JSON.stringify(d.details);
       detail.append(p);
       for (const action of d.actions || []) {
         const b = document.createElement("button");
@@ -982,6 +1018,8 @@ export function initModelWorkspace(api) {
           ? "演算が成立しません。診断から設定を修正してください。"
           : "プレビュー · まだ確定していません",
       );
+      const note=result.diagnostics?.filter(d=>d.severity==='warning').map(d=>d.message).join(' ');
+      if(note)setStatus("プレビュー · まだ確定していません · "+note);
     } catch (error) {
       report(error);
     } finally {
@@ -1290,6 +1328,11 @@ export function initModelWorkspace(api) {
       throw new Error("有限のXYZを指定してください");
     const op = session.command.baseOperation.id;
     const params = session.parameters;
+    if (["curve.trim","curve.seam","curve.fillet","curve.chamfer"].includes(op)) {
+      curvePointPicking=false;
+      params[op==='curve.trim'?'removePoint':op==='curve.seam'?'seamPoint':'connectionPoint']=p;
+      lastPoint=p;session.previewSequence++;saveDraft();properties();queuePreview();return;
+    }
     const slots = session.command.inputs.filter((s) => s.kind === "point");
     if (slots.length) {
       const slot = slots[pointStep++ % slots.length];
@@ -1560,6 +1603,12 @@ export function initModelWorkspace(api) {
         Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 3
       )
         return;
+      if (
+        session && curvePointPicking
+      ) {
+        try{const p=view.pointAt(event,inputPlane(true));if(p)acceptPoint(p);}catch(error){rejectDrawingPoint(error);}
+        return;
+      }
       if (
         session &&
         !session.command.inputs.some((s) =>

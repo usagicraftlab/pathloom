@@ -1209,7 +1209,7 @@ Rectangleの平面は現在の作業平面を既定とし、毎回の選択を�
 | E02 | `curve.explode`：wireのedge／複合曲線の構成区間を抽出 | 元非表示、出力複数。元のparameter・正確な曲線を保持 |
 | E03 | `curve.trim`：交点parameterで分割→選んだ区間を除去 | 残す区間も、クリック位置のparameterと区画由来を保存 |
 | E04 | `curve.split`：交点／指定parameterで正確な部分曲線を生成 | 全区間を出力。parameterをサンプル頂点番号にしない |
-| E05 | `curve.extend`：解析曲線の延長、NURBSの端部延長／接線延長 | continuation／tangentを明示。到達対象との交点候補を選択 |
+| E05 | `curve.extend`：解析曲線の延長、NURBS／Bezierは正本を保持して接線延長 | continuation／tangentを明示。NURBSのcontinuationも接線延長（2026-10-28ユーザー判断、ボード16:13）。到達対象との交点候補を選択 |
 | E06 | `curve.offset`：平面wireのOCCT offset等。角処理を設定 | 平面を明示。距離0は無変更。消滅する結果はemptyと診断 |
 | E07 | `curve.fillet`／`curve.chamfer`：平面曲線の接続解を求め、必要なら分割 | trim=true、keepInputs=false。接続側の候補をプレビュー |
 | E08 | `curve.blend`：端点と接線／曲率条件からBezier／NURBSを構成 | G1既定。G2要求時は実測曲率連続性を検証 |

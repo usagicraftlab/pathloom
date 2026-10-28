@@ -453,6 +453,28 @@ add(
 add("E14", "Section", "shape.section", { plane: xy() }, [
   input("objects", ["surface", "shell", "solid", "compound"], 1, null),
 ]);
+// Preserve v1 definitions already embedded in projects. UI exposes only the latest version.
+add("E01", "Join Curves", "curve.join", {allowMultipleGroups:true},
+  [input("objects",["curve"],2,null)],{version:2,resultPolicy:"replace"});
+const curveEdge = () => ({...input("edge",["edge"],0,1),kind:"subshape",prompt:"対象edge（複合曲線では明示選択）"});
+add("E04", "Split Curve", "curve.split", {splitParameters:[]},
+  [input("object",["curve"]),curveEdge(),input("cutters",["curve"],0,null)],{version:2,resultPolicy:"replace"});
+add("E03", "Trim Curve", "curve.trim", {splitParameters:[],removePoint:null,removeParameter:0.5},
+  [input("object",["curve"]),curveEdge(),input("cutters",["curve"],0,null)],{resultPolicy:"replace"});
+add("E05", "Extend Curve", "curve.extend", {end:"end",method:"continuation",distanceMm:10,targetParameter:null},
+  [input("object",["curve"]),curveEdge(),input("target",["curve"],0,1)],{resultPolicy:"replace"});
+add("E07", "Fillet Curves", "curve.fillet", {plane:xy(),radiusMm:2,connectionPoint:[0,0,0],solutionIndex:null,trim:true,keepInputs:false},
+  [input("first",["curve"]),input("second",["curve"])],{resultPolicy:"replace"});
+add("E07.chamfer", "Chamfer Curves", "curve.chamfer", {plane:xy(),firstDistanceMm:2,secondDistanceMm:2,connectionPoint:[0,0,0],firstSide:"start",secondSide:"end",trim:true,keepInputs:false},
+  [input("first",["curve"]),input("second",["curve"])],{resultPolicy:"replace"});
+add("E08", "Blend Curves", "curve.blend", {firstEnd:"end",secondEnd:"start",continuity:"G1",handleLengthMm:10},
+  [input("first",["curve"]),input("second",["curve"])]);
+add("E09", "Rebuild Curve", "curve.rebuild", {degree:3,controlPointCount:6,acceptApproximation:false},
+  [input("object",["curve"]),curveEdge()]);
+add("E10.seam", "Set Curve Seam", "curve.seam", {seamParameter:0,seamPoint:null},
+  [input("object",["curve"])],{resultPolicy:"replace"});
+add("E11", "Edit Curve Poles", "curve.editPoles", {mode:"move",poleIndex:1,position:[0,0,0],knot:0.5,knotIndex:2,multiplicity:1,toleranceMm:0.01},
+  [input("object",["curve"]),curveEdge()],{resultPolicy:"replace"});
 add("S02", "Corner Surface", "surface.corners", {
   points: [
     [0, 0, 0],

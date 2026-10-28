@@ -76,3 +76,75 @@ Python binding経由で置換後handleを取得できていない可能性はあ
 
 計画だけの旧head2bad91fのCI push40641285516/PR40641291766は各attempt1 success。
 それは本試作headの成功ではない。更新headのCIはPR本文/Codexログで別に記録する。
+
+## 2026-10-28 16:13 ユーザー判断と再開後の実装
+
+上の要判断は当時の記録として保持する。連絡欄16:13でユーザーが仕様22.2の
+NURBS continuationを接線延長へ置換し、範囲縮小/Issue分割をせず008全体を再開すると決定した。
+したがって接線への無断fallbackではなく、新しい明示契約に従う。
+旧GeomLib APIの原因確定や修復とはせず、単独probeは旧現象の再現資料として保持する。
+旧回帰名を残し、新仕様の端点[30+5/√2,-5/√2,0]とstart側[-5/√2,-5/√2,0]を正本で検査する。
+
+### 最終の入力・保持・境界
+
+- E01: v2は複数連結groupをすべて返す。v1定義/既定は保存文書のため不変。
+  分岐はCAD_JOIN_BRANCHで選び直す。選択順で推測しない。
+- E02: 全edgeを正本のまま分離。由来hashが重複し一意でなければ曖昧として停止。
+- E03/E04: 実交点または正本parameter、Trim削除区間の内部点/parameter。
+  交点上/重なりは曖昧、交点なしは入力不足。複合曲線のedgeを明示選択し、
+  編集しないedgeも全出力に保持。cuttersは消費しない。Trim mouseは作業平面上の点を正本へ投影。
+- E05: start/end、continuation/tangent、正距離。Line/Circle/Ellipseは解析曲線の継続、
+  NURBS/Bezier continuationは元正本＋接線edge。到達対象は探索距離内の実交点を求め、
+  複数なら診断の正本parameter候補を表示しtargetParameterで明示する。到達対象自体は保持。
+- E06: 平面/符号付き距離/round/miter。0はwarning付き元正本、完全円の内側距離が
+  半径以上なら解析的消滅としてempty/CAD_EMPTY_RESULT。一般OCCT失敗をemptyに置換しない。
+- E07: 平面上の単一edge2本。Filletは接続側点/solutionIndex、Chamferは接続点/保持側start/endと2距離。
+  trim=trueで2保持区間＋接続の3出力、falseは接続のみ。keepInputsで元の表示保持を明示。
+  保持切替・Undoでも別featureに消費された入力を復活させない。
+- E08: 明示端点/向きとhandle長、G1 cubic/G2 quintic Bezier。位置・接線と非ゼロ曲率を実測。
+- E09: degree1〜10、点数degree超〜32。最小二乗fitの次数/点数を固定。
+  独立した密な対応parameter格子で最大偏差を計測（Hausdorff上限ではない）。
+  previewにwarning/偏差を表示し、acceptApproximation=trueなしでcommit不可。元入力は保持。
+- E10: Reverse、単一閉edgeのSeam。周期曲線はperiod区間、閉じた非周期clamped曲線は
+  正確な2区間を再順序化して近似せず元の継ぎ目の曲率不連続も保持。開曲線は端点選択へ案内。
+- E11: 1始まりのpole番号とXYZ移動、形状不変のknot挿入、内部knotと対応poleの許容差付き削減。
+  削除は偏差warning/accuracy付きで保持。任意poleを無条件削除する操作ではない。
+
+正本parameter/制御点をpropertiesへ表示。diagnostic detailsに候補を表示する。
+curveParameters/accuracyは既存displayCache/diagnosticsへ加算し、旧v2を破壊しない。
+E01/E04はcommand v2を追加し、保存済みv1 defaultsを変更しない。
+正本はB-rep/NURBSで保存し、表示点列/測定点を代用しない。
+
+### 再開後に検出した検証失敗の区分
+
+最初の12モード検証は11成功/1失敗。knot挿入後の既定BRepGProp長さが4.403828988586156e-6mm
+変わったが、正本257対応点の最大距離0、独立適応積分34.43380724088958/34.43380724088957mm。
+許容差を緩めず、形状不変は257点と1e-10mmの適応長さで照合した。
+その後、閉clamped曲線のSeamで既定長さ集計が0.0062561693378135885mm異なる失敗を検出。
+正確な区間分割で既定quadratureが変わるため、製品のcurve lengthMmも正本区間の
+GCPnts適応積分(1e-10mm)へ変更し、同じSeam長さ受入を緩和せず再実行した。
+これらは旧E05 failureとは別の再開後実績で、成功へ置換しない。
+最終全検証/CI結果は開発ログとPR39へ記録する。
+
+初回browser全51件は48成功/3失敗（300.337秒）。2件はLineのend XYZが新規Extendの
+enum/labelへ誤って変わる実装退行で、Extendのstring設定へ適用を限定して修正した。
+Join旧fixtureはv2の複数group許可を明示OFFにし、従来のgap拒否/0.01→0.1許容差の受入を保持。
+残るv1 Open直後Saveのtraceには「Wait for generation to finish」があり、Openで復元された
+生成workerが処理中の時点で保存を要求していた。変更なしmain a8c51d3の独立checkoutは
+tracked diff空、元の同test3反復は3成功であり、main失敗を再現したとはしない。
+この保存拒否経路のcad-ui.jsは本変更で不変。fixtureに既存busy状態の終了待ちを追加し、
+保存禁止を製品側で緩めず、byte保持/v2移行の同じ受入を確認する。
+修正後の対象9件は9成功（34.984秒）、失敗・skip・retry・flaky0。
+保存traceと全件の初回失敗はwork/board-verification/008/browser-full-*に保持。
+
+別entityのedgeを対象に混入させない所属検査も追加。初回の所属検査はinput_oneがコピーする
+shapeへIsSameを照合してしまい、native全70件67成功/1失敗/2skipとなった。
+正本コピー前の元位相を照合するよう修正し、対象rectの正当なedgeと、別Lineのedge拒否の
+両方を同じ受入で確認して、native全70件68成功/2skipへ回復した。
+ブラウザ最初の全件再実行は51成功（198.756秒、skip/retry/flaky0、errors[]）。
+その実行開始後に追加した所属検査・accuracy保存照合を含む最終全件は改めて実行する。
+
+18:32 JST最終結果：Node24/20各202成功、native全70件68成功/任意USD2skip、
+最終所属検査とentity.accuracy保存照合を含むbrowser全51成功（229.383秒）。
+失敗/JS・browser skip/retry/flaky0、browser errors[]。詳細コマンド・全ローカル履歴は開発ログ。
+最終head CIは公開後にPR39/Codexログへ正確に記録し、全条件成立までDraft/未マージを維持する。
