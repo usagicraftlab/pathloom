@@ -758,8 +758,10 @@ export class CadStore {
           ...(operation.id === "solid.difference"
             ? { differenceKeepTools: parameters.keepTools === true }
             : {}),
+          ...(["curve.fillet","curve.chamfer"].includes(operation.id)
+            ? {curveKeepInputs:parameters.keepInputs === true}:{}),
         };
-        if (operation.id === "solid.difference")
+        if (["solid.difference","curve.fillet","curve.chamfer"].includes(operation.id))
           reconcileDifferenceTools(this.document);
         adopted = true;
         this.resolveBindings();

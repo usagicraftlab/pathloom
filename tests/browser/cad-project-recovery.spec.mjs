@@ -7,6 +7,9 @@ async function rectangle(page) {
   await expect(page.locator('.model-history-entry').last()).toContainText('valid');
 }
 async function save(page) {
+  // Open may have restored a generator whose worker is still recomputing.
+  // Production correctly rejects Save while that operation is pending.
+  await expect(page.locator('#cadStatus')).not.toHaveAttribute('data-state','busy');
   const count=await page.evaluate(()=>window.__saveCount);
   await page.evaluate(()=>document.querySelector('#projectSave').click());
   await expect.poll(()=>page.evaluate(()=>window.__saveCount)).toBe(count+1);

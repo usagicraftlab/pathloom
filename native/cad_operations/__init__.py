@@ -76,6 +76,9 @@ def input_one(inputs,key):
 def evaluate(op,p,inputs,tol,selectors=None):
     """Return immutable output shapes; display tessellations are never operands."""
     selectors=selectors or {};semantic={};mapping=[]
+    from . import curve_editing
+    if op in curve_editing.OPERATIONS:
+        return curve_editing.evaluate(op,p,inputs,tol,selectors)
     boolean_fields={'closed','periodic','cap','bothSides','rounding','solidify','tangentChain','reverse','preserveBoundary'}
     for key in boolean_fields & p.keys():
         if not isinstance(p[key],bool):raise CadError('CAD_INPUT_TYPE',f'{key} はtrue/falseで指定してください。')
@@ -158,6 +161,7 @@ def evaluate(op,p,inputs,tol,selectors=None):
         from OCP.TopTools import TopTools_HSequenceOfShape
         from OCP.ShapeFix import ShapeFix_ShapeTolerance
         items=inputs.get('objects',[])
+        if 'allowMultipleGroups' in p and not isinstance(p['allowMultipleGroups'],bool):raise CadError('CAD_INPUT_TYPE','allowMultipleGroupsはtrue/falseです。')
         if len(items)<2:raise CadError('CAD_INPUT_MISSING','2曲線以上を選択してください。')
         edges=TopTools_HSequenceOfShape();ends=[]
         for item in items:
@@ -173,6 +177,8 @@ def evaluate(op,p,inputs,tol,selectors=None):
                 # A simple wire has at most two incident edges, counting both endpoints.
                 if sum(p0.Distance(p1)<=tolerance for j,p1 in enumerate(ends) if i!=j)>1:raise CadError('CAD_JOIN_BRANCH','接続候補が分岐しています。曲線群を分けて指定してください。',('chooseJoinPath','splitSelection'))
         wires=TopTools_HSequenceOfShape();ShapeAnalysis_FreeBounds.ConnectEdgesToWires_s(edges,tolerance,False,wires)
+        if p.get('allowMultipleGroups') is True:
+            return [(f'group/{i}',wires.Value(i),{}) for i in range(1,wires.Length()+1)]
         if wires.Length()!=1:raise CadError('CAD_JOIN_GAP','端点がJoin許容差内で1本につながりません。',('showBoundaries','editTolerance','editGeometry'))
         result=wires.Value(1)
     elif op=='curve.split':
@@ -198,6 +204,16 @@ def evaluate(op,p,inputs,tol,selectors=None):
         xmin,ymin,zmin,xmax,ymax,zmax=bb.Get()
         if max(abs(zmin),abs(zmax))>tol['kernelLinearMm']:raise CadError('CAD_INPUT_TYPE','曲線は指定した作業平面上にある必要があります。平面を選び直してください。',('editParameters','selectCompatibleInput'))
         if p['joinStyle'] not in ('round','miter'):raise CadError('CAD_SCHEMA_UNSUPPORTED','対応する角処理はround／miterです。')
+        if distance==0:return [('unchanged',source,{'warning':'距離0のため正本を変更していません。'})]
+        # Full-circle inward collapse is analytically decidable. Do not turn
+        # arbitrary OCCT failures for other curves into successful empty shapes.
+        source_edges=subshapes(source,TopAbs_EDGE)
+        if len(source_edges)==1 and source_edges[0].Closed():
+            from OCP.BRepAdaptor import BRepAdaptor_Curve
+            from OCP.GeomAbs import GeomAbs_Circle
+            ad=BRepAdaptor_Curve(source_edges[0])
+            if ad.GetType()==GeomAbs_Circle and ad.Circle().Radius()+distance<=0:
+                return [('collapsed',compound([]),{'warning':'内側距離が円の半径以上のため、Offset結果は空です。','warningCode':'CAD_EMPTY_RESULT'})]
         source_wire=wire(source)
         support=BRepBuilderAPI_MakeFace(gp_Pln(ax.Location(),ax.Direction()),source_wire,True).Face()
         builder=BRepOffsetAPI_MakeOffset(support,GeomAbs_Arc if p['joinStyle']=='round' else GeomAbs_Intersection,not source_wire.Closed())
@@ -339,10 +355,13 @@ def evaluate(op,p,inputs,tol,selectors=None):
             for s in inputs.get('objects',[]):b.Add(BRepBuilderAPI_Copy(s).Shape())
             b.Perform();result=b.SewedShape()
         elif op.endswith('reverse'):
-            result=input_one(inputs,'object');result.Reverse()
+            result=input_one(inputs,'object')
+            if op=='curve.reverse' and not subshapes(result,TopAbs_EDGE):raise CadError('CAD_INPUT_TYPE','曲線を選択してください。')
+            result.Reverse()
         else:
             s=input_one(inputs,'object');k=TopAbs_EDGE if op.startswith('curve.') else TopAbs_FACE
             shapes=subshapes(s,k)
+            if not shapes:raise CadError('CAD_INPUT_TYPE','分解できるedge/faceがありません。')
             if op.endswith('extract'):
                 chosen=selectors.get('faces',[])
                 if not chosen:raise CadError('CAD_INPUT_MISSING','取り出す面を選んでください。',('selectInput',))
@@ -414,3 +433,4 @@ def evaluate(op,p,inputs,tol,selectors=None):
     return [('result',result,semantic)]
 
 OPERATIONS={'curve.join','curve.split','curve.offset','surface.corners','surface.edges','surface.offset','surface.untrim','solid.split','surface.split','shape.section','point.create','curve.line','curve.polyline','curve.rectangle','curve.polygon','curve.circle','curve.arc','curve.ellipse','curve.nurbs','curve.interpolate','shape.extrude','shape.revolve','solid.box','solid.sphere','shape.cylinder','shape.cone','solid.torus','solid.union','solid.difference','solid.intersection','surface.plane','surface.planarRegion','surface.join','surface.explode','curve.explode','surface.reverse','curve.reverse','surface.extract','curve.extractBoundary','surface.loft','surface.sweep1','solid.fillet','solid.chamfer','solid.shell','shape.transform'}
+OPERATIONS.update({'curve.trim','curve.extend','curve.fillet','curve.chamfer','curve.blend','curve.rebuild','curve.seam','curve.editPoles'})

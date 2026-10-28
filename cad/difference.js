@@ -64,6 +64,10 @@ export function differenceOutputs(outputs, inputs) {
 }
 
 export function replacementRefs(feature) {
+  if (["curve.fillet","curve.chamfer"].includes(feature.operation.id) && feature.parameters.keepInputs === true)
+    return [];
+  if (["curve.trim","curve.split","curve.extend","curve.editPoles"].includes(feature.operation.id))
+    return feature.inputs.object || [];
   if (["solid.split", "surface.split"].includes(feature.operation.id))
     return feature.inputs.targets || [];
   if (
@@ -74,14 +78,15 @@ export function replacementRefs(feature) {
   return references(feature.inputs);
 }
 
-// Rebuild only Difference tool bodies. This also restores a tool when keepTools
-// is turned on after a previous cut, without reviving a tool consumed by another
-// feature. Other bodies and Split/binding policies remain owned by the Store.
+// Replay retention for Difference tools and curve-corner inputs. A retention
+// toggle restores a source only when no other replace feature consumes it.
+// Other bodies and Split/binding policies remain owned by the Store.
 export function reconcileDifferenceTools(doc, extraRefs = []) {
   const entities = new Map(doc.entities.map((e) => [e.id, e]));
   const refs = doc.features
     .filter((f) => f.operation.id === "solid.difference")
     .flatMap((f) => f.inputs.tools || [])
+    .concat(doc.features.filter(f=>["curve.fillet","curve.chamfer"].includes(f.operation.id)).flatMap(f=>references(f.inputs)))
     .concat(extraRefs);
   const states = new Map(
     refs.map((r) => [
@@ -105,11 +110,13 @@ export function reconcileDifferenceTools(doc, extraRefs = []) {
           splitIntoBodyIds: [],
         });
     if (f.resultPolicy !== "replace") continue;
-    const policy =
+    let policy =
       f.operation.id === "solid.difference" &&
       f.lastValid?.differenceKeepTools !== undefined
         ? { ...f, parameters: { keepTools: f.lastValid.differenceKeepTools } }
         : f;
+    if (["curve.fillet","curve.chamfer"].includes(f.operation.id) && f.lastValid?.curveKeepInputs !== undefined)
+      policy={...f,parameters:{...f.parameters,keepInputs:f.lastValid.curveKeepInputs}};
     for (const ref of replacementRefs(policy)) {
       const bodyId = entities.get(ref.entityId)?.bodyId;
       if (

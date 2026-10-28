@@ -771,6 +771,10 @@ test("A11/T07: Join gap remains until the user explicitly changes tolerance", as
   await page
     .getByLabel("CAD input objects", { exact: true })
     .selectOption(refs);
+  // v2 also permits independent groups. This fixture explicitly requires a
+  // single chain so that its original gap/tolerance acceptance stays intact.
+  const groups=page.getByRole('checkbox',{name:'離れた連結グループも全て保持',exact:true});
+  await expect(groups).toBeChecked();await groups.uncheck();await groups.dispatchEvent('input');
   await page.getByRole("button", { name: "プレビュー", exact: true }).click();
   await expect(page.locator("#modelDiagnostics")).toContainText("CAD_JOIN_GAP");
   await expect(
