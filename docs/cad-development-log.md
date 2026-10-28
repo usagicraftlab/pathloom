@@ -1308,3 +1308,30 @@ raw JSON/log/attachment/失敗traceはwork/board-verification/004-resume-007/。
 旧0f265ffのpush40500847035/PR40501038537のfailureと全job結果、旧local部分検証の
 失敗もPR本文に保持し、今回の成功で置換しない。実macOS/Tauri/OS操作、local Rust、
 実プリンターは未実施。実機M項目はIssue37の後段範囲で合格にしない。
+
+## 2026-10-28 JST — 指示005 / Issue #10 再開と保存・回復
+
+main6622cf3から既存local branch fix/10-project-recoveryを継続。ボード09:21回答を確認し、
+候補Aは回復/明示破棄まで保持、Bのautosaveは保留・理由表示、破棄後に再開という
+仕様25.4の解釈を採用した。複数候補は追加せず実機#37に先行着手しない。
+
+回復候補の読取/選択完了をautosaveの前提にし、保留理由と再確認buttonを表示。
+破損候補や失敗回復/破棄で旧候補を解放せず、回復にもOpenのcommand版衝突検証を適用。
+文書identityごとのautosave判定と古いtimer解除、保存待ちの新編集表示を追加。
+
+Issue本文の4条件は[証拠文書](cad-project-recovery.md)へ対応付けた。
+初回target2成功/2fixture失敗、再実行4成功ログ（最終集計未出力）、
+save-red1製品失敗→修正後target5成功/失敗・skip・retry・flaky0を区別して保持する。
+別プロセスは新Python Runtimeへ実正本をimportし、browserは再読込した新Storeで
+failed/lastValid/command版/draft復元を検査。実OS/Tauri/実機再起動は未実施。
+機能65ID・A/T/R62件の状態を保持し、共有基盤証拠だけ追記した。
+
+最終ローカル結果：Node24.22.1 npm test199成功/失敗・skip0（test3.006秒/runner3.283秒）、
+Node20.20.2全29 JS199成功/失敗・skip0（test4.039秒/runner4.120秒）、
+native53件＝51成功/任意NVIDIA USD2skip（test3.177秒/runner4.222秒）、
+browser全45成功/失敗・skip・retry・flaky0、errors[]（test161.626秒/runner162.198秒）。
+全件後、テストだけを強化してOpen各失敗のtoast完了待ちと、別プロセス復元の
+開Line長20/非閉鎖、Plane非体積・面積1200、NURBS exactness/非閉鎖を追加照合。
+製品コードは不変で、この2件を改めて実行し成功を確認した。
+先行失敗traceは標準出力先が後続runに置換されており、初回全trace保持とはしない。
+失敗ログと今回のJSON集計/別プロセス正本attachmentは保持する。最終CIはpush/PR後に照合する。

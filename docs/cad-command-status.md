@@ -160,3 +160,10 @@ Node24/20 each192 passed; native51 passed/2 optional USD skips; browser36 passed
 The 65 command IDs and their states are retained; #11's startup/save fixes are
 preserved. See [section evidence](cad-native-section-intersection.md) for scope
 and CI history. macOS acceptance remains unrun in the follow-up Issue #37.
+
+## 2026-10-28 JST — Issue #10 shared persistence evidence
+
+[保存・回復の契約と検証](cad-project-recovery.md)。C02/S01/C09の実正本、
+failed + lastValid、未完draft、固定command版をv2保存/新Storeと別Pythonプロセスへ復元する。
+v1はOpenだけでは書換せず、次の明示Saveがv2。回復候補保留は明示破棄/回復まで維持する。
+65機能の状態をこの共有基盤の検査だけで昇格しない。全OS/実機/全command版の互換行列は未検証。

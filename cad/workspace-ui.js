@@ -1108,21 +1108,46 @@ export function initModelWorkspace(api) {
   recoveryDialog.innerHTML =
     '<p>前回のCAD作業の回復データがあります。現在のCAD文書を置き換えて復元しますか？</p><button data-recovery="restore">CADを回復</button><button data-recovery="discard">回復データを破棄</button><button data-recovery="later">今はしない</button>';
   document.body.append(recoveryDialog);
-  let recoveryData = null;
+  const recoveryNotice = document.createElement("p");
+  recoveryNotice.id = "modelRecoveryStatus";
+  recoveryNotice.setAttribute("role", "status");
+  const recoveryReview = document.createElement("button");
+  recoveryReview.textContent = "保留中の回復データを確認";
+  recoveryReview.hidden = true;
+  $("modelStatus").after(recoveryNotice, recoveryReview);
+  recoveryReview.onclick = () => recoveryDialog.showModal();
+  let recoveryData = null, recoveryPending = false;
+  let recoveryReadable = false, autosaveDocument = null, autosaveBusy = false;
+  function recoveryNoticeUpdate() {
+    recoveryReview.hidden = !recoveryPending;
+    recoveryNotice.textContent = recoveryPending
+      ? "前回の回復候補を保持しています。回復または明示破棄するまで、現在の文書の自動回復保存は上書きせず保留します。必要な作業はプロジェクトとして保存してください。"
+      : recoveryReadable ? "" : "回復候補を確認できるまで、自動回復保存を保留しています。";
+  }
   recoveryDialog.onclick = async (event) => {
     const choice = event.target.dataset.recovery;
     if (!choice) return;
     try {
       if (choice === "restore") {
-        await store.restore(recoveryData);
+        if (!recoveryData) throw new Error("回復候補を読み取れません。現在の文書と候補は保持しています。");
+        const prepared = await prepareRestore(recoveryData);
+        store.commitRestore(prepared);
+        recoveryData = null;
+        recoveryPending = false;
         restoreUi();
         setStatus(
           "CAD作業を回復しました。ユーザーのprojectファイルは変更していません。",
         );
       }
-      if (choice === "discard")
+      if (choice === "discard") {
         await native.invoke("cad_recovery", { discard: true });
+        recoveryData = null;
+        recoveryPending = false;
+        recoveryReadable = true;
+      }
       recoveryDialog.close();
+      recoveryNoticeUpdate();
+      queueAutosave();
     } catch (error) {
       report(error);
     }
@@ -1133,33 +1158,48 @@ export function initModelWorkspace(api) {
     try {
       const raw = await native.invoke("cad_recovery");
       if (raw) {
+        recoveryPending = true;
         recoveryData = JSON.parse(raw);
         recoveryDialog.showModal();
       }
+      recoveryReadable = true;
     } catch (error) {
       setStatus("CAD回復データを確認できません: " + error.message);
+      if (recoveryPending && !recoveryDialog.open) recoveryDialog.showModal();
     }
+    recoveryNoticeUpdate();
+    queueAutosave();
   }
   function queueAutosave() {
+    clearTimeout(autosaveTimer);
     if (
       !ready ||
-      (store.document.documentRevision === autosaveRevision &&
+      !recoveryReadable || recoveryPending || autosaveBusy ||
+      (store.document === autosaveDocument && store.document.documentRevision === autosaveRevision &&
         draftVersion === savedDraftVersion) ||
       (!store.document.features.length && !store.document.draftSessions.length)
     )
       return;
-    clearTimeout(autosaveTimer);
     const wait = Math.max(1000, 10000 - (Date.now() - lastAutosave));
     autosaveTimer = setTimeout(async () => {
+      if (recoveryPending || !recoveryReadable) return;
+      autosaveBusy = true;
+      let wrote = false;
       try {
-        const draftSnapshot = draftVersion,
+        const document = store.document, draftSnapshot = draftVersion,
           doc = await store.snapshot();
+        if (document !== store.document || recoveryPending) return;
         await native.invoke("cad_recovery", { content: JSON.stringify(doc) });
         lastAutosave = Date.now();
+        autosaveDocument = document;
         autosaveRevision = doc.documentRevision;
         savedDraftVersion = draftSnapshot;
+        wrote = true;
       } catch (error) {
         setStatus("CAD自動回復保存に失敗しました: " + error.message);
+      } finally {
+        autosaveBusy = false;
+        if (wrote) queueAutosave();
       }
     }, wait);
   }
@@ -1683,6 +1723,16 @@ export function initModelWorkspace(api) {
       render();
     }
   }
+  async function prepareRestore(doc) {
+    if (!doc) return null;
+    for (const d of doc.commandDefinitions) {
+      const normalized = validateCommandDefinition(d);
+      const known = commandById(d.id, d.version);
+      if (known && canonical(known) !== canonical(normalized))
+        throw new Error("CAD_SCHEMA_UNSUPPORTED: 同一コマンド版の内容が一致しません。元の文書を保持します。");
+    }
+    return store.prepareRestore(doc);
+  }
   render();
   return {
     store,
@@ -1691,19 +1741,9 @@ export function initModelWorkspace(api) {
       saveDraft();
       return store.snapshot();
     },
-    async prepareRestore(doc) {
-      if (!doc) return null;
-      for (const d of doc.commandDefinitions) {
-        const normalized = validateCommandDefinition(d);
-        const known = commandById(d.id, d.version);
-        if (known && canonical(known) !== canonical(normalized))
-          throw new Error(
-            "CAD_SCHEMA_UNSUPPORTED: 同一コマンド版の内容が一致しません。元の文書を保持します。",
-          );
-      }
-      return store.prepareRestore(doc);
-    },
+    prepareRestore,
     restorePrepared(doc) {
+      clearTimeout(autosaveTimer);
       session = null;
       selectedFeature = null;
       view.clearPreview();

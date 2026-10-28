@@ -284,3 +284,14 @@ results. Source geometry checks and the per-test native fixture remain real OCP;
 transport/OS storage are substituted. States are not broadly promoted. See the
 [scoped proof](cad-generation-recovery.md) for normal/failure/recovery evidence,
 full runs and final-head CI; real macOS acceptance remains unrun in Issue #37.
+
+## 2026-10-28 JST — Issue #10 persistence/recovery scope
+
+[契約と実測](cad-project-recovery.md)。A04/A19/A21/R05/R06/R08/R09に追加証拠。
+実OCCTの開Line/Plane/NURBS、failed lastValid、未完Polyline draft、固定command版を保存し、
+別Pythonプロセスとbrowser再読込の新Storeへ復元する。v1 Openの非書換/次回v2、
+Open cancel/JSON破損/hash破損/native読込失敗/同一command版衝突の現文書保持、
+Save失敗/取消/保存中の新編集表示を検査する。
+Muse09:21の仕様25.4解釈：候補Aは回復/明示破棄まで保持。保留中Bのautosaveは理由を表示して保留し、
+明示破棄後Bのautosaveを再開、回復時はその文書を現行候補にする。複数候補は範囲外。
+A/T/R状態は保持する。実macOS/OSダイアログ/app-data実書込/実Tauriは未実施でIssue #37の後段。
