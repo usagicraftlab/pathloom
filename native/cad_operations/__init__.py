@@ -466,7 +466,7 @@ def evaluate(op,p,inputs,tol,selectors=None):
         s=input_one(inputs,'object');t=gp_Trsf();mode=p['mode']
         if mode=='move':t.SetTranslation(gp_Vec(*vec(p['translation'])))
         elif mode=='rotate':t.SetRotation(gp_Ax1(point(p['axis']['origin']),direction(p['axis']['direction'])),finite(p['angleRad']))
-        elif mode=='scale':t.SetScale(point(p['center']),finite(p['factor']))
+        elif mode=='scale':t.SetScale(point(p['center']),positive(p['factor']))
         elif mode=='mirror':t.SetMirror(axis2(p['plane']))
         else:raise CadError('CAD_SCHEMA_UNSUPPORTED','未実装の変換です。')
         result=BRepBuilderAPI_Transform(s,t,True).Shape()
