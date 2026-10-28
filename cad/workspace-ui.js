@@ -103,6 +103,12 @@ export function initModelWorkspace(api) {
   panel.setAttribute("role", "tabpanel");
   panel.setAttribute("aria-labelledby", "modeModel");
   panel.innerHTML = `<aside class="model-left"><header><strong>CAD · 形状作成</strong><button id="modelUndo" aria-label="CAD Undo" title="Undo">↶</button><button id="modelRedo" aria-label="CAD Redo" title="Redo">↷</button></header><label>コマンド検索<input id="modelCommandSearch" placeholder="長方形 / Line / Extrude" autocomplete="off"></label><div id="modelCommands" class="model-command-list"></div><div id="modelSession" role="status"></div><div class="model-workplane"><label>作業平面<select id="modelPlane"><option>XY</option><option>XZ</option><option>YZ</option></select></label><label>選択<select id="modelPickFilter"><option value="object">形状</option><option value="face">面</option><option value="edge">edge</option><option value="vertex">頂点</option></select></label><label><input id="modelSnap" type="checkbox" checked>端点・中心スナップ</label><button id="modelFit">選択にFit</button><label>座標入力<input id="modelCoordinate" placeholder="x,y,z または @dx,dy,dz"></label></div><div class="model-actions"><button id="modelPreview">プレビュー</button><button id="modelCommit" class="primary">確定</button><button id="modelCancel">キャンセル</button></div><p id="modelStatus" role="status"></p><details id="modelDiagnostics"><summary>診断・解決</summary><div></div></details><details><summary>最近の操作</summary><ol id="modelLog"></ol></details><details><summary>コマンドを追加</summary><label>登録済み演算を使うJSON定義<textarea id="modelCommandDefinition" rows="8"></textarea></label><button id="modelRegister">定義を検証して追加</button></details><details><summary>形状Library</summary><label>保存名<input id="modelShapeName" value="CAD shape"></label><label><input id="modelShapeHistory" type="checkbox" checked>依存履歴を含める</label><button id="modelSaveShape">選択形状を保存</button><div id="modelShapeEntries"></div></details><details><summary>About · 依存・権利表示</summary><p>Pathloom独自のCAD操作。正確な演算にはOCP / OCCTを使用します。</p><a href="./THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">第三者ソフトウェアの表示と原文の場所</a><p>配布物の全依存監査・OCCT例外本文の照合は未完です。</p></details><small>左クリック：作図／選択 · Shift：追加選択<br>右ドラッグ：回転 · 中ドラッグ：移動<br>Enter：確定 · Esc：中断</small></aside><aside class="model-right"><section class="model-inspector"><header><strong>設定・プロパティ</strong></header><div id="modelProperties"></div></section><section class="model-history"><header><strong>作成履歴</strong><button id="modelRetry">再計算</button></header><div id="modelHistory"></div></section></aside>`;
+  const exportStepButton = document.createElement("button");
+  exportStepButton.id = "modelExportStep";
+  exportStepButton.textContent = "STEP⇩";
+  exportStepButton.setAttribute("aria-label", "Export selected CAD as STEP");
+  exportStepButton.title = "Export STEP";
+  panel.querySelector(".model-left > header").append(exportStepButton);
   document.body.append(panel);
   view = createViewAdapter(api.preview);
   const log = [];
@@ -116,6 +122,20 @@ export function initModelWorkspace(api) {
   function report(error) {
     setStatus(error.message || String(error));
   }
+  exportStepButton.onclick = async () => {
+    try {
+      const entityId = selection.length === 1 && selection[0].entityId;
+      const entity = entityId && store.getEntity(entityId);
+      if (!entity) throw new Error("書出す現在のCAD bodyを1つ選択してください");
+      const result = await store.exportStep(entity.id);
+      const filename =
+        (entity.name || "Pathloom-CAD").replace(/\.(step|stp)$/i, "") + ".step";
+      const path = await native.saveStep(result.step, filename);
+      setStatus(path ? `STEPを書き出しました：${path}` : "STEP書出しを取り消しました。");
+    } catch (error) {
+      report(error);
+    }
+  };
   // Transient editing state only; project/recovery restoration is a separate contract.
   const invalidFields = new Map();
   function restoreEditing(input, key) {
@@ -1830,6 +1850,15 @@ export function initModelWorkspace(api) {
       queueMicrotask(restoreUi);
     },
     begin,
+    async importLegacyStep(shape) {
+      await startRuntime();
+      const entityId = await store.importLegacyStep(shape);
+      selection = [{ entityId }];
+      selectedFeature = store.getEntity(entityId)?.producer.featureId || null;
+      render();
+      view.update(store.document, selection);
+      return entityId;
+    },
     render,
   };
 }

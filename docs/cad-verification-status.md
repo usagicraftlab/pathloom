@@ -32,8 +32,8 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | A18 | partial | Untrim/Offset/Reverse operators exist; actual Trim->Untrim scenario not implemented |
 | A19 | partial | Real exact-asset Library/history insertion and recovery browser flow; broader open-face/multi-shape OS cases pending |
 | A20 | partial | Issue #6: typed Split source IDs, slot keys, snapshots/body candidates remapped; two independent real-OCCT history Library copies verified. Broader closure/OS matrix pending |
-| A21 | partial | Issue #5 adds two independent Difference remainders, target IDs, tool retention, fresh-page v2 reopen and mixed-empty round-trip; native new-Runtime exact-asset import. Other environment/macOS portability untested |
-| A22 | partial | legacy JS/Python/browser regression suite; real GH/OS integration untested |
+| A21 | partial | Issue #5 adds two independent Difference remainders, target IDs, tool retention, fresh-page v2 reopen and mixed-empty round-trip; Issue #14 preserves an existing STEP exact asset, placement/provenance and downstream Move through v2 reopen, then fresh-runtime STEP reread. Other environment/macOS portability untested |
+| A22 | partial | legacy JS/Python/browser regression suite; Issue #14 keeps display-only STEP legacy-only and preserves editable importedShapes alongside cadDocument. Real GH/OS integration untested |
 | A23 | partial | Issue #4: document/feature/input/epoch guards through asset export; transport races17 pass, real OCCT width70→80 probe and existing browser21 pass. Actual macOS drag/load remains untested |
 | A24 | partial | Issue #6: exact Split rerun preserves binding ID; changed/count results block, v2 reopen retains candidates, explicit same-kind repair preserves binding ID. Full CAD-to-G-code chain remains #9 |
 | A25 | not-run | immutable command registry exists; explicit version upgrade/rollback UI pending |
@@ -63,7 +63,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | T22 | partial | finite-domain Untrim kernel test; Trim itself pending |
 | T23 | not-run | 未実装または未検証。合格としない。 |
 | T24 | passed | real negative nonplanar curve persisted; CAD browser free 3D creation |
-| T25 | partial | runtime destroyed/new instance: curve+solid exact hash/bounds/length/volume; open shell+NURBS exhaustive trim/parameter proof pending |
+| T25 | partial | runtime destroyed/new instance: curve+solid exact hash/bounds/length/volume; Issue #14 exports current exact body as STEP and fresh Runtime rereads equal bbox/area/volume/closure/validity. Open shell+NURBS exhaustive trim/parameter proof pending |
 | R01 | passed | Issue #4: latest preview/export result wins, superseded handles released; late upstream evaluation/export failures cannot overwrite the latest dependent dirty state |
 | R02 | passed | Issue #4: unrelated revision retains a valid result; all queued recompute callers wait until the newest input has been evaluated |
 | R03 | passed | Issue #4: Undo/delete/Open during export cannot adopt the old result; add initialization cannot insert into a replaced document |
@@ -72,7 +72,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | R06 | passed | Work-order user command project reopened in fresh page after global command definitions were removed; exact geometry restored. Issue #11 additionally holds initial library loading and rejects shared saves; project definition retained ([evidence](cad-phase1-regression-verification.md)). Real OS app-data/restart remains M05 |
 | R07 | partial | alias collision unit test; import collision UI pending |
 | R08 | partial | Browser recovery restores real assets and history; failed feature + lastValid saved in v2; complete failed-draft restart matrix pending |
-| R09 | partial | existing representative JS fixtures + browser regressions; complete legacy asset matrix pending |
+| R09 | partial | existing representative JS fixtures + browser regressions; Issue #14 covers editable embedded STEP adapter and display-only legacy preservation without changing v1 meaning. Complete legacy asset matrix and real OS dialog pending |
 | R10 | partial | Issue #6: per-source Split candidates, vanished part bindings, explicit repair UI, blocked v2 reopen and independent Library copies tested. Real Tauri/macOS interaction remains untested |
 
 ## 2026-10-27 JST — Issue #5 scope

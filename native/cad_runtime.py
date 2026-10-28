@@ -134,11 +134,36 @@ class Runtime:
             return dict(released=True)
         with tempfile.TemporaryDirectory() as d:
             root=Path(d)
+            if type=='import-step':
+                from OCP.IFSelect import IFSelect_RetDone
+                from OCP.STEPControl import STEPControl_Reader
+                text=msg.get('step')
+                if not isinstance(text,str) or len(text.encode())>100*1024*1024 or not text.lstrip().startswith('ISO-10303-21;') or not text.rstrip().endswith('END-ISO-10303-21;'):
+                    raise CadError('CAD_INPUT_DEGENERATE','STEP文書が不正または100 MBを超えています。')
+                path=root/'import.step';path.write_text(text)
+                reader=STEPControl_Reader()
+                if reader.ReadFile(str(path))!=IFSelect_RetDone or reader.TransferRoots()<=0:
+                    raise CadError('CAD_KERNEL_FAILED','STEP文書を読み込めません。')
+                shape=reader.OneShape()
+                if shape.IsNull() or not BRepCheck_Analyzer(shape).IsValid():
+                    raise CadError('CAD_KERNEL_FAILED','STEP文書の形状が不正です。')
+                return self.publish(shape,root)
             if type=='import':
                 asset=msg['asset'];data=asset['data']
                 if asset['format']!='occt-brep' or asset['encoding']!='utf-8' or len(data.encode())!=asset['byteLength'] or sha(data)!=msg['hash']:raise CadError('CAD_ASSET_MISSING','正本資産のhashまたはbyte数が一致しません。',('relinkAsset','reimportSource'))
                 return self.publish(read_brep(data,root),root,asset_data=data)
             if type=='export':return dict(assets={self.cache[h]['hash']:dict(format='occt-brep',encoding='utf-8',data=self.cache[h]['data'],byteLength=len(self.cache[h]['data'].encode()),sourceKernelVersion='ocp-'+self.hello()['ocpVersion']) for h in msg['handles']})
+            if type=='export-step':
+                from OCP.IFSelect import IFSelect_RetDone
+                from OCP.STEPControl import STEPControl_Writer,STEPControl_AsIs
+                handle=msg.get('handle');entry=self.cache.get(handle)
+                if entry is None:raise CadError('CAD_ASSET_MISSING','STEP書出し対象の正本がありません。',('restartRuntime',))
+                path=root/'export.step';writer=STEPControl_Writer()
+                if writer.Transfer(entry['shape'],STEPControl_AsIs)!=IFSelect_RetDone or writer.Write(str(path))!=IFSelect_RetDone:
+                    raise CadError('CAD_KERNEL_FAILED','STEP書出しに失敗しました。')
+                text=path.read_text();size=len(text.encode())
+                if size>100*1024*1024:raise CadError('CAD_RESOURCE_LIMIT','STEP書出し結果が100 MBを超えています。')
+                return dict(step=text,byteLength=size,sourceGeometryHash=entry['hash'],units='mm')
             if type!='evaluate':raise CadError('CAD_SCHEMA_UNSUPPORTED','未知のmessage typeです。')
             req=msg['request'];stamp={k:req.get(k) for k in STAMP};start=time.monotonic();owned=set(self.cache)
             try:

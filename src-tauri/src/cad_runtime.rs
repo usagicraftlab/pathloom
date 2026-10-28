@@ -321,6 +321,24 @@ pub async fn cad_export_assets(
     .map_err(|e| e.to_string())?
 }
 #[tauri::command]
+pub async fn cad_export_step(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<CadRuntime>>,
+    handle: String,
+) -> Result<Value, String> {
+    if handle.is_empty() || handle.len() > 120 {
+        return Err("Invalid CAD handle".into());
+    }
+    let runtime = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime
+            .start(&app)?
+            .call(json!({"type":"export-step","handle":handle}))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+#[tauri::command]
 pub async fn cad_release_handles(
     state: tauri::State<'_, Arc<CadRuntime>>,
     handles: Vec<String>,

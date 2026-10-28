@@ -14,6 +14,14 @@ fn gcode_save_path(mut path: std::path::PathBuf) -> std::path::PathBuf {
     }
     path
 }
+fn step_save_path(mut path: std::path::PathBuf) -> std::path::PathBuf {
+    if !path.extension().and_then(|v| v.to_str()).is_some_and(|v| {
+        v.eq_ignore_ascii_case("step") || v.eq_ignore_ascii_case("stp")
+    }) {
+        path.set_extension("step");
+    }
+    path
+}
 
 pub(crate) fn write_atomic(path: &std::path::Path, content: &str) -> Result<(), String> {
     let stamp = std::time::SystemTime::now()
@@ -63,6 +71,40 @@ pub async fn save_gcode_file(
         return Ok(None);
     };
     let path = gcode_save_path(file.into_path().map_err(|e| e.to_string())?);
+    tauri::async_runtime::spawn_blocking(move || {
+        write_atomic(&path, &content)?;
+        Ok(Some(path.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn save_cad_step(
+    app: AppHandle,
+    content: String,
+    filename: String,
+) -> Result<Option<String>, String> {
+    if content.len() > 100 * 1024 * 1024
+        || !content.trim_start().starts_with("ISO-10303-21;")
+        || !content.trim_end().ends_with("END-ISO-10303-21;")
+        || filename.len() > 240
+    {
+        return Err("Invalid STEP export".into());
+    }
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Export CAD as STEP")
+        .set_file_name(filename)
+        .add_filter("STEP model", &["step", "stp"])
+        .save_file(move |file| {
+            let _ = sender.send(file);
+        });
+    let Some(file) = receiver.await.map_err(|e| e.to_string())? else {
+        return Ok(None);
+    };
+    let path = step_save_path(file.into_path().map_err(|e| e.to_string())?);
     tauri::async_runtime::spawn_blocking(move || {
         write_atomic(&path, &content)?;
         Ok(Some(path.to_string_lossy().into_owned()))
@@ -208,6 +250,11 @@ mod gcode_tests {
         write_atomic(&path, content).unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), content);
         std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn step_extension_preserves_step_and_stp() {
+        assert_eq!(step_save_path("/tmp/part".into()), std::path::PathBuf::from("/tmp/part.step"));
+        assert_eq!(step_save_path("/tmp/part.STP".into()), std::path::PathBuf::from("/tmp/part.STP"));
     }
 }
 

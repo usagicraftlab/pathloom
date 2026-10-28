@@ -188,3 +188,12 @@ Constraints/一般参照mapping/実Mac検証の未完は、このIssueの演算/
 S03/B01〜B08/D01〜D07を照合し、新規証拠の14行だけを更新。既存D02/D04の行と他49機能行は保持。
 A/T/R全62行の状態は維持し、下記の追加証拠を対応文書へ追記する。
 [契約・正常/不成立・旧失敗](cad-regions-solids-plan.md)を参照。単独演算の成功を一般参照修復/実Mac合格へ広げない。
+
+## 2026-10-28 — Issue #14 既存STEP接続（共有基盤）
+
+65機能IDの状態は変更しない。埋込exact `occt-brep`を持つ既存`importedShapes`だけを
+明示的な`import.step` feature/body/entityへ取り込み、mm単位、配置行列、元shape ID/name/kernel、
+source/original hashを保存する。display-only meshは既存表示経路のままで、B-repを捏造しない。
+現在bodyの正本をOCCT STEPとして書出し、fresh runtimeで再読込してbbox・面積/体積・closure・
+validityを照合する。契約と境界は[cad-step-connection-plan.md](cad-step-connection-plan.md)。
+browserのTauri IPC/保存dialogはfixtureであり、実MacはIssue #37の未実施範囲として保持する。

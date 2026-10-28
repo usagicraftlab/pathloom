@@ -84,6 +84,13 @@ export class NativeCadClient {
     await this.start();
     return (await this.invoke("cad_export_assets", { handles })).assets;
   }
+  async exportStep(handle) {
+    await this.start();
+    return this.invoke("cad_export_step", { handle });
+  }
+  async saveStep(content, filename) {
+    return this.invoke("save_cad_step", { content, filename });
+  }
   release(handles) {
     if (handles.length)
       return this.invoke("cad_release_handles", { handles }).catch(() => {});
