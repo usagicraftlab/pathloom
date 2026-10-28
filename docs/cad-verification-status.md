@@ -316,3 +316,15 @@ UI/全出力/履歴/保存/全ローカル検証は未完了、実機#37も未�
 Trimのmouse区間指定/全出力、Undo/Redo、失敗lastValidとv2、候補/近似warning保持を確認する。
 OSダイアログ/storage/Tauri transportはfixtureで代替、実機#37は未実施。
 全検証の実行日時・集計・旧失敗と再実行は開発ログ/PR39へ記録する。
+
+## 2026-10-28 — Issue #13 / S03・B01〜B08・D01〜D07
+
+既存A/T/R62行の状態は保持。`native/test_regions_solids.py`の13追加テストは、
+穴/島/独立領域と明示閉輪郭、向き付きBox/ellipsoid、開閉primitive/Pipe、穴付き面押出とCap、
+複数閉体積/開Shell assemble、複数Boolean/面edge点接触、Fillet連鎖の新v2と旧v1、
+2距離Chamfer隣接face、Shellの内外/過大厚さ失敗を実OCCTで数値照合する。
+D02/D04は既存の複数対象・全結果・正本由来のnative/JS/browserを維持し全件で再実行。
+`tests/regions-solids.test.mjs`は版不変/明示入力契約、browserの追加7ケースは全出力/開閉、
+Undo/Redo、失敗lastValid、command版/asset hash/accuracyのv2復元を確認する。
+browserは実OCP/実UI、OS/Tauri transportとstorageはfixture代替。実機#37は未実施。
+全実行/失敗/再実行/最終CIは開発ログ・PR40・ボードで別々に記録する。

@@ -1442,3 +1442,89 @@ local Rust/実OS操作は未実施。push/PR最終headの全CIは公開後に照
 各attempt1 failure（JS199/Rust21/browser45成功、native54成功1失敗2skip）。旧全6jobずつは照合済み。
 旧失敗は当時のNURBS continuationであり、ユーザー決定後の新契約成功へ書き換えない。
 CI再実行で隠さず、同branchの最終head push/PR CIと分けてPRへ保持する。
+
+## 2026-10-28 JST — 指示009 / Issue #13 実装前の具体化
+
+008のmerge f7f69e7後main checks40666332968はattempt1 success、全3job生ログで
+JS202/native68+USD2skip/macOS Rust21/browser51を確認。ボード18:53の有効化とIssue13を読み、
+009だけ未着手→作業中をrequiredRevisionId付き更新/全文保持読戻し確認。
+既存#13用branch/PRなしを確認し、feat/13-regions-and-solidsをmainから作成。
+[対応表](cad-regions-solids-plan.md)でS03/B01〜B08/D01〜D07とIssue3完了条件を具体化。
+穴/複数領域、Box作図/ellipsoid/開閉primitive、Pipe/Cap/assemble、面押出、Boolean全結果、
+Fillet連鎖/2距離Chamfer/隣接面、Shell失敗診断を含む。具体化をDraft PRへ記録してから実装する。
+この時点は製品変更/009検証未実施。010/011予約と実機#37を取得しない。
+
+## 2026-10-28 JST — 指示009 / Issue #13 閉領域と基本立体
+
+既存PR40/feat/13-regions-and-solidsを継続し、実装前対応表とIssue13の3条件を照合した。
+S03は同一平面の閉loop群の交差・包含を検査し、穴/島/独立領域を全face出力。
+B01は旧v1保持のv2作図モード、B02は正確なellipsoid、B06は円断面Pipe、B07は穴付き面押出、
+B08は平面開口Cap/面群assemble/独立Solid全出力/開面保持を接続した。
+D01/D03は複数入力と非接触/接触の次元を区別。体積Commonが空でも正本境界のCommon/Sectionと
+集合Cutで面/edge/点を重複なく保持し、近傍による参照付替えやmesh近似はしない。
+D02/D04の既存複数対象/全結果/正本由来を維持。D05新v2は連鎖selected/tangentを明示し、
+旧v1のkernel連鎖挙動を維持。D06新v2は2距離と距離1側の隣接face、D07は除去面所属と
+内外/厚さ/失敗詳細を記録し、元形状のまま成功した内側Shellを拒否する。
+
+S03/B01/D05/D06は保存済みv1を変えずv2追加。B02.ellipsoid/B06/B07/B08/assembleは新規登録。
+機能台帳65行のうち対象16ID中14行を証拠範囲で更新し、D02/D04と他49行は保持。
+A/T/R62行は既存状態を維持し証拠を追記。仕様/対応表/PR/Issue本文に契約・境界を記録する。
+
+### 失敗と修正・再実行
+
+- native既存初回70件67成功1失敗2skip：新しい連鎖制限が旧Fillet v1の基準を壊した。
+  v2明示契約と旧保存挙動を分け、同じ丸角Rectangle下端基準を維持して回復。
+- 追加native初回24件21成功3失敗（12件はhelper classの重複収集、後にimport方法を修正）。
+  楕円体volumeの既定積分誤差0.04396687183499637mm³を検出、Surface/Volumeを適応積分へ修正。
+  非平面faceの自由境界を拾えない問題は位相版FreeBoundsへ、過大厚さShellが元Box体積1000の
+  まま成功する問題は内側体積減少を検査して修正。追加12件再実行12成功、連鎖受入を加え13件。
+- 接触fallbackの初回Fuseは異次元の重複除去で不成立。集合Cutへ変更し面area100/周長40、
+  edge長10、点、非接触emptyを独立実測。検証をskip/xfail化せず全nativeへ取り込んだ。
+- 追加browser初回4成功2失敗は中心Rectangle adapterのfixture座標とfingerprint bbox参照を修正。
+  次5成功1失敗はRedo再計算前のassertionで、同じ開閉条件のpollへ修正して6成功。
+- browser初回全57件54成功3失敗はBox v2 anchorMode selectへ旧Difference fixtureがfillした停止。
+  同じcorner値と全assertionを保ちselectOptionへ変更。旧基準Filletは新v2でtangentを明示し、
+  元のedge/断面/G-code/参照修復条件を維持。接触UIを加えた最終全58件は成功。
+
+### 最終ローカル検証（2026-10-28 19:39 JST）
+
+| 実行 | 結果 | test秒 / runner秒 |
+| --- | --- | --- |
+| Node24.22.1 npm test | 204成功、失敗/skip/todo0 | 3.425038 / 3.661 |
+| Node20.20.2 全31 JSファイル | 204成功、失敗/skip/todo0 | 4.246299 / 4.347 |
+| Python3.12.14/OCP7.8.1.1 native全件 | 83件81成功/任意NVIDIA USD2skip、失敗0 | 6.873 / 8.140 |
+| packaged browser全件 | 58成功、失敗/skip/retry/flaky0、errors[] | 230.684139 / 231.314 |
+
+コマンドはnpm test、Node20.20.2 node --test tests/*.test.mjs、
+python -B -m unittest discover -v -s native -p 'test*.py'。
+browserはnpm run desktop:prepare後、CI=1/PATHLOOM_FRONTEND_DIR=desktop-dist、上記Python、
+Chromium156を指定し標準config継承（timeout45000/workers1/retry0）で全件実行。
+実OCCT/実画面入力で、全feature/command版/正本hash/accuracyの新ページv2復元を照合。
+Tauri/OSダイアログ/storage transportはfixture。local Rust/実Mac GUI/OS保存回復/実プリンターは未実施。
+実機#37、010/011予約、Phase3へは先行着手しない。
+
+### 全ローカル実行履歴
+
+| label (work/board-verification/009) | exit | runner秒 |
+| --- | --- | --- |
+| browser-final | 0 | 231.314 |
+| browser-full-first | 1 | 228.390 |
+| modes-first | 1 | 1.687 |
+| modes-second | 0 | 1.881 |
+| native-all-contact | 0 | 7.915 |
+| native-all-third | 0 | 7.928 |
+| native-existing-first | 1 | 3.552 |
+| native-existing-second | 0 | 5.567 |
+| native-final | 0 | 8.140 |
+| node20-final | 0 | 4.347 |
+| node20-full | 0 | 4.698 |
+| node24-final | 0 | 3.661 |
+| node24-full | 0 | 2.993 |
+| solids-target-first | 1 | 30.788 |
+| solids-target-second | 1 | 30.066 |
+| solids-target-third | 0 | 29.937 |
+
+raw log/JSON/失敗traceはwork/board-verification/009/に保持。
+計画head a880d202（docsだけ）のpush40669634225/PR40669640655各attempt1 successを全6job生ログで確認。
+各JS202/native68成功USD2skip/macOS Rust21/browser51。この成功を製品変更headへ転用しない。
+最終head公開後のpush/PR全CIは別に確認してPR/Codexログへ記録する。

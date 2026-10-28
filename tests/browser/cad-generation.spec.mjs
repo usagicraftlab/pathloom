@@ -47,6 +47,9 @@ async function drawing(page, multiple = false) {
   expect(await page.evaluate(() => window.PathloomModel.store.document.entities.at(-1).displayCache.volumeMm3)).toBeCloseTo(60000, 4);
   await page.locator(".model-history-entry").last().click();
   await page.getByRole("button", { name: "Fillet Edges", exact: true }).click();
+  // Preserve the baseline OCCT tangent contour through the explicit v2 choice.
+  await page.locator('[data-parameter="chainPolicy"]').selectOption("tangent");
+  await page.locator('[data-parameter="chainPolicy"]').dispatchEvent("input");
   const edge = (await page.getByLabel("CAD input edges", { exact: true }).locator("option").allTextContents()).find((label) => label.includes("side/corner/11"));
   expect(edge).toBeTruthy();
   await page.getByLabel("CAD input edges", { exact: true }).selectOption({ label: edge });

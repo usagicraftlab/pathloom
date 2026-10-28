@@ -76,6 +76,9 @@ def input_one(inputs,key):
 def evaluate(op,p,inputs,tol,selectors=None):
     """Return immutable output shapes; display tessellations are never operands."""
     selectors=selectors or {};semantic={};mapping=[]
+    from . import regions_solids
+    if op in regions_solids.OPERATIONS or op=='solid.box' and p.get('mode','dimensions')!='dimensions':
+        return regions_solids.evaluate(op,p,inputs,tol,selectors)
     from . import curve_editing
     if op in curve_editing.OPERATIONS:
         return curve_editing.evaluate(op,p,inputs,tol,selectors)
@@ -312,8 +315,14 @@ def evaluate(op,p,inputs,tol,selectors=None):
         else:
             ax=p['axis'];ax=gp_Ax2(point(ax['origin']),direction(ax['direction']))
             if op=='shape.cylinder':builder=BRepPrimAPI_MakeCylinder(ax,positive(p['radiusMm']),positive(p['heightMm']))
-            elif op=='shape.cone':builder=BRepPrimAPI_MakeCone(ax,positive(p['bottomRadiusMm']),finite(p['topRadiusMm']),positive(p['heightMm']))
-            else:builder=BRepPrimAPI_MakeTorus(ax,positive(p['majorRadiusMm']),positive(p['minorRadiusMm']))
+            elif op=='shape.cone':
+                r1,r2=finite(p['bottomRadiusMm']),finite(p['topRadiusMm'])
+                if min(r1,r2)<0 or max(r1,r2)==0 or r1==r2:raise CadError('CAD_INPUT_DEGENERATE','円錐の半径は0以上で少なくとも一方が正、上下で異なる必要があります。')
+                builder=BRepPrimAPI_MakeCone(ax,r1,r2,positive(p['heightMm']))
+            else:
+                major,minor=positive(p['majorRadiusMm']),positive(p['minorRadiusMm'])
+                if minor>=major:raise CadError('CAD_INPUT_DEGENERATE','自己交差しないTorusは管半径を主半径未満に指定してください。')
+                builder=BRepPrimAPI_MakeTorus(ax,major,minor)
             result=builder.Shape()
             if op!='solid.torus' and not p['cap']:result=builder.Face()
     elif op=='solid.difference':
@@ -341,12 +350,17 @@ def evaluate(op,p,inputs,tol,selectors=None):
         from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse,BRepAlgoAPI_Cut,BRepAlgoAPI_Common
         args=inputs.get('arguments',[]);tools=inputs.get('tools',[])
         if not args or (op!='solid.union' and not tools):raise CadError('CAD_INPUT_MISSING','対象と工具を指定してください。',('selectInput',))
+        for shape in args+tools:
+            solids=subshapes(shape,TopAbs_SOLID)
+            if not solids or len(subshapes(shape,TopAbs_FACE))!=sum(len(subshapes(s,TopAbs_FACE)) for s in solids):raise CadError('CAD_INPUT_TYPE','Booleanには立体または立体群を指定してください。')
         result=BRepBuilderAPI_Copy(args[0]).Shape();rest=args[1:]+tools
         cls={'solid.union':BRepAlgoAPI_Fuse,'solid.difference':BRepAlgoAPI_Cut,'solid.intersection':BRepAlgoAPI_Common}[op]
         for b in rest:
             builder=cls(result,BRepBuilderAPI_Copy(b).Shape());builder.Build()
             if not builder.IsDone():raise CadError('CAD_KERNEL_FAILED','Boolean演算が成立しませんでした。')
-            result=builder.Shape()
+            common=builder.Shape()
+            if op=='solid.intersection' and not subshapes(common,TopAbs_VERTEX):common=regions_solids.contact_common(result,b)
+            result=common
     elif op in ('surface.planarRegion','surface.join','surface.explode','curve.explode','surface.reverse','curve.reverse','surface.extract','curve.extractBoundary'):
         if op=='surface.planarRegion':result=BRepBuilderAPI_MakeFace(wire(input_one(inputs,'boundaries'))).Face()
         elif op=='surface.join':
@@ -397,16 +411,28 @@ def evaluate(op,p,inputs,tol,selectors=None):
     elif op in ('solid.fillet','solid.chamfer'):
         from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet,BRepFilletAPI_MakeChamfer
         s=input_one(inputs,'body');edges=selectors.get('edges',[])
-        if p.get('tangentChain',False):raise CadError('CAD_SCHEMA_UNSUPPORTED','接線連鎖の自動選択は未実装です。対象edgeを明示してください。',('reselectReference',))
-        if op=='solid.chamfer' and p.get('distance2Mm',p['distance1Mm'])!=p['distance1Mm']:raise CadError('CAD_SCHEMA_UNSUPPORTED','2距離Chamferには隣接面の指定が必要です。現在は等距離のみです。')
+        if p.get('chainPolicy','selected') not in ('selected','tangent'):raise CadError('CAD_INPUT_TYPE','連鎖指定はselected/tangentです。')
         if not edges:raise CadError('CAD_INPUT_MISSING','edgeを選択してください。',('reselectReference',))
         b=(BRepFilletAPI_MakeFillet if op.endswith('fillet') else BRepFilletAPI_MakeChamfer)(s)
         # Selectors refer to the original shape; copy builder maps topology to the copy.
         copier=BRepBuilderAPI_Copy(inputs['body'][0]);s=copier.Shape();b=(BRepFilletAPI_MakeFillet if op.endswith('fillet') else BRepFilletAPI_MakeChamfer)(s)
-        for edge in edges:
+        side_faces=selectors.get('distance1Faces',[])
+        d1=positive(p['distance1Mm']) if op.endswith('chamfer') else None
+        d2=positive(p.get('distance2Mm') if p.get('distance2Mm') is not None else d1) if d1 else None
+        if d1!=d2 and len(side_faces)!=len(edges):raise CadError('CAD_REFERENCE_AMBIGUOUS','各edgeの距離1側の隣接faceを同じ順序で指定してください。')
+        for i,edge in enumerate(edges):
+            if not any(edge.IsSame(e) for e in subshapes(inputs['body'][0],TopAbs_EDGE)):raise CadError('CAD_INPUT_TYPE','edgeが対象ボディに属していません。')
             copied=TopoDS.Edge_s(copier.ModifiedShape(edge))
             if op.endswith('fillet'):b.Add(positive(p['radiusMm']),copied)
-            else:b.Add(positive(p['distance1Mm']),copied)
+            elif d1==d2:b.Add(d1,copied)
+            else:
+                face=side_faces[i]
+                if not any(face.IsSame(f) for f in subshapes(inputs['body'][0],TopAbs_FACE)) or not any(edge.IsSame(e) for e in subshapes(face,TopAbs_EDGE)):raise CadError('CAD_INPUT_TYPE','距離1側のfaceは選択edgeに隣接する必要があります。')
+                b.Add(d1,d2,copied,TopoDS.Face_s(copier.ModifiedShape(face)))
+        if op.endswith('fillet') and p.get('chainPolicy')=='selected':
+            for i in range(1,b.NbContours()+1):
+                if any(not any(b.Edge(i,j).IsSame(copier.ModifiedShape(e)) for e in edges) for j in range(1,b.NbEdges(i)+1)):
+                    raise CadError('CAD_REFERENCE_AMBIGUOUS','接線連鎖が必要です。連鎖を明示許可するか対象edgeを全て選択してください。',('editParameters','reselectReference'))
         b.Build()
         if not b.IsDone():raise CadError('CAD_FILLET_FAILED','指定された対象と値では接続面を構成できません。',('editRadius','reselectReference'))
         result=b.Shape();semantic['builder']=b
@@ -415,12 +441,27 @@ def evaluate(op,p,inputs,tol,selectors=None):
         from OCP.TopTools import TopTools_ListOfShape
         original=inputs.get('body',[None])[0]
         if original is None:raise CadError('CAD_INPUT_MISSING','ボディを指定してください。')
+        if any(not any(f.IsSame(a) for a in subshapes(original,TopAbs_FACE)) for f in selectors.get('removedFaces',[])):raise CadError('CAD_INPUT_TYPE','除去面が対象ボディに属していません。')
         copier=BRepBuilderAPI_Copy(original);s=copier.Shape();lst=TopTools_ListOfShape()
         for f in selectors.get('removedFaces',[]):lst.Append(copier.ModifiedShape(f))
         if lst.IsEmpty():raise CadError('CAD_INPUT_MISSING','開口面を明示的に選択してください。')
         mode=p['directionMode']
         if mode not in ('inward','outward'):raise CadError('CAD_INPUT_TYPE','Shellの方向はinward/outwardです。')
-        t=positive(p['thicknessMm'])*(1 if mode=='outward' else -1);b=BRepOffsetAPI_MakeThickSolid();b.MakeThickSolidByJoin(s,lst,t,tol['kernelLinearMm']);result=b.Shape()
+        if any(not any(f.IsSame(a) for a in subshapes(original,TopAbs_FACE)) for f in selectors.get('removedFaces',[])):raise CadError('CAD_INPUT_TYPE','除去面が対象ボディに属していません。')
+        t=positive(p['thicknessMm'])*(1 if mode=='outward' else -1);b=BRepOffsetAPI_MakeThickSolid()
+        details=dict(thicknessMm=p['thicknessMm'],directionMode=mode,removedFaceCount=lst.Size())
+        try:
+            b.MakeThickSolidByJoin(s,lst,t,tol['kernelLinearMm'])
+            if not b.IsDone():raise CadError('CAD_SHELL_FAILED','指定厚さ/除去面でShellが成立しません。厚さか開口面を変更してください。',details=details)
+            result=b.Shape()
+            from OCP.BRepCheck import BRepCheck_Analyzer
+            if not BRepCheck_Analyzer(result).IsValid():raise CadError('CAD_SHELL_FAILED','Shell結果が不正です。元の形状を保持します。',details=details)
+            from OCP.BRepGProp import BRepGProp
+            from OCP.GProp import GProp_GProps
+            before=GProp_GProps();after=GProp_GProps();BRepGProp.VolumeProperties_s(original,before,1e-10);BRepGProp.VolumeProperties_s(result,after,1e-10)
+            if after.Mass()<=0 or mode=='inward' and after.Mass()>=before.Mass():raise CadError('CAD_SHELL_FAILED','指定厚さで内側の空洞を構成できません。元形状のままの結果は採用しません。',details=details)
+        except CadError:raise
+        except Exception as error:raise CadError('CAD_SHELL_FAILED','Shellの構成に失敗しました。元の形状を保持します。',details={**details,'kernelMessage':str(error)})
     elif op=='shape.transform':
         s=input_one(inputs,'object');t=gp_Trsf();mode=p['mode']
         if mode=='move':t.SetTranslation(gp_Vec(*vec(p['translation'])))
@@ -434,3 +475,6 @@ def evaluate(op,p,inputs,tol,selectors=None):
 
 OPERATIONS={'curve.join','curve.split','curve.offset','surface.corners','surface.edges','surface.offset','surface.untrim','solid.split','surface.split','shape.section','point.create','curve.line','curve.polyline','curve.rectangle','curve.polygon','curve.circle','curve.arc','curve.ellipse','curve.nurbs','curve.interpolate','shape.extrude','shape.revolve','solid.box','solid.sphere','shape.cylinder','shape.cone','solid.torus','solid.union','solid.difference','solid.intersection','surface.plane','surface.planarRegion','surface.join','surface.explode','curve.explode','surface.reverse','curve.reverse','surface.extract','curve.extractBoundary','surface.loft','surface.sweep1','solid.fillet','solid.chamfer','solid.shell','shape.transform'}
 OPERATIONS.update({'curve.trim','curve.extend','curve.fillet','curve.chamfer','curve.blend','curve.rebuild','curve.seam','curve.editPoles'})
+
+from .regions_solids import OPERATIONS as REGION_SOLID_OPERATIONS
+OPERATIONS |= REGION_SOLID_OPERATIONS

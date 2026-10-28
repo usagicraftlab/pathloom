@@ -563,6 +563,9 @@ test("A07/T11/T12: semantic edge follows width change and disappears without sil
   );
   await page.locator(".model-history-entry").last().click();
   await page.getByRole("button", { name: "Fillet Edges", exact: true }).click();
+  // Preserve the baseline OCCT tangent contour through the explicit v2 choice.
+  await page.locator('[data-parameter="chainPolicy"]').selectOption("tangent");
+  await page.locator('[data-parameter="chainPolicy"]').dispatchEvent("input");
   const options = await page
     .getByLabel("CAD input edges", { exact: true })
     .locator("option")

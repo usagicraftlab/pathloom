@@ -450,6 +450,16 @@ add(
   { plane: xy(), distanceMm: 1, joinStyle: "round" },
   [input("curve", ["curve"])],
 );
+// Phase2: retain every embedded v1 definition; new contracts have new versions.
+add("S03","Planar Region","surface.planarRegion",{},[input("boundaries",["curve"],1,null)],{version:2});
+add("B01","Box","solid.box",{mode:"dimensions",plane:xy(),anchorMode:"corner",anchor:[0,0,0],widthMm:40,depthMm:30,heightMm:20,points:[]},[],{version:2});
+add("B02.ellipsoid","Ellipsoid","solid.ellipsoid",{plane:xy(),center:[0,0,0],radiiMm:[10,8,6]});
+add("B06","Pipe","shape.pipe",{radiusMm:2,frameMode:"corrected-frame",transitionMode:"roundCorner",cap:false},[input("rail",["curve"])]);
+add("B07","Extrude Surface","shape.extrude",{direction:[0,0,1],distanceMm:10,bothSides:false,cap:true},[input("profile",["surface"])],{resultPolicy:"replace"});
+add("B08","Cap Openings","shape.cap",{},[input("objects",["surface","shell","solid","compound"],1,null)],{resultPolicy:"replace"});
+add("B08.assemble","Assemble Solid","solid.assemble",{},[input("objects",["surface","shell","solid","compound"],1,null)],{resultPolicy:"replace"});
+add("D05","Fillet Edges","solid.fillet",{radiusMm:2,chainPolicy:"selected"},[input("body",["solid"]),{...input("edges",["edge"],1,null),kind:"subshape"}],{version:2,resultPolicy:"replace"});
+add("D06","Chamfer Edges","solid.chamfer",{distance1Mm:1,distance2Mm:null},[input("body",["solid"]),{...input("edges",["edge"],1,null),kind:"subshape"},{...input("distance1Faces",["face"],0,null),kind:"subshape",prompt:"各edgeの距離1側face（同じ順序）"}],{version:2,resultPolicy:"replace"});
 add("E14", "Section", "shape.section", { plane: xy() }, [
   input("objects", ["surface", "shell", "solid", "compound"], 1, null),
 ]);
