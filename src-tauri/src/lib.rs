@@ -648,6 +648,13 @@ pub fn run() {
                 .build(app)?;
             let ai_settings =
                 MenuItemBuilder::with_id("project-ai-settings", "AI Settings…").build(app)?;
+            let cad_help = MenuItemBuilder::with_id("project-cad-help", "CAD操作説明")
+                .build(app)?;
+            let about = MenuItemBuilder::with_id("project-about", "About Pathloom")
+                .build(app)?;
+            let help_menu = SubmenuBuilder::new(app, "Help")
+                .items(&[&cad_help, &about])
+                .build()?;
             let file_menu = SubmenuBuilder::new(app, "File").build()?;
             let samples_menu = SubmenuBuilder::new(app, "Samples")
                 .text("load_ukigara_clock", "Load Ukigara Clock")
@@ -672,11 +679,25 @@ pub fn run() {
                     menu.insert(&file_menu, 1)?;
                 }
                 menu.append(&samples_menu)?;
+                let mut help_found = false;
+                for item in menu.items()? {
+                    if let tauri::menu::MenuItemKind::Submenu(submenu) = item {
+                        if submenu.text()? == "Help" {
+                            submenu.append_items(&[&cad_help, &about])?;
+                            help_found = true;
+                            break;
+                        }
+                    }
+                }
+                if !help_found {
+                    menu.append(&help_menu)?;
+                }
             } else {
                 file_menu.append_items(&[&open, &save, &save_as, &settings, &ai_settings])?;
                 let menu = MenuBuilder::new(app)
                     .item(&file_menu)
                     .item(&samples_menu)
+                    .item(&help_menu)
                     .build()?;
                 app.set_menu(menu)?;
             }

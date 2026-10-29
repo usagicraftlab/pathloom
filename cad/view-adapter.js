@@ -168,16 +168,88 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
           group.add(g);
           shown.set(e.id, g);
         }
+        const entitySelection = selection.filter((item) => item.entityId === e.id);
+        const wholeEntitySelected = entitySelection.some((item) => !item.kind);
         g.traverse((n) => {
+          if (n.userData.selectionOverlay) return;
           if (n.material?.color && !ghost)
             n.material.color.set(
-              selection.some((s) => s.entityId === e.id)
+              wholeEntitySelected
                 ? 0x2186b1
                 : n.isMesh
                   ? 0x7693a8
                   : 0x344e61,
             );
         });
+        for (const overlay of g.children.filter((child) => child.userData.selectionOverlay))
+          dispose(overlay);
+        if (!ghost && !wholeEntitySelected) {
+          for (const selected of entitySelection) {
+            if (selected.kind === "face") {
+              for (const mesh of g.children.filter((child) => child.isMesh)) {
+                const faces = mesh.userData.faceTopologyIds;
+                const triangles = mesh.userData.triangleFaces;
+                if (!faces || !triangles) continue;
+                const faceIndex = faces.indexOf(selected.topologyId);
+                if (faceIndex < 0) continue;
+                const indices = [];
+                for (let triangle = 0; triangle < triangles.length; triangle++)
+                  if (triangles[triangle] === faceIndex)
+                    indices.push(...mesh.geometry.index.array.slice(triangle * 3, triangle * 3 + 3));
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute(
+                  "position",
+                  new THREE.BufferAttribute(
+                    new Float32Array(mesh.geometry.getAttribute("position").array),
+                    3,
+                  ),
+                );
+                geometry.setIndex(indices);
+                geometry.computeVertexNormals();
+                const highlight = new THREE.Mesh(
+                  geometry,
+                  new THREE.MeshBasicMaterial({
+                    color: 0xe16a42,
+                    transparent: true,
+                    opacity: 0.62,
+                    side: THREE.DoubleSide,
+                    depthTest: true,
+                    depthWrite: false,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -1,
+                  }),
+                );
+                highlight.userData.selectionOverlay = true;
+                highlight.renderOrder = 4;
+                g.add(highlight);
+              }
+            } else if (selected.kind === "edge") {
+              const edge = g.children.find(
+                (child) => child.userData.kind === "edge" && child.userData.topologyId === selected.topologyId,
+              );
+              if (!edge) continue;
+              const highlight = new THREE.Line(
+                edge.geometry.clone(),
+                new THREE.LineBasicMaterial({ color: 0xe16a42, depthTest: true }),
+              );
+              highlight.userData.selectionOverlay = true;
+              highlight.renderOrder = 5;
+              g.add(highlight);
+            } else if (selected.kind === "vertex") {
+              const vertex = g.children.find(
+                (child) => child.userData.kind === "vertex" && child.userData.topologyId === selected.topologyId,
+              );
+              if (!vertex) continue;
+              const highlight = new THREE.Points(
+                vertex.geometry.clone(),
+                new THREE.PointsMaterial({ color: 0xe16a42, size: 9, sizeAttenuation: false }),
+              );
+              highlight.userData.selectionOverlay = true;
+              highlight.renderOrder = 6;
+              g.add(highlight);
+            }
+          }
+        }
         g.userData.selectable =
           !e.locked && e.visibility !== "hidden" && !ghost;
       }
@@ -258,14 +330,13 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
         } else if (filter === "face") {
           if (!hit.object.isMesh) continue;
           kind = "face";
-          const g = hit.object.parent;
-          const entity = g.userData.entityId;
           const faceIndex = data.triangleFaces?.[hit.faceIndex];
           topologyId = data.faceTopologyIds?.[faceIndex] || { faceIndex };
         }
         const key = data.entityId + ":" + JSON.stringify(topologyId);
         if (!result.some((r) => r.key === key))
-          result.push({ key, entityId: data.entityId, kind, topologyId });
+          result.push({ key, entityId: data.entityId, kind, topologyId, point: hit.point.toArray() });
+        if (filter === "face" && result.length) break;
       }
       return result;
     },

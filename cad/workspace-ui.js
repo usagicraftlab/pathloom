@@ -11,6 +11,7 @@ import {
   deriveVisibleEntities,
   id,
   canonical,
+  references,
 } from "./document.js";
 import {
   findCommands,
@@ -70,6 +71,124 @@ const labels = {
   controlPointCount:"制御点数",acceptApproximation:"計測偏差を確認し近似として確定",seamParameter:"継ぎ目parameter",seamPoint:"継ぎ目のXYZ",
   poleIndex:"制御点番号（1始まり）",position:"移動先XYZ",knot:"挿入するknot",knotIndex:"削除するknot番号",multiplicity:"knot多重度",toleranceMm:"削除許容差 mm",
 };
+const commandGroupDefinitions = [
+  { id: "curve-create", label: "カーブをつくる" },
+  { id: "solid-create", label: "立体をつくる" },
+  { id: "solid-edit", label: "立体を加工する" },
+  { id: "surface-create", label: "サーフェスをつくる" },
+  { id: "surface-edit", label: "サーフェスを加工する" },
+  { id: "transform", label: "移動・回転・ミラーなど" },
+];
+const surfaceCreationOperations = new Set([
+  "surface.plane",
+  "surface.planarRegion",
+  "surface.sweep1",
+  "surface.loft",
+]);
+const solidEditingOperations = new Set([
+  "solid.union",
+  "solid.difference",
+  "solid.intersection",
+  "solid.fillet",
+  "solid.chamfer",
+  "solid.shell",
+  "solid.split",
+]);
+const commandIconMarkup = {
+  point: '<circle cx="12" cy="12" r="2.5"/><path d="M12 3v5m0 8v5M3 12h5m8 0h5"/>',
+  line: '<path d="m5 19 14-14"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="5" r="2"/>',
+  polyline: '<path d="m4 18 5-11 6 9 5-10"/><circle cx="4" cy="18" r="1.5"/><circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="16" r="1.5"/>',
+  rectangle: '<rect x="5" y="6" width="14" height="12" rx=".5"/>',
+  polygon: '<path d="m12 3 8 6-3 10H7L4 9z"/>',
+  circle: '<circle cx="12" cy="12" r="8"/>',
+  arc: '<path d="M5 18a9 9 0 0 1 14-11"/><path d="m16 5 3 2-1 3"/>',
+  ellipse: '<ellipse cx="12" cy="12" rx="9" ry="5.5"/>',
+  spline: '<path d="M4 18c4-13 12 13 16-12"/><circle cx="4" cy="18" r="1.5"/><circle cx="20" cy="6" r="1.5"/>',
+  prism: '<path d="m5 8 7-4 7 4v9l-7 4-7-4zM5 8l7 4 7-4m-7 4v9"/>',
+  revolve: '<path d="M6 17a8 8 0 1 1 12 0"/><path d="M12 3v18m-2-2 2 2 2-2"/>',
+  sweep: '<path d="M4 18c4-11 12-11 16-1"/><circle cx="5" cy="17" r="2"/><circle cx="19" cy="17" r="2"/>',
+  loft: '<path d="M5 7c4-3 10-3 14 0M5 17c4 3 10 3 14 0M5 7v10m14-10v10M5 7c4 3 10 3 14 0M5 17c4-3 10-3 14 0"/>',
+  join: '<circle cx="8" cy="12" r="5"/><circle cx="16" cy="12" r="5"/>',
+  explode: '<path d="M4 8 9 5v6zm11-3 5 3-5 3zM4 16l5-3v6zm11-3 5 3-5 3z"/>',
+  reverse: '<path d="M5 8h13l-3-3m4 11H6l3 3"/>',
+  plane: '<path d="m3 8 12-4 6 3-12 4zM9 11v9l12-4V7m-12 13-6-3V8"/>',
+  sphere: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c4 4 4 12 0 16m0-16c-4 4-4 12 0 16"/>',
+  cylinder: '<ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 4 14 4 14 0V6M5 18c0 4 14 4 14 0"/>',
+  cone: '<path d="m12 4-8 15c0 3 16 3 16 0zM4 19c0 3 16 3 16 0"/>',
+  torus: '<ellipse cx="12" cy="12" rx="9" ry="6"/><ellipse cx="12" cy="12" rx="4" ry="2.5"/>',
+  boolean: '<circle cx="9" cy="12" r="6"/><circle cx="15" cy="12" r="6"/>',
+  shell: '<path d="M5 7 12 4l7 3v10l-7 3-7-3zM5 7l7 3 7-3m-7 3v4m0 6v-4"/>',
+  move: '<path d="M12 3v18m-3-3 3 3 3-3M9 6l3-3 3 3M3 12h18m-3-3 3 3-3 3M6 9l-3 3 3 3"/>',
+  rotate: '<path d="M5 9a7 7 0 1 1 1 7M5 4v5h5"/>',
+  scale: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5m11-5v5h-5M8 16l8-8"/>',
+  mirror: '<path d="M12 3v18M9 7 5 12l4 5zm6 0 4 5-4 5z"/>',
+  offset: '<rect x="7" y="7" width="12" height="12"/><path d="M4 17V4h13"/>',
+  region: '<path d="M4 6h16v12H4zM9 10h6v4H9z"/>',
+  ellipsoid: '<ellipse cx="12" cy="12" rx="8.5" ry="5"/><path d="M12 4c4 4 4 12 0 16m0-16c-4 4-4 12 0 16"/>',
+  cap: '<path d="M4 9c0-4 16-4 16 0v7c0 4-16 4-16 0zM4 9c0 4 16 4 16 0"/><path d="M8 9h8"/>',
+  assemble: '<path d="m4 13 5 5 11-12M4 6l4 4m5 7 3 3"/>',
+  fillet: '<path d="M5 19V6h6a8 8 0 0 1 8 8v5z"/>',
+  chamfer: '<path d="M5 19V6h9l5 5v8z"/>',
+  section: '<path d="m4 8 8-4 8 4v9l-8 4-8-4zM3 14h18"/>',
+  trim: '<path d="M4 5 20 19M4 19 20 5M7 8l-3-3m13 14 3 3"/>',
+  extend: '<path d="M4 12h15m-4-4 4 4-4 4M4 6v12"/>',
+  blend: '<path d="M4 17c4 0 4-10 8-10s4 10 8 10"/>',
+  rebuild: '<path d="M4 17 9 7l6 8 5-9"/><circle cx="4" cy="17" r="1.5"/><circle cx="9" cy="7" r="1.5"/><circle cx="15" cy="15" r="1.5"/><circle cx="20" cy="6" r="1.5"/>',
+  seam: '<circle cx="12" cy="12" r="8"/><path d="M12 4v16m-3-2 3 2 3-2"/>',
+  poles: '<path d="m4 17 5-10 6 8 5-9"/><circle cx="4" cy="17" r="2"/><circle cx="9" cy="7" r="2"/><circle cx="15" cy="15" r="2"/><circle cx="20" cy="6" r="2"/>',
+  surface: '<path d="M4 7c4-3 12-3 16 0v10c-4 3-12 3-16 0zM4 7c4 3 12 3 16 0M4 17c4-3 12-3 16 0M12 9v6"/>',
+  surfaceOffset: '<path d="M5 7c4-3 10-3 14 0v7c-4 3-10 3-14 0zM8 11c4-3 10-3 14 0v7c-4 3-10 3-14 0"/>',
+};
+const operationIconFamilies = {
+  "point.create": "point", "curve.line": "line", "curve.polyline": "polyline",
+  "curve.rectangle": "rectangle", "curve.polygon": "polygon", "curve.circle": "circle",
+  "curve.arc": "arc", "curve.ellipse": "ellipse", "curve.nurbs": "spline",
+  "curve.interpolate": "spline", "curve.explode": "explode", "curve.reverse": "reverse",
+  "curve.extractBoundary": "surface", "curve.offset": "offset", "curve.join": "join",
+  "curve.split": "section", "curve.trim": "trim", "curve.extend": "extend",
+  "curve.fillet": "fillet", "curve.chamfer": "chamfer", "curve.blend": "blend",
+  "curve.rebuild": "rebuild", "curve.seam": "seam", "curve.editPoles": "poles",
+  "surface.plane": "plane", "surface.planarRegion": "region", "surface.sweep1": "sweep",
+  "surface.loft": "loft", "surface.join": "join", "surface.explode": "explode",
+  "surface.reverse": "reverse", "surface.corners": "surface", "surface.edges": "surface",
+  "surface.untrim": "surface", "surface.offset": "surfaceOffset", "surface.split": "section",
+  "shape.extrude": "prism", "shape.revolve": "revolve", "shape.cylinder": "cylinder",
+  "shape.cone": "cone", "shape.pipe": "sweep", "shape.cap": "cap",
+  "solid.box": "prism", "solid.sphere": "sphere", "solid.torus": "torus",
+  "solid.ellipsoid": "ellipsoid", "solid.union": "boolean", "solid.difference": "boolean",
+  "solid.intersection": "boolean", "solid.assemble": "assemble", "solid.fillet": "fillet",
+  "solid.chamfer": "chamfer", "solid.shell": "shell", "solid.split": "section",
+  "shape.section": "section",
+};
+function commandGroup(command) {
+  const operationId = command.baseOperation.id;
+  if (operationId === "shape.transform")
+    return "transform";
+  if (operationId === "shape.extrude" && command.displayName === "Extrude Surface")
+    return "surface-create";
+  if (solidEditingOperations.has(operationId) || operationId === "shape.cap")
+    return operationId === "shape.cap" ? "surface-edit" : "solid-edit";
+  if (surfaceCreationOperations.has(operationId))
+    return "surface-create";
+  if (operationId.startsWith("surface."))
+    return "surface-edit";
+  if (operationId.startsWith("solid.") || ["shape.extrude", "shape.revolve", "shape.cylinder", "shape.cone", "shape.pipe"].includes(operationId))
+    return "solid-create";
+  return "curve-create";
+}
+function createCommandIcon(command) {
+  const operationId = command.baseOperation.id;
+  const family = operationId === "shape.transform"
+    ? command.defaults.mode || "move"
+    : operationIconFamilies[operationId] || "polyline";
+  const markup = commandIconMarkup[family] || commandIconMarkup.polyline;
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("focusable", "false");
+  icon.innerHTML = markup;
+  return icon;
+}
 export function initModelWorkspace(api) {
   let library = [],
     globalCommands = [],
@@ -79,9 +198,12 @@ export function initModelWorkspace(api) {
     autosaveRevision = -1,
     draftVersion = 0,
     savedDraftVersion = -1;
-  let lastCommand = null, curvePointPicking = false;
+  let lastCommand = null, curvePointPicking = false, planePicking = false, planeBeforeFace = "XY", pickFilterBeforePlane = "object";
+  const openCommandGroups = new Set(["curve-create"]);
   let session = null,
     selectedFeature = null,
+    propertiesOpen = false,
+    featureEditActive = false,
     status = "CADを開くと正確な形状ランタイムを起動します。",
     pointStep = 0,
     lastPoint = null,
@@ -104,26 +226,289 @@ export function initModelWorkspace(api) {
   panel.setAttribute("role", "tabpanel");
   panel.setAttribute("aria-labelledby", "modeModel");
   panel.innerHTML = `<aside class="model-left"><header><strong>CAD · 形状作成</strong><button id="modelUndo" aria-label="CAD Undo" title="Undo">↶</button><button id="modelRedo" aria-label="CAD Redo" title="Redo">↷</button></header><label>コマンド検索<input id="modelCommandSearch" placeholder="長方形 / Line / Extrude" autocomplete="off"></label><div id="modelCommands" class="model-command-list"></div><div id="modelSession" role="status"></div><div class="model-workplane"><label>作業平面<select id="modelPlane"><option>XY</option><option>XZ</option><option>YZ</option></select></label><label>選択<select id="modelPickFilter"><option value="object">形状</option><option value="face">面</option><option value="edge">edge</option><option value="vertex">頂点</option></select></label><label><input id="modelSnap" type="checkbox" checked>端点・中心スナップ</label><button id="modelFit">選択にFit</button><label>座標入力<input id="modelCoordinate" placeholder="x,y,z または @dx,dy,dz"></label></div><div class="model-actions"><button id="modelPreview">プレビュー</button><button id="modelCommit" class="primary">確定</button><button id="modelCancel">キャンセル</button></div><p id="modelStatus" role="status"></p><details id="modelDiagnostics"><summary>診断・解決</summary><div></div></details><details><summary>最近の操作</summary><ol id="modelLog"></ol></details><details><summary>コマンドを追加</summary><label>登録済み演算を使うJSON定義<textarea id="modelCommandDefinition" rows="8"></textarea></label><button id="modelRegister">定義を検証して追加</button></details><details><summary>形状Library</summary><label>保存名<input id="modelShapeName" value="CAD shape"></label><label><input id="modelShapeHistory" type="checkbox" checked>依存履歴を含める</label><button id="modelSaveShape">選択形状を保存</button><div id="modelShapeEntries"></div></details><details><summary>About · 依存・権利表示</summary><p>Pathloom独自のCAD操作。正確な演算にはOCP / OCCTを使用します。</p><a href="./THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">第三者ソフトウェアの表示と原文の場所</a><p>配布物の全依存監査・OCCT例外本文の照合は未完です。</p></details><small>左クリック：作図／選択 · Shift：追加選択<br>右ドラッグ：回転 · 中ドラッグ：移動<br>Enter：確定 · Esc：中断</small></aside><aside class="model-right"><section class="model-inspector"><header><strong>設定・プロパティ</strong></header><div id="modelProperties"></div></section><section class="model-history"><header><strong>作成履歴</strong><button id="modelRetry">再計算</button></header><div id="modelHistory"></div></section></aside>`;
+  const commandBar = document.createElement("section");
+  commandBar.className = "model-command-bar";
+  commandBar.setAttribute("role", "toolbar");
+  commandBar.setAttribute("aria-label", "CADコマンド");
+  const commandSearch = panel.querySelector("#modelCommandSearch").closest("label");
+  const commandList = panel.querySelector("#modelCommands");
+  const commandSession = panel.querySelector("#modelSession");
+  const leftPanel = panel.querySelector(".model-left");
+  const leftHeader = leftPanel.querySelector("header");
+  const undoButton = leftHeader.querySelector("#modelUndo");
+  const redoButton = leftHeader.querySelector("#modelRedo");
+  const workplaneControls = panel.querySelector(".model-workplane");
+  const planeSelect = workplaneControls.querySelector("#modelPlane");
+  const planeControls = document.createElement("div");
+  planeControls.className = "model-plane-controls";
+  const planeLabel = planeSelect.closest("label");
+  planeLabel.replaceWith(planeControls);
+  planeControls.append(planeLabel);
+  const facePlaneOption = document.createElement("option");
+  facePlaneOption.value = "face";
+  facePlaneOption.textContent = "選択面";
+  planeSelect.append(facePlaneOption);
+  const planeFromFaceButton = document.createElement("button");
+  planeFromFaceButton.type = "button";
+  planeFromFaceButton.id = "modelPlaneFromFace";
+  planeFromFaceButton.textContent = "既存面を選ぶ";
+  planeFromFaceButton.addEventListener("click", () => {
+    if (!planePicking)
+      pickFilterBeforePlane = workplaneControls.querySelector("#modelPickFilter").value;
+    if (planeSelect.value !== "face") planeBeforeFace = planeSelect.value;
+    planePicking = true;
+    workplaneControls.querySelector("#modelPickFilter").value = "face";
+    setStatus("作業平面にする平面上の face をクリックしてください。");
+  });
+  planeControls.append(planeFromFaceButton);
+  const actionControls = panel.querySelector(".model-actions");
+  const modelStatus = panel.querySelector("#modelStatus");
+  const diagnosticsPanel = panel.querySelector("#modelDiagnostics");
+  const libraryDetails = [...leftPanel.querySelectorAll("details")].find(
+    (details) => details.querySelector(":scope > summary")?.textContent === "形状Library",
+  );
+  const helpDetails = [...leftPanel.querySelectorAll("details")].find(
+    (details) => details.querySelector(":scope > summary")?.textContent.startsWith("About"),
+  );
+  const commandDefinitionDetails = [...leftPanel.querySelectorAll("details")].find(
+    (details) => details.querySelector(":scope > summary")?.textContent === "コマンドを追加",
+  );
+  const recentOperationsDetails = [...leftPanel.querySelectorAll("details")].find(
+    (details) => details.querySelector(":scope > summary")?.textContent === "最近の操作",
+  );
+  libraryDetails.open = true;
+  const libraryClose = document.createElement("button");
+  libraryClose.type = "button";
+  libraryClose.textContent = "閉じる";
+  libraryClose.addEventListener("click", () => {
+    libraryDetails.hidden = true;
+    properties();
+  });
+  libraryDetails.append(libraryClose);
+  const helpDialog = document.createElement("dialog");
+  helpDialog.className = "model-help-dialog";
+  helpDialog.setAttribute("aria-labelledby", "modelHelpTitle");
+  helpDialog.innerHTML = `<header><strong id="modelHelpTitle"></strong><button type="button" aria-label="閉じる">×</button></header><div></div>`;
+  helpDialog.querySelector("header button").addEventListener("click", () => helpDialog.close());
+  document.body.append(helpDialog);
+  const showHelp = (about) => {
+    const heading = helpDialog.querySelector("#modelHelpTitle");
+    const content = helpDialog.querySelector("div");
+    content.replaceChildren();
+    heading.textContent = about ? "About Pathloom" : "CAD操作説明";
+    if (about) {
+      const description = document.createElement("p");
+      description.textContent = "Pathloom の CAD ワークスペースは、OCP / OCCT による正確な形状編集を行います。";
+      const notice = document.createElement("a");
+      notice.href = "./THIRD_PARTY_NOTICES.md";
+      notice.target = "_blank";
+      notice.rel = "noopener";
+      notice.textContent = "第三者ソフトウェアの表示";
+      content.append(description, notice);
+    } else {
+      const steps = document.createElement("ol");
+      for (const text of [
+        "上部の分類を開き、コマンドアイコンを選びます。",
+        "右側の操作パネルで平面・寸法・入力形状を指定します。",
+        "プレビューで確認し、確定して下部の履歴へ追加します。",
+        "履歴をダブルクリックすると右側で設定を編集できます。",
+        "左の形状を右クリックすると、プロパティやLibrary登録、生成接続を選べます。",
+      ]) {
+        const item = document.createElement("li");
+        item.textContent = text;
+        steps.append(item);
+      }
+      content.append(steps);
+    }
+    helpDialog.showModal();
+  };
+  document.addEventListener("pathloom:cad-help", () => showHelp(false));
+  document.addEventListener("pathloom:about", () => showHelp(true));
+  helpDetails?.remove();
+  commandDefinitionDetails?.remove();
+  recentOperationsDetails?.remove();
+  leftPanel.replaceChildren(leftHeader);
+  leftHeader.replaceChildren(document.createElement("strong"));
+  leftHeader.firstElementChild.textContent = "アウトライナー";
+  const outliner = document.createElement("div");
+  outliner.id = "modelOutliner";
+  outliner.setAttribute("role", "tree");
+  leftPanel.append(outliner);
+  const inspector = panel.querySelector(".model-inspector");
+  inspector.prepend(commandSearch, workplaneControls, actionControls);
+  inspector.append(commandSession, modelStatus, diagnosticsPanel);
+  libraryDetails.hidden = true;
+  inspector.append(libraryDetails);
+  actionControls.append(panel.querySelector("#modelRetry"));
+  commandBar.append(
+    undoButton,
+    redoButton,
+    commandList,
+  );
+  panel.prepend(commandBar);
+  const timeline = document.createElement("section");
+  timeline.className = "model-timeline";
+  timeline.setAttribute("aria-label", "作成履歴");
+  timeline.append(panel.querySelector(".model-history"));
+  panel.append(timeline);
   const libraryPlacementLabel = document.createElement("label"),
     libraryPlacementInput = document.createElement("input");
   libraryPlacementLabel.textContent = "挿入位置 XYZ mm";
   libraryPlacementInput.id = "modelShapePlacement";
   libraryPlacementInput.value = "0,0,0";
   libraryPlacementLabel.append(libraryPlacementInput);
-  panel.querySelector("#modelShapeEntries").before(libraryPlacementLabel);
+  libraryDetails.querySelector("#modelShapeEntries").before(libraryPlacementLabel);
   const exportStepButton = document.createElement("button");
   exportStepButton.id = "modelExportStep";
   exportStepButton.textContent = "STEP⇩";
   exportStepButton.setAttribute("aria-label", "Export selected CAD as STEP");
   exportStepButton.title = "Export STEP";
-  panel.querySelector(".model-left > header").append(exportStepButton);
+  actionControls.append(exportStepButton);
   document.body.append(panel);
   view = createViewAdapter(api.preview);
-  const log = [];
   function setStatus(text) {
     status = text;
     $("modelStatus").textContent = text;
   }
+  function useEntityForGeneration(entity) {
+    try {
+      const feature = store.getFeature(entity.producer.featureId);
+      if (!["valid", "warning"].includes(feature?.status))
+        throw new Error("未解決の古い形状は生成に渡せません");
+      const binding = bindBody(store.document, entity);
+      store.resolveBindings();
+      updateBindings(binding.id);
+      setStatus("生成入力へ接続しました。ノード配線は変更していません。");
+    } catch (error) {
+      report(error);
+    }
+  }
+  function selectOutlinerEntity(entity, { showProperties = false } = {}) {
+    selection = [{ entityId: entity.id }];
+    selectedFeature = null;
+    propertiesOpen = showProperties;
+    featureEditActive = false;
+    store.document.uiState.selection = clone(selection);
+    if (showProperties) properties();
+    render();
+  }
+  function closeObjectMenu() {
+    objectMenu.hidden = true;
+  }
+  const objectMenu = document.createElement("div");
+  objectMenu.className = "model-object-menu";
+  objectMenu.setAttribute("role", "menu");
+  objectMenu.hidden = true;
+  document.body.append(objectMenu);
+  function showObjectMenu(entity, event) {
+    event.preventDefault();
+    selectOutlinerEntity(entity);
+    objectMenu.replaceChildren();
+    objectMenu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - 220))}px`;
+    objectMenu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - 220))}px`;
+    const addAction = (label, action) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.textContent = label;
+      button.addEventListener("click", () => {
+        closeObjectMenu();
+        action();
+      });
+      objectMenu.append(button);
+    };
+    addAction("プロパティ", () => selectOutlinerEntity(entity, { showProperties: true }));
+    addAction("形状 Library に登録 / Library を開く", () => {
+      selectOutlinerEntity(entity);
+      $("modelShapeName").value = entity.name || "CAD shape";
+      libraryDetails.hidden = false;
+      libraryDetails.open = true;
+    });
+    addAction("生成で使用", () => useEntityForGeneration(entity));
+    addAction("削除", () => {
+      const feature = store.getFeature(entity.producer.featureId);
+      if (!feature) return;
+      const outputIds = new Set(feature.outputSlots.map((slot) => slot.entityId));
+      const dependents = store.document.features.filter(
+        (candidate) => candidate !== feature && references(candidate.inputs).some(
+          (reference) => outputIds.has(reference.entityId),
+        ),
+      );
+      const hasBinding = store.document.outputBindings.some(
+        (binding) => binding.resolvedEntityId === entity.id || binding.source.bodyId === entity.bodyId,
+      );
+      if ((dependents.length || hasBinding) && !window.confirm(
+        `この履歴を削除すると、${dependents.length ? `${dependents.length}件の後続操作が未解決になり` : ""}${hasBinding ? "生成参照も未解決になり" : ""}ます。削除しますか？`,
+      )) return;
+      store.remove(feature.id);
+      selection = [];
+      selectedFeature = null;
+      store.document.uiState.selection = [];
+      render();
+    });
+    objectMenu.hidden = false;
+    objectMenu.querySelector("button")?.focus();
+  }
+  function renderOutliner() {
+    outliner.replaceChildren();
+    const entitiesById = new Map(store.document.entities.map((entity) => [entity.id, entity]));
+    for (const body of store.document.bodies) {
+      const entity = entitiesById.get(body.tipEntityId);
+      if (!entity) continue;
+      const group = document.createElement("details");
+      group.className = "model-outline-body";
+      group.open = true;
+      group.setAttribute("role", "treeitem");
+      const heading = document.createElement("summary");
+      heading.textContent = `${entity.kind === "solid" ? "立体" : entity.kind === "curve" ? "カーブ" : "サーフェス"} · ${entity.name || "無題"}`;
+      group.append(heading);
+      const row = document.createElement("div");
+      row.className = "model-outline-row";
+      row.setAttribute("role", "group");
+      const select = document.createElement("button");
+      select.type = "button";
+      select.className = "model-outline-select";
+      select.setAttribute("role", "treeitem");
+      const selected = selection.some((reference) => reference.entityId === entity.id);
+      select.setAttribute("aria-selected", String(selected));
+      row.classList.toggle("is-selected", selected);
+      select.textContent = entity.name || entity.kind;
+      select.title = `${entity.kind} · ${entity.closure.enclosesVolume ? "閉体積" : "開いた形状"}`;
+      select.addEventListener("click", () => selectOutlinerEntity(entity));
+      select.addEventListener("contextmenu", (event) => showObjectMenu(entity, event));
+      const visibility = document.createElement("button");
+      visibility.type = "button";
+      visibility.className = "model-outline-toggle";
+      visibility.textContent = entity.visibility === "hidden" ? "◌" : "◉";
+      visibility.setAttribute("aria-label", entity.visibility === "hidden" ? "表示する" : "非表示にする");
+      visibility.title = visibility.getAttribute("aria-label");
+      visibility.addEventListener("click", () => {
+        entity.visibility = entity.visibility === "hidden" ? "visible" : "hidden";
+        store.document.documentRevision++;
+        render();
+      });
+      const lock = document.createElement("button");
+      lock.type = "button";
+      lock.className = "model-outline-toggle";
+      lock.textContent = entity.locked ? "▣" : "▢";
+      lock.setAttribute("aria-label", entity.locked ? "ロック解除" : "ロック");
+      lock.title = lock.getAttribute("aria-label");
+      lock.addEventListener("click", () => {
+        entity.locked = !entity.locked;
+        store.document.documentRevision++;
+        render();
+      });
+      row.append(select, visibility, lock);
+      group.append(row);
+      outliner.append(group);
+    }
+  }
+  document.addEventListener("pointerdown", (event) => {
+    if (!objectMenu.contains(event.target)) closeObjectMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeObjectMenu();
+  });
   function active() {
     return document.body.dataset.workspaceMode === "model";
   }
@@ -233,6 +618,8 @@ export function initModelWorkspace(api) {
   }
   function cancel() {
     curvePointPicking=false;
+    propertiesOpen = false;
+    featureEditActive = false;
     invalidFields.clear();
     clearTimeout(previewTimer);
     if (session) {
@@ -257,6 +644,8 @@ export function initModelWorkspace(api) {
       view.clearPreview();
     }
     selectedFeature = null;
+    propertiesOpen = true;
+    featureEditActive = false;
     pointStep = 0;
     lastPoint = null;
     activeInputKey = null;
@@ -292,7 +681,7 @@ export function initModelWorkspace(api) {
     const f = selectedFeature && store.getFeature(selectedFeature);
     const params =
       session?.parameters ||
-      (f?.operation.id === "asset.snapshot"
+      (!featureEditActive || f?.operation.id === "asset.snapshot"
         ? null
         : f?.operation.id === "solid.difference"
           ? { keepTools: false, ...f.parameters }
@@ -330,7 +719,28 @@ export function initModelWorkspace(api) {
       }[editingOperation];
       if(help){const p=document.createElement('p');p.textContent=help;host.append(p);}
     }
+    if (f && !session && !featureEditActive) {
+      const summary = document.createElement("p");
+      summary.textContent = `${f.name} · ${f.status} · ${f.operation.id}`;
+      host.append(summary);
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.textContent = "形状を変更";
+      edit.addEventListener("click", () => {
+        featureEditActive = true;
+        propertiesOpen = true;
+        properties();
+      });
+      host.append(edit);
+      return;
+    }
     if (!params) {
+      if (!propertiesOpen) {
+        const hint = document.createElement("p");
+        hint.textContent = "形状を右クリックしてプロパティを表示";
+        host.append(hint);
+        return;
+      }
       const e = store.getEntity(selection[0]?.entityId);
       if (e) {
         const name = document.createElement("input");
@@ -347,19 +757,7 @@ export function initModelWorkspace(api) {
         host.append(text);
         const use = document.createElement("button");
         use.textContent = "生成で使用（現在のbody結果）";
-        use.onclick = () => {
-          try {
-            const f = store.getFeature(e.producer.featureId);
-            if (!["valid", "warning"].includes(f?.status))
-              throw new Error("未解決の古い形状は生成に渡せません");
-            const binding = bindBody(store.document, e);
-            store.resolveBindings();
-            updateBindings(binding.id);
-            setStatus("生成入力へ接続しました。ノード配線は変更していません。");
-          } catch (error) {
-            report(error);
-          }
-        };
+        use.onclick = () => useEntityForGeneration(e);
         if (e.kind === "curve" || e.displayCache?.preview?.meshes?.length) {
           host.append(use);
           for (const binding of store.document.outputBindings.filter(
@@ -384,23 +782,6 @@ export function initModelWorkspace(api) {
           note.textContent =
             "この形状はCAD内で保存・編集できます。生成入力へのadapterは未対応です。";
           host.append(note);
-        }
-        for (const [label, key] of [
-          ["非表示", "visibility"],
-          ["ロック", "locked"],
-        ]) {
-          const b = document.createElement("button");
-          b.textContent = label;
-          b.onclick = () => {
-            e[key] =
-              key === "visibility"
-                ? e.visibility === "hidden"
-                  ? "visible"
-                  : "hidden"
-                : !e.locked;
-            render();
-          };
-          host.append(b);
         }
       }
       return;
@@ -616,6 +997,7 @@ export function initModelWorkspace(api) {
             : "";
     if (note.textContent) settingsForm.append(note);
     for (const [key, value] of Object.entries(f?.sketchId ? {} : params)) {
+      if (key === "plane" && session) continue;
       if (
         session?.command.id === "C04" &&
         session.drawingMode &&
@@ -943,18 +1325,50 @@ export function initModelWorkspace(api) {
       bindingStamps.set(b.id, stamp);
     }
   }
-  function render({ keepProperties = false } = {}) {
+  function render({ keepProperties = false, keepHistory = false } = {}) {
     if (!panel.isConnected) return;
     $("modelStatus").textContent = status;
+    renderOutliner();
+    workplaneControls.hidden = !session;
+    const operationId = session?.command.baseOperation.id;
+    const planeOperation = new Set([
+      "point.create", "curve.line", "curve.polyline", "curve.rectangle",
+      "curve.polygon", "curve.circle", "curve.arc", "curve.ellipse",
+      "curve.nurbs", "curve.interpolate",
+    ]);
+    planeControls.hidden = !planePicking && !(
+      session && (session.parameters.plane || planeOperation.has(operationId))
+    );
     const q = $("modelCommandSearch").value;
     const list = $("modelCommands");
     list.replaceChildren();
-    for (const command of findCommands(q)) {
-      const b = document.createElement("button");
-      b.textContent = command.displayName;
-      b.title = command.description;
-      b.onclick = () => begin(command).catch(report);
-      list.append(b);
+    const commands = findCommands(q);
+    for (const group of commandGroupDefinitions) {
+      const members = commands.filter((command) => commandGroup(command) === group.id);
+      if (!members.length) continue;
+      const section = document.createElement("details");
+      section.className = "model-command-group";
+      section.open = openCommandGroups.has(group.id) || !!q;
+      section.addEventListener("toggle", () => {
+        if (section.open) openCommandGroups.add(group.id);
+        else openCommandGroups.delete(group.id);
+      });
+      const heading = document.createElement("summary");
+      heading.textContent = group.label;
+      const buttons = document.createElement("div");
+      buttons.className = "model-command-group-buttons";
+      for (const command of members) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "model-command-button";
+        button.setAttribute("aria-label", command.displayName);
+        button.title = `${command.displayName} · ${command.description}`;
+        button.append(createCommandIcon(command));
+        button.onclick = () => begin(command).catch(report);
+        buttons.append(button);
+      }
+      section.append(heading, buttons);
+      list.append(section);
     }
     $("modelSession").textContent = session
       ? `${session.command.displayName} · ${session.state} · ${sessionReady(session) ? "入力済み" : "入力を選択してください"}`
@@ -963,25 +1377,52 @@ export function initModelWorkspace(api) {
     $("modelPreview").disabled = !session || session.state === "committing";
     if (!keepProperties && !document.activeElement?.closest("#modelProperties"))
       properties();
-    const history = $("modelHistory");
-    history.replaceChildren();
-    for (const f of store.document.features) {
+    if (!keepHistory) {
+      const history = $("modelHistory");
+      history.replaceChildren();
+      for (const f of store.document.features) {
       const b = document.createElement("button");
       b.className = "model-history-entry";
       b.dataset.featureId = f.id;
       b.setAttribute("aria-pressed", String(selectedFeature === f.id));
-      b.textContent = `${f.name} · ${f.status}${!["valid", "warning", "empty"].includes(f.status) && f.lastValid ? " · 更新前を表示" : ""}`;
-      b.onclick = () => {
+      const historyLabel = `${f.name} · ${f.status}${!["valid", "warning", "empty"].includes(f.status) && f.lastValid ? " · 更新前を表示" : ""}`;
+      b.setAttribute("aria-label", historyLabel);
+      b.title = `${historyLabel} · ${f.operation.id}`;
+      b.append(createCommandIcon({
+        baseOperation: f.operation,
+        defaults: f.parameters,
+      }));
+      const accessibleLabel = document.createElement("span");
+      accessibleLabel.className = "model-icon-label";
+      accessibleLabel.textContent = historyLabel;
+      b.append(accessibleLabel);
+      const activate = (edit = false) => {
         invalidFields.clear();
         saveDraft();
         session = null;
         view.clearPreview();
         selectedFeature = f.id;
+        propertiesOpen = true;
+        featureEditActive = edit;
         selection = f.outputSlots.map((s) => ({ entityId: s.entityId }));
-        properties();
-        render();
+        render({ keepHistory: true });
+      };
+      b.onclick = () => activate(false);
+      b.ondblclick = () => {
+        activate(true);
+        requestAnimationFrame(() => {
+          const input = $("modelProperties").querySelector(
+            "[data-parameter], select, input, textarea, button",
+          );
+          input?.focus();
+          input?.scrollIntoView({ block: "nearest" });
+        });
       };
       history.append(b);
+      }
+    } else {
+      for (const button of $("modelHistory").querySelectorAll(".model-history-entry"))
+        button.setAttribute("aria-pressed", String(button.dataset.featureId === selectedFeature));
     }
     const diagnostics = [
       ...(session?.diagnostics || []),
@@ -1106,15 +1547,9 @@ export function initModelWorkspace(api) {
       if (session !== target) return;
       const ok = await store.add(target);
       if (ok) {
-        log.unshift(target.command.displayName);
-        $("modelLog").replaceChildren(
-          ...log.slice(0, 10).map((text) => {
-            const li = document.createElement("li");
-            li.textContent = text;
-            return li;
-          }),
-        );
         session = null;
+        propertiesOpen = false;
+        featureEditActive = false;
         invalidFields.clear();
         view.clearPreview();
         native.release(previewHandles);
@@ -1329,38 +1764,17 @@ export function initModelWorkspace(api) {
         f.status = "dirty";
     store.recompute().catch(report);
   };
-  $("modelRegister").onclick = async () => {
-    try {
-      const d = JSON.parse($("modelCommandDefinition").value);
-      await startRuntime();
-      const normalized = registerCommand(d);
-      store.document.commandDefinitions.push(clone(normalized));
-      store.document.documentRevision++;
-      globalCommands.push(clone(normalized));
-      native
-        .invoke("cad_command_library", {
-          content: JSON.stringify(globalCommands),
-        })
-        .then(() =>
-          setStatus(
-            "コマンド定義を登録・保存しました。この版はprojectにも保存します。",
-          ),
-        )
-        .catch((error) =>
-          setStatus(
-            "project用の定義は登録済みですが、共有コマンド保存に失敗しました: " +
-              error.message,
-          ),
-        );
-      render();
-    } catch (error) {
-      report(error);
-    }
-  };
   $("modelPlane").onchange = () => {
+    if ($("modelPlane").value === "face") {
+      if (!planePicking) pickFilterBeforePlane = $("modelPickFilter").value;
+      planePicking = true;
+      setStatus("作業平面にする平面上の face をクリックしてください。");
+      return;
+    }
     snapPoint = null;
     invalidFields.delete("plane");
     const name = $("modelPlane").value;
+    planeBeforeFace = name;
     store.document.uiState.workPlane = {
       origin: [0, 0, 0],
       xAxis: name === "YZ" ? [0, 1, 0] : [1, 0, 0],
@@ -1376,6 +1790,40 @@ export function initModelWorkspace(api) {
       queuePreview();
     }
   };
+  function applyFaceWorkplane(hit) {
+    const entity = store.getEntity(hit.entityId);
+    if (!entity) throw new Error("作業平面にする形状が見つかりません");
+    const faces = entity.displayCache?.topology?.filter((item) => item.kind === "face") || [];
+    const faceIndex = faces.findIndex((face) => face.topologyId === hit.topologyId);
+    const face = entity.displayCache?.faces?.[faceIndex];
+    if (!face?.planar || !Array.isArray(face.normal))
+      throw new Error("作業平面には平面の face を選択してください");
+    const normal = face.normal;
+    const reference = Math.abs(normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    const projection = reference.reduce((sum, value, index) => sum + value * normal[index], 0);
+    const xAxis = reference.map((value, index) => value - projection * normal[index]);
+    const xLength = Math.hypot(...xAxis);
+    for (let index = 0; index < 3; index++) xAxis[index] /= xLength;
+    const yAxis = [
+      normal[1] * xAxis[2] - normal[2] * xAxis[1],
+      normal[2] * xAxis[0] - normal[0] * xAxis[2],
+      normal[0] * xAxis[1] - normal[1] * xAxis[0],
+    ];
+    const plane = { origin: hit.point, xAxis, yAxis };
+    validateDrawingPlane(plane);
+    store.document.uiState.workPlane = plane;
+    planeSelect.value = "face";
+    snapPoint = null;
+    if (session?.parameters.plane) {
+      dispatchSession(session, { type: "setting.change", key: "plane", value: plane });
+      saveDraft();
+      properties();
+      queuePreview();
+    }
+    planePicking = false;
+    $("modelPickFilter").value = pickFilterBeforePlane;
+    setStatus("選択面を作業平面に設定しました。");
+  }
   function acceptPoint(p) {
     if (!session) return;
     if (!Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite))
@@ -1557,7 +2005,11 @@ export function initModelWorkspace(api) {
         });
         queuePreview();
       }
-    } else selectedFeature = null;
+    } else {
+      selectedFeature = null;
+      propertiesOpen = false;
+      featureEditActive = false;
+    }
     render();
   }
   let down = null,
@@ -1657,6 +2109,19 @@ export function initModelWorkspace(api) {
         Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 3
       )
         return;
+      if (planePicking) {
+        const hit = view.hit(event, "face")[0];
+        if (!hit) {
+          setStatus("作業平面にする face が見つかりません。平面をクリックしてください。");
+          return;
+        }
+        try {
+          applyFaceWorkplane(hit);
+        } catch (error) {
+          report(error);
+        }
+        return;
+      }
       if (
         session && curvePointPicking
       ) {
@@ -1687,6 +2152,8 @@ export function initModelWorkspace(api) {
         if (!session) {
           selection = [];
           selectedFeature = null;
+          propertiesOpen = false;
+          featureEditActive = false;
           store.document.uiState.selection = [];
           render();
           return;
@@ -1709,7 +2176,8 @@ export function initModelWorkspace(api) {
         event.isComposing ||
         event.keyCode === 229 ||
         (event.key === "Enter" && event.target.closest("button")) ||
-        event.target.closest("input,textarea,select,[contenteditable=true]")
+        (event.target.closest("input,textarea,select,[contenteditable=true]") &&
+          !(planePicking && event.key === "Escape"))
       )
         return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
@@ -1720,7 +2188,12 @@ export function initModelWorkspace(api) {
       } else if (event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        cancel();
+        if (planePicking) {
+          planePicking = false;
+          planeSelect.value = planeBeforeFace;
+          $("modelPickFilter").value = pickFilterBeforePlane;
+          setStatus("作業平面の選択を取り消しました。");
+        } else cancel();
       } else if (event.key === "Enter") {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -1795,8 +2268,6 @@ export function initModelWorkspace(api) {
       "--cad-right-space",
       right.offsetWidth + "px",
     );
-    store.document.uiState.inspectorRatio =
-      panel.querySelector(".model-inspector").offsetHeight / right.clientHeight;
   });
   panelResize.observe(panel.querySelector(".model-left"));
   panelResize.observe(panel.querySelector(".model-right"));
@@ -1810,8 +2281,6 @@ export function initModelWorkspace(api) {
       "--model-right-width",
       store.document.uiState.rightWidth + "px",
     );
-    panel.querySelector(".model-inspector").style.height =
-      store.document.uiState.inspectorRatio * 100 + "%";
     selection = clone(store.document.uiState.selection || []);
     for (const d of store.document.commandDefinitions)
       try {

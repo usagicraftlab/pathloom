@@ -138,6 +138,18 @@ impl CadRuntime {
                 include_str!("../../native/cad_operations/__init__.py"),
             ),
             (
+                "cad_operations/regions_solids.py",
+                include_str!("../../native/cad_operations/regions_solids.py"),
+            ),
+            (
+                "cad_operations/curve_editing.py",
+                include_str!("../../native/cad_operations/curve_editing.py"),
+            ),
+            (
+                "cad_operations/curve_advanced.py",
+                include_str!("../../native/cad_operations/curve_advanced.py"),
+            ),
+            (
                 "occt_brep_bridge.py",
                 include_str!("../../native/occt_brep_bridge.py"),
             ),
