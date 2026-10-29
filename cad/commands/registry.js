@@ -427,6 +427,47 @@ add(
   ],
   { resultPolicy: "replace" },
 );
+for (const definition of [
+  {
+    id: "transform.rotate",
+    name: "Rotate",
+    aliases: ["Rotate", "回転"],
+    defaults: {
+      mode: "rotate",
+      axis: { origin: [0, 0, 0], direction: [0, 0, 1] },
+      angleRad: Math.PI / 2,
+    },
+  },
+  {
+    id: "transform.scale",
+    name: "Scale",
+    aliases: ["Scale", "拡大縮小"],
+    defaults: { mode: "scale", center: [0, 0, 0], factor: 2 },
+  },
+  {
+    id: "transform.mirror",
+    name: "Mirror",
+    aliases: ["Mirror", "鏡像"],
+    defaults: { mode: "mirror", plane: xy() },
+  },
+])
+  add(
+    definition.id,
+    definition.name,
+    "shape.transform",
+    definition.defaults,
+    [
+      input("object", [
+        "point",
+        "curve",
+        "surface",
+        "shell",
+        "solid",
+        "compound",
+      ]),
+    ],
+    { resultPolicy: "replace", aliases: definition.aliases },
+  );
 add(
   "E01",
   "Join Curves",

@@ -1577,3 +1577,20 @@ browserがなくCDN取得も0 byteで失敗したため、ignored領域へ展開
 全6job生ログで各JS204、native83件81成功/任意USD2skip、macOS Rust21、browser58を確認。
 計画CIを製品変更の合格へ転用せず、最終headのpush/PR CIを別に確認する。実Mac GUI/Tauri IPC/
 OS dialog、実機Issue #37、指示011は未実施・未着手。
+
+## 2026-10-29 Issue #15 共通操作・再利用（実装前）
+
+- 指示011を取得し、Issue #15をC01〜C04 / L01〜L05 / V01〜V06へ具体化した。
+- main `31910e62baa6fb5c0743db764fada41ab83555f4` のpost-merge checks run `40761465408` attempt 1 successを生ログまで照合した（JS 206、native 83成功/任意NVIDIA USD 2 skip、macOS Rust 22、browser 60）。
+- 既存実装を確認し、native `shape.transform` はmove/rotate/scale/mirrorをOCCT B-repへ適用済みだが、registry/UIはMoveだけを公開していること、Libraryは上流closureとtyped ID再写像を持つ一方で挿入配置を履歴化していないことを確認した。
+- 実装契約と検証範囲は `docs/cad-common-operations-plan.md` に固定した。実Macの照合はIssue #37の未実施範囲として分離し、自動検証の成功へ置換しない。
+
+## 2026-10-29 Issue #15 実装・ローカル検証
+
+- 既存のOCCT `shape.transform`へRotate / Scale / Mirror commandを接続した。4変換はいずれも形状1件を明示選択し、曖昧な複数preselectionを採用しない。Scale倍率は正数に制限した。
+- Shape Library挿入へ有限XYZ配置を追加した。依存closureとtyped IDを挿入ごとに再発行した後、選択rootごとのMove featureを末尾へ追加し、body tipと選択IDを正本出力へ更新する。ゼロ配置と既存schemaVersion 1 entryは従来互換。
+- JS対象回帰21件は成功。新規native回帰2件は成功。全ローカル検証はNode24.22.1 208成功、Node20.20.2 208成功、Python3.12.14/OCP7.8.1.1 native全87件中85成功・任意NVIDIA USD2skip。
+- browser対象2件の初回ローカル実行は、製品test開始前にChromium実行ファイル欠落で2件とも失敗した。Playwright Chromium取得はCDN応答が0 byteでzip展開不能。製品失敗へ分類せず、成功にも置換しない。最終headのCI browserを含む全jobと、ローカルbrowser実行可否を別に記録する。
+- 実装head `91696ddd` のPR checks run 40787882931 attempt 1はnative 85成功/任意USD2skipとmacOS Rust 22が成功、JS208も成功したがbrowserは61件中60成功1失敗。新規変換testがMirror確定直後、履歴表示は4件になった一方で非同期recompute完了前にentityを読んだtest raceで、製品診断/演算失敗ではなかった。各変換後に最後の履歴が`valid`になることを待ってから次へ進むようtestを修正し、旧runを成功へ置換せず最終headで全件再実行する。
+- 修正後の実装head `27bacdc450ebf621175a809b3b8949d6004fdcf2` は、push run [40788651265](https://github.com/usagicraftlab/pathloom/actions/runs/40788651265) とPR run [40788660019](https://github.com/usagicraftlab/pathloom/actions/runs/40788660019) が各attempt 1で成功した。両runの全6 job生ログを照合し、Node20.20.2 JS 208、native 87件中85成功・任意NVIDIA USD 2 skip、macOS Rust 22、browser 61成功（失敗/skip/retry/flaky 0）を確認した。CI browser成功をローカルbrowser成功とは記載せず、ローカルは上記の実行不能のまま区別する。
+- この記録追記だけの最終文書headは、実行コードを変更しない。ただし最終headとしてpush/PR双方の全CIを改めて確認し、結果はPR本文とボードのCodexログへ記録する。

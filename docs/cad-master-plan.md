@@ -65,7 +65,7 @@ Python/OCPは.appに同梱されていない。JSONL・cacheの上限はOCCTプ�
 
 ## 5. 機能の棚卸し
 
-コードの列挙結果は**65機能ID中42 IDを登録、別に`transform.move`を1件登録**。
+コードの列挙結果は**65機能ID中42 IDを登録、別に`shape.transform`系4件（Move / Rotate / Scale / Mirror）を登録**。
 ネイティブ演算一覧は45件で、登録済みコマンドが参照する43演算はすべて含まれていた。
 残る`surface.split`と`surface.extract`は低水準演算のみで、専用のコマンド/UI経路はない。
 この件数は完成数・テスト済み演算数ではない。

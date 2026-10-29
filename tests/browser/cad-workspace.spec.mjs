@@ -650,17 +650,36 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
   await page
     .getByRole("button", { name: "選択形状を保存", exact: true })
     .click();
+  await page.getByLabel("挿入位置 XYZ mm", { exact: true }).fill("10,0,0");
   await page
     .getByRole("button", { name: "挿入 · CAD shape", exact: true })
     .click();
-  await expect(page.locator(".model-history-entry")).toHaveCount(2);
-  expect(
-    await page.evaluate(
-      () =>
-        new Set(window.PathloomModel.store.document.entities.map((e) => e.id))
-          .size,
-    ),
-  ).toBe(2);
+  await expect(page.locator(".model-history-entry")).toHaveCount(3);
+  const placed = await page.evaluate(() => {
+    const store = window.PathloomModel.store,
+      feature = store.document.features.at(-1),
+      entity = store.getEntity(feature.outputSlots[0].entityId),
+      ids = [
+        ...store.document.features.map((item) => item.id),
+        ...store.document.entities.map((item) => item.id),
+        ...store.document.bodies.map((item) => item.id),
+      ];
+    return {
+      operation: feature.operation.id,
+      parameters: feature.parameters,
+      bbox: entity.bbox,
+      allIdsUnique: new Set(ids).size === ids.length,
+    };
+  });
+  expect(placed.operation).toBe("shape.transform");
+  expect(placed.parameters).toEqual({ mode: "move", translation: [10, 0, 0] });
+  expect(placed.bbox.min[0]).toBeCloseTo(-20, 6);
+  expect(placed.bbox.max[0]).toBeCloseTo(40, 6);
+  expect(placed.allIdsUnique).toBe(true);
+  await page.getByRole("button", { name: "CAD Undo", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(1);
+  await page.getByRole("button", { name: "CAD Redo", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(3);
   await expect
     .poll(() =>
       page.evaluate(
@@ -669,12 +688,12 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
             .length,
       ),
     )
-    .toBe(2);
+    .toBe(3);
   await page.reload();
   await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
   await page.locator("#modeModel").click();
   await page.getByRole("button", { name: "CADを回復", exact: true }).click();
-  await expect(page.locator(".model-history-entry")).toHaveCount(2);
+  await expect(page.locator(".model-history-entry")).toHaveCount(3);
   expect(
     await page.evaluate(() =>
       window.PathloomModel.store.document.entities.every(
@@ -684,6 +703,63 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
   ).toBe(true);
   await expect(page.locator("#modelCommit")).toBeInViewport();
   await expect(page.locator("#modelHistory")).toBeInViewport();
+});
+
+test("Issue15 Rotate Scale Mirror commit exact B-rep history through the workspace", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Box", exact: true }).click();
+  await page.getByRole("button", { name: "確定", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(1);
+  await page.locator(".model-history-entry").last().click();
+
+  await page.getByRole("button", { name: "Rotate", exact: true }).click();
+  await page
+    .getByLabel("軸（原点・方向）", { exact: true })
+    .fill(JSON.stringify({ origin: [0, 0, 0], direction: [0, 0, 1] }));
+  await page.getByLabel("角度 rad", { exact: true }).fill("90deg");
+  await page.getByRole("button", { name: "確定", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(2);
+  await expect(page.locator(".model-history-entry").last()).toContainText("valid");
+  await page.locator(".model-history-entry").last().click();
+
+  await page.getByRole("button", { name: "Scale", exact: true }).click();
+  await page.getByLabel("中心 XYZ", { exact: true }).fill("[0,0,0]");
+  await page.getByLabel("倍率", { exact: true }).fill("2");
+  await page.getByRole("button", { name: "確定", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(3);
+  await expect(page.locator(".model-history-entry").last()).toContainText("valid");
+  await page.locator(".model-history-entry").last().click();
+
+  await page.getByRole("button", { name: "Mirror", exact: true }).click();
+  await page
+    .getByLabel("作業平面", { exact: true })
+    .last()
+    .fill(JSON.stringify({
+      origin: [0, 0, 0],
+      xAxis: [1, 0, 0],
+      yAxis: [0, 1, 0],
+    }));
+  await page.getByRole("button", { name: "確定", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(4);
+  await expect(page.locator(".model-history-entry").last()).toContainText("valid");
+  const result = await page.evaluate(() => {
+    const store = window.PathloomModel.store,
+      feature = store.document.features.at(-1),
+      entity = store.getEntity(feature.outputSlots[0].entityId);
+    return {
+      operations: store.document.features.map((item) => item.parameters.mode),
+      bbox: entity.bbox,
+      volume: entity.displayCache.volumeMm3,
+      asset: entity.geometry.assetHash,
+      sourceAsset: store.document.entities.at(-2).geometry.assetHash,
+    };
+  });
+  expect(result.operations.slice(1)).toEqual(["rotate", "scale", "mirror"]);
+  expect(result.volume).toBeCloseTo(192000, 5);
+  expect(result.bbox.max[2]).toBeCloseTo(0, 6);
+  expect(result.bbox.min[2]).toBeCloseTo(-40, 6);
+  expect(result.asset).not.toBe(result.sourceAsset);
 });
 
 test("A04/R06: work-order command definition creates real geometry and persists without AI", async ({

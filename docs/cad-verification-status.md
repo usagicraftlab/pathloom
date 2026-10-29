@@ -30,14 +30,14 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | A16 | partial | typed Fillet failures + lastValid + parameter/target repair; failure location diagnosis incomplete |
 | A17 | partial | Issue #5: real Difference single500/multiple1500/noncontact1000/empty0/mixed-empty results; browser checks empty history state and persistence. Broader empty-result explanation UI remains pending |
 | A18 | partial | Untrim/Offset/Reverse operators exist; actual Trim->Untrim scenario not implemented |
-| A19 | partial | Real exact-asset Library/history insertion and recovery browser flow; broader open-face/multi-shape OS cases pending |
-| A20 | partial | Issue #6: typed Split source IDs, slot keys, snapshots/body candidates remapped; two independent real-OCCT history Library copies verified. Broader closure/OS matrix pending |
+| A19 | partial | Issue #15: exact-asset Library/history insertion accepts XYZ placement as an exact Move feature and preserves it through Undo/Redo/recovery. Broader open-face/multi-shape OS cases pending |
+| A20 | partial | Issue #6/#15: upstream closure plus typed feature/entity/body/sketch/candidate/Split provenance IDs are remapped; independent insertions and placement roots do not collide. Broader closure/OS matrix pending |
 | A21 | partial | Issue #5 adds two independent Difference remainders, target IDs, tool retention, fresh-page v2 reopen and mixed-empty round-trip; Issue #14 preserves an existing STEP exact asset, placement/provenance and downstream Move through v2 reopen, then fresh-runtime STEP reread. Other environment/macOS portability untested |
 | A22 | partial | legacy JS/Python/browser regression suite; Issue #14 keeps display-only STEP legacy-only and preserves editable importedShapes alongside cadDocument. Real GH/OS integration untested |
 | A23 | partial | Issue #4: document/feature/input/epoch guards through asset export; transport races17 pass, real OCCT width70→80 probe and existing browser21 pass. Actual macOS drag/load remains untested |
 | A24 | partial | Issue #6: exact Split rerun preserves binding ID; changed/count results block, v2 reopen retains candidates, explicit same-kind repair preserves binding ID. Full CAD-to-G-code chain remains #9 |
 | A25 | not-run | immutable command registry exists; explicit version upgrade/rollback UI pending |
-| A26 | partial | Issue #8 1440×1000 real mouse/keyboard: Enter/Esc, text Delete/Ctrl+Z/IME, Shift add/remove, overlapping picks and snap; actual macOS/VoiceOver/all drag combinations pending |
+| A26 | partial | Issue #8/#15: real mouse/keyboard overlap picker and Shift selection retained; all four exact transforms reject ambiguous preselection and require one explicit object. Actual macOS/VoiceOver/all drag combinations pending |
 | A27 | partial | original UI/code, vendor notice retention, actual OCP/VTK wheel texts; full distribution/license audit unfinished |
 | T01 | passed | native test_T01_rectangle_center + browser center/width/save/Undo |
 | T02 | partial | Issue #8 real OCCT browser: A(0,0,-10),B(10,0,-10),C(4,0,10) gives width10,height20 and exact bbox; plane/mode survive Save. Original rotated-XY numeric case remains unrun |
@@ -73,7 +73,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | R07 | partial | alias collision unit test; import collision UI pending |
 | R08 | partial | Browser recovery restores real assets and history; failed feature + lastValid saved in v2; complete failed-draft restart matrix pending |
 | R09 | partial | existing representative JS fixtures + browser regressions; Issue #14 covers editable embedded STEP adapter and display-only legacy preservation without changing v1 meaning. Complete legacy asset matrix and real OS dialog pending |
-| R10 | partial | Issue #6: per-source Split candidates, vanished part bindings, explicit repair UI, blocked v2 reopen and independent Library copies tested. Real Tauri/macOS interaction remains untested |
+| R10 | partial | Issue #6/#15: per-source Split candidates, vanished part bindings, explicit repair UI, blocked v2 reopen, independent Library copies and exact placement Undo/Redo tested. Real Tauri/macOS interaction remains untested |
 
 ## 2026-10-27 JST — Issue #5 scope
 
