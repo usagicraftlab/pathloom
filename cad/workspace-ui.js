@@ -200,7 +200,7 @@ export function initModelWorkspace(api) {
     savedDraftVersion = -1;
   let lastCommand = null, curvePointPicking = false, planePicking = false,
     referencePlanePicking = false, planeBeforeFace = "XY", pickFilterBeforePlane = "object";
-  const openCommandGroups = new Set(["curve-create"]);
+  const openCommandGroups = new Set(commandGroupDefinitions.map((group) => group.id));
   let session = null,
     selectedFeature = null,
     propertiesOpen = false,

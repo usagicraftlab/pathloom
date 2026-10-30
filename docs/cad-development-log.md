@@ -1632,3 +1632,8 @@ OS dialog、実機Issue #37、指示011は未実施・未着手。
   拡張し、中央行と右panel全体を画面外へ押し出していた。分類の縦並びは維持したまま、開いた分類の
   button列を最大210pxの内部scrollへ制限する。まず`maxFailures:1`の診断runで最初のfixtureが
   通過することを確認し、その後に設定を外して全62件を再実行する。
+- 診断run `41029873262` attempt 1では最初のRectangle fixtureが4.1秒で成功し、右panelの
+  viewport問題が解消したことを確認した。次のfixtureは折りたたまれた「移動・回転・ミラーなど」内の
+  Moveを直接待って45秒timeout、1成功/1失敗/60未実行だった。分類は折りたたみ可能な`details`の
+  まま全分類を初期展開し、各縦button列の内部scrollで高さを制限する。既存の全command操作経路を
+  維持し、診断用`maxFailures`を除いた全62件を最終headで再実行する。
