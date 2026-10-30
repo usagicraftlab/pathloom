@@ -1613,3 +1613,9 @@ OS dialog、実機Issue #37、指示011は未実施・未着手。
 - ローカルbrowserは`npx playwright install chromium`を5回試行したが、各CDN応答が0 MiBの
   truncated zipで展開不能。製品testは未実行であり成功に置換しない。最終headのCI browserと
   ローカル実行不能を別々に記録する。ローカルRustと実Mac GUI/Tauri/OS dialogも未実施。
+- 初回PR run `40995633123` attempt 1はJS208、native85成功/任意USD2skip、macOS Rust22が成功。
+  browserは共通初期化で全19件が45秒timeoutになり、15分job制限でcancelled（残り未実行）。
+  一時的に`maxFailures:1`を設定した診断run `40997226534` attempt 1でも最初の1件がfixture setup中に
+  timeoutし、61件未実行。traceのpage errorは`workspace-ui.js:349`のnullなpreview buttonに対する
+  `hidden`設定だった。左panel再構成でbuttonが一時的にDOM外へ出た後に`panel.querySelector`していたため、
+  保持済み`actionControls`から参照するよう修正した。診断用`maxFailures`は最終headから除去する。

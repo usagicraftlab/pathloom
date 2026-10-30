@@ -346,7 +346,7 @@ export function initModelWorkspace(api) {
   inspector.append(commandSession, modelStatus, diagnosticsPanel);
   libraryDetails.hidden = true;
   inspector.append(libraryDetails);
-  panel.querySelector("#modelPreview").hidden = true;
+  actionControls.querySelector("#modelPreview").hidden = true;
   panel.querySelector("#modelRetry").hidden = true;
   // Keep keyboard-command targets connected for compatibility, but do not
   // expose Undo/Redo as command-bar controls in the reviewed layout.
