@@ -284,12 +284,14 @@ export function initModelWorkspace(api) {
   undoButton.hidden = true;
   redoButton.hidden = true;
   libraryDetails.open = true;
+  const libraryDialog = document.createElement("dialog");
+  libraryDialog.className = "model-library-dialog";
+  document.body.append(libraryDialog);
   const libraryClose = document.createElement("button");
   libraryClose.type = "button";
   libraryClose.textContent = "閉じる";
   libraryClose.addEventListener("click", () => {
-    libraryDetails.hidden = true;
-    properties();
+    libraryDialog.close();
   });
   libraryDetails.append(libraryClose);
   const helpDialog = document.createElement("dialog");
@@ -344,8 +346,7 @@ export function initModelWorkspace(api) {
   const inspector = panel.querySelector(".model-inspector");
   inspector.prepend(commandSearch, workplaneControls);
   inspector.append(commandSession, modelStatus, diagnosticsPanel);
-  libraryDetails.hidden = true;
-  inspector.append(libraryDetails);
+  libraryDialog.append(libraryDetails);
   actionControls.querySelector("#modelPreview").hidden = true;
   panel.querySelector("#modelRetry").hidden = true;
   // Keep keyboard-command targets connected for compatibility, but do not
@@ -476,8 +477,21 @@ export function initModelWorkspace(api) {
       $("modelShapeName").value = entity.name || "CAD shape";
       libraryDetails.hidden = false;
       libraryDetails.open = true;
+      libraryDialog.showModal();
     });
     addAction("生成で使用", () => useEntityForGeneration(entity));
+    for (const binding of store.document.outputBindings.filter(
+      (binding) => ["split", "missing"].includes(binding.status),
+    )) {
+      addAction(`「${binding.name}」の生成参照をこの形状へ変更`, () => {
+        try {
+          store.rebindOutput(binding.id, entity.id);
+          setStatus("生成参照を修復しました。既存のノード配線を維持します。");
+        } catch (error) {
+          report(error);
+        }
+      });
+    }
     addAction("削除", () => {
       const feature = store.getFeature(entity.producer.featureId);
       if (!feature) return;
@@ -676,6 +690,7 @@ export function initModelWorkspace(api) {
   function cancel() {
     curvePointPicking=false;
     referencePlanePicking=false;
+    planeTooltip.hidden = true;
     propertiesOpen = false;
     featureEditActive = false;
     invalidFields.clear();
@@ -1026,7 +1041,6 @@ export function initModelWorkspace(api) {
             : "";
     if (note.textContent) settingsForm.append(note);
     for (const [key, value] of Object.entries(f?.sketchId ? {} : params)) {
-      if (key === "plane" && session) continue;
       if (
         session?.command.id === "C04" &&
         session.drawingMode &&
@@ -1133,7 +1147,11 @@ export function initModelWorkspace(api) {
             lastPoint = v;
             pointStep = key === "end" ? 2 : 1;
           }
-          if (key === "plane") snapPoint = null;
+          if (key === "plane") {
+            snapPoint = null;
+            referencePlanePicking = false;
+            view.showReferencePlanes?.(false);
+          }
           if (session) {
             dispatchSession(session, { type: "setting.change", key, value: v });
             saveDraft();
@@ -1362,6 +1380,8 @@ export function initModelWorkspace(api) {
       "curve.nurbs", "curve.interpolate",
     ]);
     view.showReferencePlanes?.(referencePlanePicking, planeSelect.value);
+    if (!referencePlanePicking)
+      document.querySelector(".model-plane-tooltip")?.setAttribute("hidden", "");
     planeControls.hidden = !planePicking && !(
       session && (session.parameters.plane || planeOperation.has(operationId))
     );
@@ -1401,6 +1421,9 @@ export function initModelWorkspace(api) {
       : "";
     inspector.hidden = !session && !featureEditActive;
     inspector.closest(".model-right").hidden = inspector.hidden;
+    inspector.querySelector("header strong").textContent =
+      session?.command.displayName || store.getFeature(selectedFeature)?.name || "操作";
+    actionControls.hidden = !session;
     panel.classList.toggle("has-inspector", !inspector.hidden);
     $("modelCommit").disabled = !session || session.state === "committing";
     $("modelPreview").disabled = !session || session.state === "committing";
@@ -1675,7 +1698,11 @@ export function initModelWorkspace(api) {
   const recoveryReview = document.createElement("button");
   recoveryReview.textContent = "保留中の回復データを確認";
   recoveryReview.hidden = true;
-  $("modelStatus").after(recoveryNotice, recoveryReview);
+  const recoveryMessage = document.createElement("section");
+  recoveryMessage.className = "model-recovery-message";
+  recoveryMessage.hidden = true;
+  recoveryMessage.append(recoveryNotice, recoveryReview);
+  panel.append(recoveryMessage);
   recoveryReview.onclick = () => recoveryDialog.showModal();
   let recoveryData = null, recoveryPending = false;
   let recoveryReadable = false, autosaveDocument = null, autosaveBusy = false;
@@ -1684,6 +1711,7 @@ export function initModelWorkspace(api) {
     recoveryNotice.textContent = recoveryPending
       ? "前回の回復候補を保持しています。回復または明示破棄するまで、現在の文書の自動回復保存は上書きせず保留します。必要な作業はプロジェクトとして保存してください。"
       : recoveryReadable ? "" : "回復候補を確認できるまで、自動回復保存を保留しています。";
+    recoveryMessage.hidden = !recoveryNotice.textContent;
   }
   recoveryDialog.onclick = async (event) => {
     const choice = event.target.dataset.recovery;
@@ -2061,6 +2089,15 @@ export function initModelWorkspace(api) {
     snapPoint = null;
   };
   const canvas = api.preview().canvas;
+  const planeTooltip = document.createElement("div");
+  planeTooltip.className = "model-plane-tooltip";
+  planeTooltip.textContent = "平面を選択";
+  planeTooltip.hidden = true;
+  document.body.append(planeTooltip);
+  canvas.addEventListener("pointerleave", () => {
+    planeTooltip.hidden = true;
+    view.hoverReferencePlane?.(null);
+  });
   function snapCandidate(event) {
     if (!$("modelSnap").checked) return null;
     const { THREE, camera } = api.preview();
@@ -2124,6 +2161,13 @@ export function initModelWorkspace(api) {
     "pointermove",
     (event) => {
       if (!active() || !session || event.buttons) return;
+      const hoveredPlane = referencePlanePicking && view.hit(event, "workplane")[0];
+      planeTooltip.hidden = !hoveredPlane;
+      if (hoveredPlane) {
+        planeTooltip.style.left = Math.min(event.clientX + 14, innerWidth - 110) + "px";
+        planeTooltip.style.top = Math.min(event.clientY + 14, innerHeight - 34) + "px";
+      }
+      view.hoverReferencePlane?.(hoveredPlane?.referencePlane);
       const found = snapCandidate(event);
       snapPoint = found?.point || null;
       if (found)
@@ -2147,6 +2191,7 @@ export function initModelWorkspace(api) {
     "click",
     (event) => {
       if (!active() || event.button !== 0) return;
+      planeTooltip.hidden = true;
       event.stopImmediatePropagation();
       if (
         down &&
@@ -2167,6 +2212,21 @@ export function initModelWorkspace(api) {
         return;
       }
       if (referencePlanePicking) {
+        const faceHit = view.hit(event, "face")[0];
+        if (faceHit) {
+          try {
+            applyFaceWorkplane(faceHit);
+            referencePlanePicking = false;
+            view.showReferencePlanes?.(false);
+            if (session && !session.command.inputs.some((slot) =>
+              ["entity", "subshape"].includes(slot.kind)))
+              acceptPoint(snapCandidate(event)?.point || faceHit.point);
+            render({ keepProperties: true });
+          } catch (error) {
+            report(error);
+          }
+          return;
+        }
         const planeHit = view.hit(event, "workplane")[0];
         if (!planeHit) {
           setStatus("基準面または既存の平面をクリックしてください。");

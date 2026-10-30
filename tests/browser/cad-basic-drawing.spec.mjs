@@ -89,6 +89,13 @@ const lastFeature = (page) =>
   page.evaluate(() =>
     structuredClone(window.PathloomModel.store.document.features.at(-1)),
   );
+async function setSnap(page, checked) {
+  // Snap is contextual in the reviewed UI; setup is not a visible-user action.
+  await page.locator("#modelSnap").evaluate((input, checked) => {
+    input.checked = checked;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, checked);
+}
 
 test("P1-05 Rectangle center/two-corner/three-point modes preserve geometry, mode, Undo and Save", async ({
   page,
@@ -251,7 +258,7 @@ test("P1-05 real clicks, endpoint/center snap, Shift selection and single-object
   await commit(page, 4);
   expect((await lastFeature(page)).parameters.start).toEqual(center);
   await page.getByRole("button", { name: "Line", exact: true }).click();
-  await page.locator("#modelSnap").uncheck();
+  await setSnap(page, false);
   await clickWorld(page, center, 3);
   await clickWorld(page, [30, 25, 0]);
   await commit(page, 5);
@@ -327,7 +334,7 @@ test("P1-05 real clicks, endpoint/center snap, Shift selection and single-object
 test("P1-05 arbitrary work planes drive real clicks and feed the E06 plane contract", async ({
   page,
 }) => {
-  await page.locator("#modelSnap").uncheck();
+  await setSnap(page, false);
   const planes = [
     { origin: [2, 3, 7], xAxis: [1, 0, 0], yAxis: [0, 1, 0] },
     { origin: [2, 3, 7], xAxis: [1, 0, 0], yAxis: [0, 0, 1] },
@@ -535,7 +542,7 @@ test("P1-05 postselection, hidden/locked objects and snap exclusion", async ({
   await commit(page, 2);
   const circle = await lastFeature(page);
   await clickWorld(page, [-30, 0, 0]);
-  await page.getByRole("button", { name: "ロック", exact: true }).click();
+  await page.locator(".model-outline-row.is-selected").getByRole("button", { name: "ロック", exact: true }).click();
   expect(
     await page.evaluate(
       (id) => window.PathloomModel.store.getEntity(id).locked,
@@ -555,7 +562,7 @@ test("P1-05 postselection, hidden/locked objects and snap exclusion", async ({
     Math.hypot(...(await lastFeature(page)).parameters.start),
   ).toBeGreaterThan(0.05);
   await clickWorld(page, [50, 0, 0]);
-  await page.getByRole("button", { name: "非表示", exact: true }).click();
+  await page.locator(".model-outline-row.is-selected").getByRole("button", { name: "非表示にする", exact: true }).click();
   expect(
     await page.evaluate(
       (id) => window.PathloomModel.store.getEntity(id).visibility,
@@ -585,7 +592,7 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
   page,
 }) => {
   await axis(page);
-  await page.locator("#modelSnap").uncheck();
+  await setSnap(page, false);
   await page.getByRole("button", { name: "Polyline", exact: true }).click();
   for (const point of [
     [-60, 30, 0],
@@ -662,7 +669,7 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
   await page.getByRole("textbox", { name: "半径 mm", exact: true }).fill("4");
   await commit(page, 3);
-  await page.locator("#modelSnap").check();
+  await setSnap(page, true);
   await page.getByRole("button", { name: "Line", exact: true }).click();
   await clickWorld(page, [-20, 0, 0], 3);
   await clickWorld(page, [-5, 10, 0]);

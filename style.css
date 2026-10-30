@@ -393,6 +393,7 @@ body[data-workspace-mode=output] .layer-control{top:22px;bottom:192px}body[data-
 #cadStatus[data-state=error]{color:#a3432e;white-space:normal;max-width:360px;line-height:1.6}
 /* CAD owns its dedicated panels; the four stages share one WebGL viewport. */
 #modelPanel{display:none;position:fixed;inset:68px 12px 14px;z-index:25;pointer-events:none;--model-left-width:280px;--model-right-width:320px;font-size:12px;color:#294151}
+#modelPanel [hidden]{display:none!important}
 body[data-workspace-mode=model] #modelPanel{display:grid;grid-template-columns:var(--model-left-width) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"commands commands" "outline ." "history history";gap:10px;align-items:stretch}
 body[data-workspace-mode=model] #modelPanel.has-inspector{grid-template-columns:var(--model-left-width) minmax(0,1fr) var(--model-right-width);grid-template-areas:"commands commands commands" "outline . inspector" "history history history"}
 body[data-workspace-mode=model] #cadPanel,body[data-workspace-mode=model] .geometry-visibility{display:none!important}
@@ -436,6 +437,11 @@ body[data-workspace-mode=model] #cadPanel,body[data-workspace-mode=model] .geome
 .model-library-dialog{width:min(420px,calc(100vw - 32px));max-height:min(78vh,720px);overflow:auto;padding:16px;border:1px solid rgba(205,216,220,.76);border-radius:8px;background:rgba(250,252,252,.94);backdrop-filter:blur(16px);box-shadow:0 18px 60px #253b3d3d;color:#294151}
 .model-library-dialog::backdrop{background:rgba(17,34,36,.24);backdrop-filter:blur(3px)}
 .model-library-dialog>details{display:block!important}
+.model-recovery-message{position:absolute;left:calc(var(--model-left-width) + 10px);bottom:96px;max-width:min(380px,40vw);padding:10px;pointer-events:auto;background:rgba(250,252,252,.94);border:1px solid #cbd7d9;border-radius:8px;box-shadow:0 8px 30px #2d435218}
+.model-recovery-message[hidden]{display:none!important}
+.model-recovery-message p{margin:0 0 8px;line-height:1.6}
+.model-plane-tooltip{position:fixed;z-index:100;pointer-events:none;padding:6px 9px;background:#f5f9f8ed;color:#294151;border:1px solid #b7ceca;border-radius:5px;font-size:12px;box-shadow:0 4px 12px #263f3b24}
+.model-plane-tooltip[hidden]{display:none!important}
 .model-help-dialog{width:min(480px,calc(100vw - 32px));max-height:80vh;overflow:auto;padding:18px;border:1px solid rgba(205,216,220,.76);border-radius:8px;background:rgba(250,252,252,.95);backdrop-filter:blur(16px);box-shadow:0 18px 60px #253b3d3d;color:#294151}
 .model-help-dialog::backdrop{background:rgba(17,34,36,.24);backdrop-filter:blur(3px)}
 .model-help-dialog>header{display:flex;align-items:center;margin-bottom:12px}

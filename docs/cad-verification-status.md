@@ -337,3 +337,7 @@ browserは実OCP/実UI、OS/Tauri transportとstorageはfixture代替。実機#3
 操作する。既存fixtureはUndo/Redoをショートカットで、生成接続をアウトライナー右クリックで
 行うよう更新し、削除したUIへの依存を残さない。製品CAD演算の数値fixture、実Mac GUI、
 Tauri/OS dialogはこのUI証拠で合格へ変更しない。
+第12弾の基準面hover highlight/tooltip/直接選択も実pointer操作で照合する。
+JSON登録UIの削除後も、shared commandファイルとproject内定義の読込・遅延読込・
+shared file不在時の復元を検証する。修復操作はoutliner context menu、回復保留は
+独立メッセージ、Libraryはdialogで確認する。詳細と旧失敗runは開発ログ・PR #44に保持する。

@@ -3,6 +3,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
   let group = null,
     previewGroup = null;
   let referencePlaneGroup = null;
+  let selectedReferencePlane = "XY";
   const shown = new Map();
   function ensure() {
     const { THREE, scene } = preview();
@@ -110,6 +111,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
     showReferencePlanes(visible, selected = "XY") {
       if (!ensure()) return;
       referencePlaneGroup.visible = visible;
+      selectedReferencePlane = selected;
       if (!visible) {
         preview().dirty();
         return;
@@ -130,11 +132,24 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
           if (name === "YZ") mesh.rotation.y = Math.PI / 2;
           mesh.userData.referencePlane = name;
           mesh.renderOrder = -1;
+          mesh.add(new THREE.LineSegments(
+            new THREE.EdgesGeometry(geometry),
+            new THREE.LineBasicMaterial({ color: material.color, transparent: true, opacity: 0.6 }),
+          ));
           referencePlaneGroup.add(mesh);
         }
       }
       for (const mesh of referencePlaneGroup.children) {
         mesh.material.opacity = mesh.userData.referencePlane === selected ? 0.24 : 0.13;
+      }
+      preview().dirty();
+    },
+    hoverReferencePlane(name) {
+      if (!referencePlaneGroup?.visible) return;
+      for (const mesh of referencePlaneGroup.children) {
+        mesh.material.opacity = mesh.userData.referencePlane === name
+          ? 0.48 : mesh.userData.referencePlane === selectedReferencePlane ? 0.24 : 0.13;
+        mesh.children[0].material.opacity = mesh.userData.referencePlane === name ? 1 : 0.6;
       }
       preview().dirty();
     },

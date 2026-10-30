@@ -1637,3 +1637,63 @@ OS dialog、実機Issue #37、指示011は未実施・未着手。
   Moveを直接待って45秒timeout、1成功/1失敗/60未実行だった。分類は折りたたみ可能な`details`の
   まま全分類を初期展開し、各縦button列の内部scrollで高さを制限する。既存の全command操作経路を
   維持し、診断用`maxFailures`を除いた全62件を最終headで再実行する。
+
+## 2026-10-30 JST — 指示018 残存UI回帰と第12弾の反映
+
+- 20:12のボード回答を読み、原点中心の有限な3基準面へ境界線、hover時の面ハイライト、
+  「平面を選択」tooltipを追加した。平面または既存の見えているfaceを直接選んで作図できる。
+  明示した右パネルのplane設定と端点/中心snapは維持する。
+- 右パネル外枠の非表示、`[hidden]`を上書きしていたgrid/flex規則、初回plane選択時の
+  snap再解決を修正した。Libraryはmodal、回復候補保留の理由/再確認は独立メッセージへ置き、
+  非編集中のinspectorを再表示しなくても操作できる。生成参照の明示修復は右パネルから
+  アウトライナーcontext menuへ移し、既存の`store.rebindOutput`を呼ぶ。
+- 旧単一lock/hideボタンを選択outliner行へ限定し、非表示STEPのtransport検証はhandlerへ接続。
+  削除したcustom JSON登録UIのfixture3件は、既存shared command読込・project内定義復元、
+  遅延shared読込、shared file不在でもproject定義が使える経路へ更新した。
+  CAD数値assertion・tolerance・45秒timeout・retries0は緩めず、skip/xfail化はしていない。
+- Playwright公式CDN取得はこの回も5回0 MiB/truncated zipで失敗した。検証専用scratchへ
+  npm版`@sparticuz/chromium@153.0.0`を取得し、初回chown EINVAL後に標準tarで復旧した。
+  実Chromium153.0.8010.0、Python/OCP7.8.1.1でローカル実行可能になった。
+  検証用追加依存はpackage.json/lockfileへ入れず、製品依存/CI browserは従来どおり。
+- ローカル対象7件の最初は3成功/1失敗/3未実行（plane欄省略）、次は6成功/1失敗
+  （旧lock selector）。その後の全62件は60成功/2失敗/skip・retry・flaky0、
+  errors[]、306.382秒。失敗は旧生成参照修復buttonを待つtimeoutと、新fixtureが
+  normalize前のcommandをbeginへ渡したTypeError。両方を修正した対象4件は4成功、
+  失敗/skip/retry/flaky0（20.0秒）。修正前の結果を成功へ置換しない。
+- Node24.22.1 npm testは208成功、Node20.20.2全JSは208成功（各失敗/skip0）。
+  native全87件は85成功・任意NVIDIA USD2skip（8.305秒）。local Rustはcargo不在で未実行。
+  実Mac GUI/Tauri IPC/OS dialogとIssue #37は未実施。
+- 旧branch全22 runの全job結果とbrowser生ログを再照合した。すべてattempt1、
+  同一runの再実行はない。各runのnpm test/native/Rustは成功、browserだけが下表の結果。
+  cancelledでは最終集計が出ていないため、ログ行から成功/失敗/未実行を数えている。
+  `41030217718`の正値は27/18/17で、途中のチャット28/17およびボード26/19は
+  誤計数としてボード追記で訂正した。旧失敗/中断を最終成功に置換しない。
+
+| head | push結果 · browser成功/失敗/未実行 | PR結果 · browser成功/失敗/未実行 |
+| --- | --- | --- |
+| `32ae668` | [40995618222](https://github.com/usagicraftlab/pathloom/actions/runs/40995618222) cancelled · 0/18/44 | [40995633123](https://github.com/usagicraftlab/pathloom/actions/runs/40995633123) cancelled · 0/19/43 |
+| `d13fac6` | [40997220991](https://github.com/usagicraftlab/pathloom/actions/runs/40997220991) failure · 0/1/61 | [40997226534](https://github.com/usagicraftlab/pathloom/actions/runs/40997226534) failure · 0/1/61 |
+| `d0a2199` | [40997551235](https://github.com/usagicraftlab/pathloom/actions/runs/40997551235) cancelled · 0/18/44 | [40997555193](https://github.com/usagicraftlab/pathloom/actions/runs/40997555193) cancelled · 0/18/44 |
+| `34c2c82` | [40999049857](https://github.com/usagicraftlab/pathloom/actions/runs/40999049857) failure · 0/1/61 | [40999055679](https://github.com/usagicraftlab/pathloom/actions/runs/40999055679) failure · 0/1/61 |
+| `bf0393d` | [41028056120](https://github.com/usagicraftlab/pathloom/actions/runs/41028056120) cancelled · 0/19/43 | [41028060647](https://github.com/usagicraftlab/pathloom/actions/runs/41028060647) cancelled · 0/18/44 |
+| `48b8f0c` | [41029865498](https://github.com/usagicraftlab/pathloom/actions/runs/41029865498) failure · 1/1/60 | [41029873262](https://github.com/usagicraftlab/pathloom/actions/runs/41029873262) failure · 1/1/60 |
+| `d7b4d78` | [41030211009](https://github.com/usagicraftlab/pathloom/actions/runs/41030211009) cancelled · 27/18/17 | [41030217718](https://github.com/usagicraftlab/pathloom/actions/runs/41030217718) cancelled · 27/18/17 |
+| `a455f1a` | [41032194286](https://github.com/usagicraftlab/pathloom/actions/runs/41032194286) failure · 1/1/60 | [41032200444](https://github.com/usagicraftlab/pathloom/actions/runs/41032200444) failure · 1/1/60 |
+| `171b8d8` | [41032494823](https://github.com/usagicraftlab/pathloom/actions/runs/41032494823) failure · 2/1/59 | [41032501828](https://github.com/usagicraftlab/pathloom/actions/runs/41032501828) failure · 2/1/59 |
+| `300ff8f` | [41032798220](https://github.com/usagicraftlab/pathloom/actions/runs/41032798220) failure · 2/1/59 | [41032808951](https://github.com/usagicraftlab/pathloom/actions/runs/41032808951) failure · 2/1/59 |
+| `780d157` | [41033208855](https://github.com/usagicraftlab/pathloom/actions/runs/41033208855) failure · 3/1/58 | [41033216994](https://github.com/usagicraftlab/pathloom/actions/runs/41033216994) failure · 3/1/58 |
+
+上記の0/1診断、1/1診断、2/1診断、3/1診断は`maxFailures:1`で原因を採取したrun。
+設定は最終sourceから除去した。最終sourceの全63件結果、最終push/PR CI、
+Ready/merge結果は別途確認し、PR本文とボードへ記録する。
+
+### 指示018 最終ローカル結果
+
+最終sourceのbrowser全63件は63成功、失敗/skip/retry/flaky0、errors[]、
+261.651秒（約4分22秒）。45秒の個別timeout、workers1を維持し、maxFailures制限なし。
+第12弾のhover/tooltipと直接平面選択、修復context menu、回復候補保留/再確認、
+Library挿入、STEP再読込、shared command/project復元、全生成/maintenance回帰を通過した。
+idle/edit/plane-hoverの画面を目視し、CSSのhidden上書きによる禁止UI再露出も修正・再確認した。
+Node24.22.1/Node20.20.2各208成功、native85成功/任意USD2skipは上記と同じsourceで実測済み。
+ローカルRustは未実行。実Mac/実Tauri/OS dialogはIssue #37の未実施範囲のまま。
+最終headのpush/PR CIは公開後に全job生ログまで別に照合し、結果とmergeはPR/ボードへ記録する。
