@@ -1400,6 +1400,7 @@ export function initModelWorkspace(api) {
       ? `${session.command.displayName} · ${session.state} · ${sessionReady(session) ? "入力済み" : "入力を選択してください"}`
       : "";
     inspector.hidden = !session && !featureEditActive;
+    inspector.closest(".model-right").hidden = inspector.hidden;
     panel.classList.toggle("has-inspector", !inspector.hidden);
     $("modelCommit").disabled = !session || session.state === "committing";
     $("modelPreview").disabled = !session || session.state === "committing";
