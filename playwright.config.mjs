@@ -3,6 +3,7 @@ export default defineConfig({
   testDir:'./tests/browser',
   fullyParallel:false,
   workers:1,
+  maxFailures:1,
   timeout:45000,
   reporter:'list',
   outputDir:'./work/browser-results',

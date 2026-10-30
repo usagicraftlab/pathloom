@@ -1626,3 +1626,9 @@ OS dialog、実機Issue #37、指示011は未実施・未着手。
   `height:100%`で下端actionsがpanel外へ押し出されていたため、外枠を`overflow:hidden`、内側を
   `box-sizing:border-box; max-height:100%; overflow:auto`へ修正した。旧cancelled/failure runを
   成功へ置換せず、診断用`maxFailures`を除いた最終headの全62件で再確認する。
+- 続く全件run `41028060647` attempt 1もJS208、native85成功/任意USD2skip、macOS Rust22は成功したが、
+  browserは18件が45秒timeoutとなり15分でcancelled、残り44件は未実行だった。前回traceのlayoutを
+  再精査すると、開いた「カーブをつくる」分類の縦command 25件がgridのauto行をviewport高以上へ
+  拡張し、中央行と右panel全体を画面外へ押し出していた。分類の縦並びは維持したまま、開いた分類の
+  button列を最大210pxの内部scrollへ制限する。まず`maxFailures:1`の診断runで最初のfixtureが
+  通過することを確認し、その後に設定を外して全62件を再実行する。

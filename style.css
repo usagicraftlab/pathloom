@@ -408,6 +408,7 @@ body[data-workspace-mode=model] #cadPanel,body[data-workspace-mode=model] .geome
 #modelPanel .model-command-group>summary::before{content:"+";display:inline-block;width:14px;color:#52717c}
 #modelPanel .model-command-group[open]>summary::before{content:"−"}
 .model-command-group-buttons{display:flex;flex-direction:column;gap:4px;min-width:0;width:100%;max-width:100%;overflow:visible}
+.model-command-group[open] .model-command-group-buttons{max-height:min(24vh,210px);overflow-y:auto;overscroll-behavior:contain}
 .model-command-button{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;padding:5px!important;border-radius:6px!important}
 .model-command-button svg,.model-history-entry svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .model-command-button:hover,.model-history-entry:hover{background:#e8f1ef!important;border-color:#78989a!important}
