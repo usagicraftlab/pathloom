@@ -2174,7 +2174,7 @@ export function initModelWorkspace(api) {
         applyReferenceWorkplane(planeHit.referencePlane);
         if (session && !session.command.inputs.some((slot) =>
           ["entity", "subshape"].includes(slot.kind)))
-          acceptPoint(planeHit.point);
+          acceptPoint(snapPoint || planeHit.point);
         return;
       }
       if (
