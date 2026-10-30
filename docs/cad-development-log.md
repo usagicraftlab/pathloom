@@ -1619,3 +1619,10 @@ OS dialog、実機Issue #37、指示011は未実施・未着手。
   timeoutし、61件未実行。traceのpage errorは`workspace-ui.js:349`のnullなpreview buttonに対する
   `hidden`設定だった。左panel再構成でbuttonが一時的にDOM外へ出た後に`panel.querySelector`していたため、
   保持済み`actionControls`から参照するよう修正した。診断用`maxFailures`は最終headから除去する。
+- 修正headの全件PR run `40997555193` attempt 1はJS208、native85成功/任意USD2skip、macOS Rust22が
+  成功した一方、browserは18件が同じ45秒timeoutとなり15分制限でcancelledした。2回目の診断run
+  `40999055679` attempt 1は最初の1件で停止し、traceから「確定」buttonがvisible/enabledでも
+  viewport外と判定され続けていたことを確認した。右panelの内外2重overflowとcontent-boxの
+  `height:100%`で下端actionsがpanel外へ押し出されていたため、外枠を`overflow:hidden`、内側を
+  `box-sizing:border-box; max-height:100%; overflow:auto`へ修正した。旧cancelled/failure runを
+  成功へ置換せず、診断用`maxFailures`を除いた最終headの全62件で再確認する。

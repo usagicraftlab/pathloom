@@ -413,7 +413,7 @@ body[data-workspace-mode=model] #cadPanel,body[data-workspace-mode=model] .geome
 .model-command-button:hover,.model-history-entry:hover{background:#e8f1ef!important;border-color:#78989a!important}
 .model-command-bar #modelSession{flex:0 0 auto;max-width:180px;margin:0;white-space:nowrap}
 .model-left{grid-area:outline;width:100%;padding:12px;background:transparent;border-color:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
-.model-right{grid-area:inspector;width:100%;min-width:0;display:flex;flex-direction:column}
+.model-right{grid-area:inspector;width:100%;min-width:0;display:flex;flex-direction:column;overflow:hidden}
 .model-right[hidden]{display:none!important}
 .model-left>header{margin-bottom:8px!important;padding-bottom:8px;border-bottom:1px solid rgba(115,137,147,.28)}
 #modelOutliner{display:flex;flex-direction:column;gap:3px;overflow:auto}
@@ -424,7 +424,7 @@ body[data-workspace-mode=model] #cadPanel,body[data-workspace-mode=model] .geome
 .model-outline-select{flex:1;min-width:0;overflow:hidden;text-align:left;text-overflow:ellipsis;white-space:nowrap;border-color:transparent!important;background:transparent!important}
 .model-outline-toggle{flex:0 0 30px;width:30px;height:30px;padding:3px!important}
 .model-timeline{grid-area:history;display:flex;align-items:stretch;min-height:84px;padding:0 10px}
-.model-inspector{height:100%;min-height:0;resize:none;overflow:auto;padding:12px}
+.model-inspector{box-sizing:border-box;height:100%;max-height:100%;min-height:0;resize:none;overflow:auto;padding:12px}
 .model-history{height:100%;min-height:0;overflow:auto;padding:8px 4px;border:0}
 .model-history>header{display:flex;align-items:center;gap:8px;flex:0 0 auto;margin:0 8px 0 0!important;padding:0 12px 0 4px;border-right:1px solid rgba(115,137,147,.28)}
 .model-history>header strong{white-space:nowrap}
