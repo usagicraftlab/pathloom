@@ -2061,69 +2061,70 @@ export function initModelWorkspace(api) {
     snapPoint = null;
   };
   const canvas = api.preview().canvas;
+  function snapCandidate(event) {
+    if (!$("modelSnap").checked) return null;
+    const { THREE, camera } = api.preview();
+    if (!camera) return null;
+    const r = canvas.getBoundingClientRect();
+    let nearest = 8,
+      found = null;
+    for (const e of deriveVisibleEntities(store.document)) {
+      if (e.locked) continue;
+      const candidates = (e.displayCache?.preview?.points || []).map((p) => ({
+        point: p.point,
+        label: "端点",
+      }));
+      const feature = store.getFeature(e.producer.featureId);
+      if (!["valid", "warning"].includes(feature?.status)) continue;
+      if (feature?.parameters.center)
+        candidates.push({ point: feature.parameters.center, label: "中心" });
+      if (feature?.operation.id === "curve.rectangle") {
+        const params = feature.parameters;
+        candidates.push({
+          point: params.anchor.map(
+            (n, i) =>
+              n +
+              (params.anchorMode === "center"
+                ? 0
+                : (params.widthMm * params.plane.xAxis[i] +
+                    params.heightMm * params.plane.yAxis[i]) /
+                  2),
+          ),
+          label: "中心",
+        });
+      }
+      for (const candidate of candidates) {
+        if (
+          session &&
+          pointStep % 2 === 1 &&
+          (session.command.baseOperation.id === "curve.circle" ||
+            (session.command.baseOperation.id === "curve.rectangle" &&
+              session.drawingMode !== "threePoints"))
+        ) {
+          try {
+            if (!inDrawingPlane(candidate.point, inputPlane(true))) continue;
+          } catch {
+            continue;
+          }
+        }
+        const p = new THREE.Vector3(...candidate.point).project(camera);
+        const distance = Math.hypot(
+          ((p.x + 1) * r.width) / 2 + r.left - event.clientX,
+          ((1 - p.y) * r.height) / 2 + r.top - event.clientY,
+        );
+        if (distance < nearest) {
+          nearest = distance;
+          found = candidate;
+        }
+      }
+    }
+    return found;
+  }
   canvas.addEventListener(
     "pointermove",
     (event) => {
       if (!active() || !session || event.buttons) return;
-      if (!$("modelSnap").checked) {
-        snapPoint = null;
-        return;
-      }
-      const { THREE, camera } = api.preview();
-      if (!camera) return;
-      const r = canvas.getBoundingClientRect();
-      let nearest = 8,
-        found = null;
-      for (const e of deriveVisibleEntities(store.document)) {
-        if (e.locked) continue;
-        const candidates = (e.displayCache?.preview?.points || []).map((p) => ({
-          point: p.point,
-          label: "端点",
-        }));
-        const feature = store.getFeature(e.producer.featureId);
-        if (!["valid", "warning"].includes(feature?.status)) continue;
-        if (feature?.parameters.center)
-          candidates.push({ point: feature.parameters.center, label: "中心" });
-        if (feature?.operation.id === "curve.rectangle") {
-          const params = feature.parameters;
-          candidates.push({
-            point: params.anchor.map(
-              (n, i) =>
-                n +
-                (params.anchorMode === "center"
-                  ? 0
-                  : (params.widthMm * params.plane.xAxis[i] +
-                      params.heightMm * params.plane.yAxis[i]) /
-                    2),
-            ),
-            label: "中心",
-          });
-        }
-        for (const candidate of candidates) {
-          if (
-            session &&
-            pointStep % 2 === 1 &&
-            (session.command.baseOperation.id === "curve.circle" ||
-              (session.command.baseOperation.id === "curve.rectangle" &&
-                session.drawingMode !== "threePoints"))
-          ) {
-            try {
-              if (!inDrawingPlane(candidate.point, inputPlane(true))) continue;
-            } catch {
-              continue;
-            }
-          }
-          const p = new THREE.Vector3(...candidate.point).project(camera);
-          const distance = Math.hypot(
-            ((p.x + 1) * r.width) / 2 + r.left - event.clientX,
-            ((1 - p.y) * r.height) / 2 + r.top - event.clientY,
-          );
-          if (distance < nearest) {
-            nearest = distance;
-            found = candidate;
-          }
-        }
-      }
+      const found = snapCandidate(event);
       snapPoint = found?.point || null;
       if (found)
         setStatus(
@@ -2174,7 +2175,7 @@ export function initModelWorkspace(api) {
         applyReferenceWorkplane(planeHit.referencePlane);
         if (session && !session.command.inputs.some((slot) =>
           ["entity", "subshape"].includes(slot.kind)))
-          acceptPoint(snapPoint || planeHit.point);
+          acceptPoint(snapCandidate(event)?.point || snapPoint || planeHit.point);
         return;
       }
       if (
