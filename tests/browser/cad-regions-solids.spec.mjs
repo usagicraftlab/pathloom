@@ -105,7 +105,7 @@ test('P2 S03/B07: holes, islands and independent regions retain all outputs thro
   const areas=await page.evaluate(id=>{const s=window.PathloomModel.store;return s.getFeature(id).outputSlots.map(o=>({entity:s.getEntity(o.entityId).id,area:s.getEntity(o.entityId).displayCache.areaMm2}))},region.id);expect(areas.map(x=>Math.round(x.area)).sort((a,b)=>a-b)).toEqual([4,64,100]);
   await page.getByRole('button',{name:'Extrude Surface',exact:true}).click();await input(page,'profile',[areas.find(x=>Math.abs(x.area-64)<1e-6).entity]);await param(page,'distanceMm',5);const extrusion=await commit(page);expect((await entity(page,extrusion)).displayCache.volumeMm3).toBeCloseTo(320,5);
   await page.locator('.model-history-entry').last().click();await param(page,'cap',false);await page.getByRole('button',{name:'設定変更を確定',exact:true}).click();await expect(page.locator('.model-history-entry').last()).toContainText('valid');expect((await entity(page,extrusion)).closure.enclosesVolume).toBe(false);
-  await page.locator('#modelUndo').click();await expect.poll(async()=>(await entity(page,extrusion)).closure.enclosesVolume).toBe(true);await page.locator('#modelRedo').click();await expect.poll(async()=>(await entity(page,extrusion)).closure.enclosesVolume).toBe(false);await roundTrip(page);
+  await page.keyboard.press('Control+z');await expect.poll(async()=>(await entity(page,extrusion)).closure.enclosesVolume).toBe(true);await page.keyboard.press('Control+Shift+z');await expect.poll(async()=>(await entity(page,extrusion)).closure.enclosesVolume).toBe(false);await roundTrip(page);
 });
 
 test('P2 B01/B02: oriented Box modes and exact three-axis ellipsoid use explicit UI settings',async({page})=>{
@@ -141,7 +141,7 @@ test('P2 D05/D06: tangent-chain permission and two-distance adjacent-face Chamfe
 test('P2 D07: Shell failure retains lastValid and thickness diagnostics through Undo/Redo/v2',async({page})=>{
   const b=await add(page,'B01',{widthMm:10,depthMm:10,heightMm:10});const face=b.summary.topology.find(t=>t.kind==='face');await page.getByRole('button',{name:'Shell',exact:true}).click();await input(page,'body',[b.entity]);await input(page,'removedFaces',[{entityId:b.entity,topologyId:face.topologyId}]);const shell=await commit(page);const hash=(await entity(page,shell)).geometry.assetHash;
   await page.locator('.model-history-entry').last().click();await param(page,'thicknessMm',100);await page.getByRole('button',{name:'設定変更を確定',exact:true}).click();await expect(page.locator('.model-history-entry').last()).toContainText('failed');await expect(page.locator('#modelDiagnostics')).toContainText('CAD_SHELL_FAILED');expect((await entity(page,shell)).geometry.assetHash).toBe(hash);
-  await page.locator('#modelUndo').click();await expect(page.locator('.model-history-entry').last()).toContainText('valid');await page.locator('#modelRedo').click();await expect(page.locator('.model-history-entry').last()).toContainText('failed');const doc=await roundTrip(page);expect(doc.features.at(-1).diagnostics[0].details.thicknessMm).toBe(100);expect(doc.features.at(-1).lastValid).toBeTruthy();
+  await page.keyboard.press('Control+z');await expect(page.locator('.model-history-entry').last()).toContainText('valid');await page.keyboard.press('Control+Shift+z');await expect(page.locator('.model-history-entry').last()).toContainText('failed');const doc=await roundTrip(page);expect(doc.features.at(-1).diagnostics[0].details.thicknessMm).toBe(100);expect(doc.features.at(-1).lastValid).toBeTruthy();
 });
 
 

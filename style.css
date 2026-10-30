@@ -393,26 +393,28 @@ body[data-workspace-mode=output] .layer-control{top:22px;bottom:192px}body[data-
 #cadStatus[data-state=error]{color:#a3432e;white-space:normal;max-width:360px;line-height:1.6}
 /* CAD owns its dedicated panels; the four stages share one WebGL viewport. */
 #modelPanel{display:none;position:fixed;inset:68px 12px 14px;z-index:25;pointer-events:none;--model-left-width:280px;--model-right-width:320px;font-size:12px;color:#294151}
-body[data-workspace-mode=model] #modelPanel{display:grid;grid-template-columns:var(--model-left-width) minmax(0,1fr) var(--model-right-width);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"commands commands commands" "outline . inspector" "history history history";gap:10px;align-items:stretch}
+body[data-workspace-mode=model] #modelPanel{display:grid;grid-template-columns:var(--model-left-width) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"commands commands" "outline ." "history history";gap:10px;align-items:stretch}
+body[data-workspace-mode=model] #modelPanel.has-inspector{grid-template-columns:var(--model-left-width) minmax(0,1fr) var(--model-right-width);grid-template-areas:"commands commands commands" "outline . inspector" "history history history"}
 body[data-workspace-mode=model] #cadPanel,body[data-workspace-mode=model] .geometry-visibility{display:none!important}
 .model-left,.model-right,.model-command-bar,.model-timeline{pointer-events:auto;background:rgba(250,252,252,.82);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid rgba(205,216,220,.76);border-radius:8px;box-shadow:0 8px 30px #2d435218;overflow:auto;min-width:0}
-.model-command-bar{grid-area:commands;display:flex;align-items:center;gap:8px;padding:7px 10px;overflow-x:auto;overflow-y:hidden}
-.model-command-bar>label{display:flex!important;align-items:center;gap:8px;flex:0 0 230px;margin:0!important;white-space:nowrap}
+.model-command-bar{grid-area:commands;display:flex;align-items:flex-start;gap:8px;padding:7px 10px;overflow:visible}
+.model-command-bar>label{display:none!important}
 .model-command-bar>label input{min-width:0}
-.model-command-bar #modelCommands{display:flex;align-items:center;flex-wrap:nowrap;gap:12px;flex:1;min-width:0;height:68px;max-height:68px;overflow-x:auto;overflow-y:hidden;padding:0}
+.model-command-bar #modelCommands{display:flex;align-items:flex-start;flex-wrap:nowrap;gap:12px;flex:1;min-width:0;height:auto;max-height:none;overflow-x:auto;overflow-y:visible;padding:0}
 .model-command-group{display:flex;align-items:center;gap:6px;flex:0 0 auto;min-width:0;max-width:min(48vw,560px);overflow:hidden;padding-right:10px;border-right:1px solid rgba(115,137,147,.28)}
-.model-command-group[open]{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;flex:0 0 min(48vw,560px);width:min(48vw,560px)}
+.model-command-group[open]{display:flex;flex-direction:column;align-items:stretch;flex:0 0 auto;width:auto;max-width:180px;overflow:visible}
 .model-command-group>summary{cursor:pointer;white-space:nowrap;font-size:11px;font-weight:650;list-style:none}
 .model-command-group>summary::-webkit-details-marker{display:none}
 #modelPanel .model-command-group>summary::before{content:"+";display:inline-block;width:14px;color:#52717c}
 #modelPanel .model-command-group[open]>summary::before{content:"−"}
-.model-command-group-buttons{display:flex;gap:4px;min-width:0;width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden}
+.model-command-group-buttons{display:flex;flex-direction:column;gap:4px;min-width:0;width:100%;max-width:100%;overflow:visible}
 .model-command-button{display:grid;place-items:center;flex:0 0 34px;width:34px;height:34px;padding:5px!important;border-radius:6px!important}
 .model-command-button svg,.model-history-entry svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .model-command-button:hover,.model-history-entry:hover{background:#e8f1ef!important;border-color:#78989a!important}
 .model-command-bar #modelSession{flex:0 0 auto;max-width:180px;margin:0;white-space:nowrap}
-.model-left{grid-area:outline;width:100%;padding:12px}
+.model-left{grid-area:outline;width:100%;padding:12px;background:transparent;border-color:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
 .model-right{grid-area:inspector;width:100%;min-width:0;display:flex;flex-direction:column}
+.model-right[hidden]{display:none!important}
 .model-left>header{margin-bottom:8px!important;padding-bottom:8px;border-bottom:1px solid rgba(115,137,147,.28)}
 #modelOutliner{display:flex;flex-direction:column;gap:3px;overflow:auto}
 .model-outline-body{min-width:0}
@@ -444,7 +446,8 @@ body[data-workspace-mode=model] #cadPanel,body[data-workspace-mode=model] .geome
 .model-object-menu button:hover{background:#e8f1ef!important}
 .model-command-list .model-command-button{flex:0 0 34px}
 .model-history-entry{display:flex;flex:0 0 78px;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:58px;margin:0;padding:4px!important}
-.model-icon-label{width:100%;overflow:hidden;color:#52666e;font-size:10px;font-weight:400;text-overflow:ellipsis;white-space:nowrap;clip-path:inset(0)}
-@media(max-width:760px){body[data-workspace-mode=model] #modelPanel{inset:58px 6px 6px;grid-template-columns:minmax(132px,22vw) minmax(0,1fr) minmax(190px,29vw);gap:6px}.model-command-bar{gap:5px;padding:5px}.model-command-bar>label{flex-basis:180px}}
+.model-icon-label{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+#modelSession:empty,#modelStatus:empty,#modelDiagnostics:not([open]){display:none}
+@media(max-width:760px){body[data-workspace-mode=model] #modelPanel{inset:58px 6px 6px;grid-template-columns:minmax(132px,22vw) minmax(0,1fr);gap:6px}body[data-workspace-mode=model] #modelPanel.has-inspector{grid-template-columns:minmax(132px,22vw) minmax(0,1fr) minmax(190px,29vw)}.model-command-bar{gap:5px;padding:5px}}
 body[data-workspace-mode=model] .print-estimate-overlay{display:none}
 body[data-workspace-mode=model] .view-axis-buttons.view-cube{right:calc(var(--cad-right-space,320px) + 30px);bottom:18px}

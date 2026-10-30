@@ -328,3 +328,12 @@ D02/D04は既存の複数対象・全結果・正本由来のnative/JS/browser�
 Undo/Redo、失敗lastValid、command版/asset hash/accuracyのv2復元を確認する。
 browserは実OCP/実UI、OS/Tauri transportとstorageはfixture代替。実機#37は未実施。
 全実行/失敗/再実行/最終CIは開発ログ・PR40・ボードで別々に記録する。
+
+## 2026-10-30 — 指示018 UIレビュー証拠
+
+既存A/T/R 62行の状態は保持する。追加browser fixtureは、上部のUndo/Redo・検索・
+プレビューが露出しないこと、コマンド展開の縦並び、透明アウトライナー、編集中だけの
+右設定、履歴の抑制/削除context menu、アウトライナーのLibrary/生成/削除context menuを
+操作する。既存fixtureはUndo/Redoをショートカットで、生成接続をアウトライナー右クリックで
+行うよう更新し、削除したUIへの依存を残さない。製品CAD演算の数値fixture、実Mac GUI、
+Tauri/OS dialogはこのUI証拠で合格へ変更しない。

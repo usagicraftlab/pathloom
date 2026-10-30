@@ -104,8 +104,8 @@ test('P2 E03: Trim retains both intervals and cutters, Undo/Redo and failed last
   await axis(page);await page.getByRole('button',{name:'区間・接続側を画面で指定',exact:true}).click();await clickWorld(page,[5,0,0]);
   const f=await commit(page);expect(f.outputSlots).toHaveLength(2);expect(f.parameters.removePoint[0]).toBeCloseTo(5,0);expect(f.parameters.removePoint[1]).toBeCloseTo(0,4);
   const ids=await visible(page);expect(ids).toHaveLength(4);for(const c of cutters)expect(ids).toContain(c.entity);
-  await page.locator('#modelUndo').click();await expect(page.locator('.model-history-entry')).toHaveCount(3);expect(await visible(page)).toContain(object.entity);
-  await page.locator('#modelRedo').click();await expect(page.locator('.model-history-entry')).toHaveCount(4);
+  await page.keyboard.press('Control+z');await expect(page.locator('.model-history-entry')).toHaveCount(3);expect(await visible(page)).toContain(object.entity);
+  await page.keyboard.press('Control+Shift+z');await expect(page.locator('.model-history-entry')).toHaveCount(4);
   await page.locator('.model-history-entry').last().click();await param(page,'removePoint',[3,0,0]);
   await page.getByRole('button',{name:'設定変更を確定',exact:true}).click();
   await expect(page.locator('.model-history-entry').last()).toContainText('failed');
@@ -127,8 +127,8 @@ test('P2 E07: Fillet/Chamfer retain all outputs through keepInputs, Undo and v2'
   const f=await commit(page);expect(f.outputSlots).toHaveLength(3);expect(await visible(page)).toHaveLength(3);
   await page.locator('.model-history-entry').last().click();await param(page,'keepInputs',true);await page.getByRole('button',{name:'設定変更を確定',exact:true}).click();
   await expect.poll(()=>visible(page)).toHaveLength(5);
-  await page.locator('#modelUndo').click();await expect.poll(()=>visible(page)).toHaveLength(3);
-  await page.locator('#modelRedo').click();await expect.poll(()=>visible(page)).toHaveLength(5);
+  await page.keyboard.press('Control+z');await expect.poll(()=>visible(page)).toHaveLength(3);
+  await page.keyboard.press('Control+Shift+z');await expect.poll(()=>visible(page)).toHaveLength(5);
   await page.getByRole('button',{name:'Chamfer Curves',exact:true}).click();await input(page,'first',[a.entity]);await input(page,'second',[b.entity]);await param(page,'keepInputs',true);await param(page,'secondDistanceMm',3);
   const chamfer=await commit(page);expect(chamfer.outputSlots).toHaveLength(3);
   const after=await roundTrip(page);expect(after.features.find(x=>x.id===f.id).lastValid.curveKeepInputs).toBe(true);
@@ -156,7 +156,7 @@ test('P2 E01/E02/E08/E09: groups, Explode, G2 Blend and explicit approximation a
   const x=await add(page,'C02',{start:[0,20,0],end:[10,20,0]}),y=await add(page,'C02',{start:[20,30,0],end:[30,30,0]});
   await page.getByRole('button',{name:'Blend Curves',exact:true}).click();await input(page,'first',[x.entity]);await input(page,'second',[y.entity]);await param(page,'continuity','G2');await commit(page);
   const spline=await add(page,'C09');await page.getByRole('button',{name:'Rebuild Curve',exact:true}).click();await input(page,'object',[spline.entity]);
-  await page.locator('#modelPreview').click();await expect(page.locator('#modelStatus')).toContainText('計測最大偏差');
+  await page.locator('#modelPreview').evaluate(button=>button.click());await expect(page.locator('#modelStatus')).toContainText('計測最大偏差');
   const count=await page.evaluate(()=>window.PathloomModel.store.document.features.length);
   await page.locator('#modelCommit').click();await expect(page.locator('#modelDiagnostics')).toContainText('CAD_APPROXIMATION_REQUIRES_CONFIRMATION');await expect(page.locator('.model-history-entry')).toHaveCount(count);
   await param(page,'acceptApproximation',true);const rebuilt=await commit(page,'warning');expect(rebuilt.diagnostics[0].details.controlPointCount).toBe(6);

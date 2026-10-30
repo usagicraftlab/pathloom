@@ -198,7 +198,8 @@ export function initModelWorkspace(api) {
     autosaveRevision = -1,
     draftVersion = 0,
     savedDraftVersion = -1;
-  let lastCommand = null, curvePointPicking = false, planePicking = false, planeBeforeFace = "XY", pickFilterBeforePlane = "object";
+  let lastCommand = null, curvePointPicking = false, planePicking = false,
+    referencePlanePicking = false, planeBeforeFace = "XY", pickFilterBeforePlane = "object";
   const openCommandGroups = new Set(["curve-create"]);
   let session = null,
     selectedFeature = null,
@@ -261,9 +262,12 @@ export function initModelWorkspace(api) {
     setStatus("作業平面にする平面上の face をクリックしてください。");
   });
   planeControls.append(planeFromFaceButton);
+  planeLabel.hidden = true;
+  workplaneControls.querySelector("#modelCoordinate").closest("label").hidden = true;
   const actionControls = panel.querySelector(".model-actions");
   const modelStatus = panel.querySelector("#modelStatus");
   const diagnosticsPanel = panel.querySelector("#modelDiagnostics");
+  diagnosticsPanel.querySelector("summary")?.remove();
   const libraryDetails = [...leftPanel.querySelectorAll("details")].find(
     (details) => details.querySelector(":scope > summary")?.textContent === "形状Library",
   );
@@ -276,6 +280,9 @@ export function initModelWorkspace(api) {
   const recentOperationsDetails = [...leftPanel.querySelectorAll("details")].find(
     (details) => details.querySelector(":scope > summary")?.textContent === "最近の操作",
   );
+  commandSearch.hidden = true;
+  undoButton.hidden = true;
+  redoButton.hidden = true;
   libraryDetails.open = true;
   const libraryClose = document.createElement("button");
   libraryClose.type = "button";
@@ -309,10 +316,10 @@ export function initModelWorkspace(api) {
       const steps = document.createElement("ol");
       for (const text of [
         "上部の分類を開き、コマンドアイコンを選びます。",
-        "右側の操作パネルで平面・寸法・入力形状を指定します。",
-        "プレビューで確認し、確定して下部の履歴へ追加します。",
-        "履歴をダブルクリックすると右側で設定を編集できます。",
-        "左の形状を右クリックすると、プロパティやLibrary登録、生成接続を選べます。",
+        "画面上の参照平面や形状をクリックし、右側の操作パネルで寸法を指定します。",
+        "右下の確定またはキャンセルで操作を終えます。",
+        "下部の履歴をクリックすると右側で設定を編集できます。",
+        "左の形状を右クリックすると、Library登録・生成接続・削除を選べます。",
       ]) {
         const item = document.createElement("li");
         item.textContent = text;
@@ -335,16 +342,17 @@ export function initModelWorkspace(api) {
   outliner.setAttribute("role", "tree");
   leftPanel.append(outliner);
   const inspector = panel.querySelector(".model-inspector");
-  inspector.prepend(commandSearch, workplaneControls, actionControls);
+  inspector.prepend(commandSearch, workplaneControls);
   inspector.append(commandSession, modelStatus, diagnosticsPanel);
   libraryDetails.hidden = true;
   inspector.append(libraryDetails);
-  actionControls.append(panel.querySelector("#modelRetry"));
-  commandBar.append(
-    undoButton,
-    redoButton,
-    commandList,
-  );
+  panel.querySelector("#modelPreview").hidden = true;
+  panel.querySelector("#modelRetry").hidden = true;
+  // Keep keyboard-command targets connected for compatibility, but do not
+  // expose Undo/Redo as command-bar controls in the reviewed layout.
+  undoButton.hidden = true;
+  redoButton.hidden = true;
+  commandBar.append(undoButton, redoButton, commandList);
   panel.prepend(commandBar);
   const timeline = document.createElement("section");
   timeline.className = "model-timeline";
@@ -363,7 +371,8 @@ export function initModelWorkspace(api) {
   exportStepButton.textContent = "STEP⇩";
   exportStepButton.setAttribute("aria-label", "Export selected CAD as STEP");
   exportStepButton.title = "Export STEP";
-  actionControls.append(exportStepButton);
+  exportStepButton.hidden = true;
+  inspector.append(actionControls, exportStepButton);
   document.body.append(panel);
   view = createViewAdapter(api.preview);
   function setStatus(text) {
@@ -400,6 +409,51 @@ export function initModelWorkspace(api) {
   objectMenu.setAttribute("role", "menu");
   objectMenu.hidden = true;
   document.body.append(objectMenu);
+  const historyMenu = document.createElement("div");
+  historyMenu.className = "model-object-menu";
+  historyMenu.setAttribute("role", "menu");
+  historyMenu.hidden = true;
+  document.body.append(historyMenu);
+  function closeHistoryMenu() {
+    historyMenu.hidden = true;
+  }
+  function showHistoryMenu(feature, event) {
+    closeObjectMenu();
+    historyMenu.replaceChildren();
+    historyMenu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - 220))}px`;
+    historyMenu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - 160))}px`;
+    const action = (label, run) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.textContent = label;
+      button.onclick = () => {
+        closeHistoryMenu();
+        Promise.resolve(run()).catch(report);
+      };
+      historyMenu.append(button);
+    };
+    action(feature.status === "suppressed" ? "操作の抑制を解除" : "操作を抑制", () =>
+      store.suppress(feature.id, feature.status !== "suppressed"));
+    action("履歴を削除", () => {
+      const outputIds = new Set(feature.outputSlots.map((slot) => slot.entityId));
+      const dependents = store.document.features.filter(
+        (candidate) => candidate !== feature && references(candidate.inputs).some(
+          (reference) => outputIds.has(reference.entityId),
+        ),
+      );
+      if (dependents.length && !window.confirm(
+        `この履歴を削除すると、${dependents.length}件の後続操作が未解決になります。削除しますか？`,
+      )) return;
+      store.remove(feature.id);
+      selectedFeature = null;
+      propertiesOpen = false;
+      featureEditActive = false;
+      render();
+    });
+    historyMenu.hidden = false;
+    historyMenu.querySelector("button")?.focus();
+  }
   function showObjectMenu(entity, event) {
     event.preventDefault();
     selectOutlinerEntity(entity);
@@ -417,7 +471,6 @@ export function initModelWorkspace(api) {
       });
       objectMenu.append(button);
     };
-    addAction("プロパティ", () => selectOutlinerEntity(entity, { showProperties: true }));
     addAction("形状 Library に登録 / Library を開く", () => {
       selectOutlinerEntity(entity);
       $("modelShapeName").value = entity.name || "CAD shape";
@@ -505,9 +558,13 @@ export function initModelWorkspace(api) {
   }
   document.addEventListener("pointerdown", (event) => {
     if (!objectMenu.contains(event.target)) closeObjectMenu();
+    if (!historyMenu.contains(event.target)) closeHistoryMenu();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeObjectMenu();
+    if (event.key === "Escape") {
+      closeObjectMenu();
+      closeHistoryMenu();
+    }
   });
   function active() {
     return document.body.dataset.workspaceMode === "model";
@@ -618,6 +675,7 @@ export function initModelWorkspace(api) {
   }
   function cancel() {
     curvePointPicking=false;
+    referencePlanePicking=false;
     propertiesOpen = false;
     featureEditActive = false;
     invalidFields.clear();
@@ -667,7 +725,14 @@ export function initModelWorkspace(api) {
     ) || store.document.commandDefinitions.push(clone(command));
     if (command.defaults.plane)
       session.parameters.plane = clone(store.document.uiState.workPlane);
-    setStatus("設定・入力を指定し、プレビューまたは確定してください。");
+    referencePlanePicking = new Set([
+      "point.create", "curve.line", "curve.polyline", "curve.rectangle",
+      "curve.polygon", "curve.circle", "curve.arc", "curve.ellipse",
+      "curve.nurbs", "curve.interpolate",
+    ]).has(command.baseOperation.id);
+    setStatus(referencePlanePicking
+      ? "基準面または既存の平面をクリックしてください。"
+      : "設定・入力を指定して確定してください。");
     if (command.baseOperation.id === "shape.transform" && selection.length > 1)
       setStatus(
         `${command.displayName}は形状1件が対象です。入力欄または重なり候補から対象を1件選んでください。`,
@@ -755,34 +820,6 @@ export function initModelWorkspace(api) {
         const text = document.createElement("p");
         text.textContent = `${e.kind} · ${e.closure.enclosesVolume ? "閉体積" : "開いた形状を含む"}\n${e.displayCache?.volumeMm3?.toFixed(3) || 0} mm³`;
         host.append(text);
-        const use = document.createElement("button");
-        use.textContent = "生成で使用（現在のbody結果）";
-        use.onclick = () => useEntityForGeneration(e);
-        if (e.kind === "curve" || e.displayCache?.preview?.meshes?.length) {
-          host.append(use);
-          for (const binding of store.document.outputBindings.filter(
-            (binding) => ["split", "missing"].includes(binding.status),
-          )) {
-            const repair = document.createElement("button");
-            repair.textContent = `「${binding.name}」の生成参照をこの形状へ変更`;
-            repair.onclick = () => {
-              try {
-                store.rebindOutput(binding.id, e.id);
-                setStatus(
-                  "生成参照を修復しました。既存のノード配線を維持します。",
-                );
-              } catch (error) {
-                report(error);
-              }
-            };
-            host.append(repair);
-          }
-        } else {
-          const note = document.createElement("p");
-          note.textContent =
-            "この形状はCAD内で保存・編集できます。生成入力へのadapterは未対応です。";
-          host.append(note);
-        }
       }
       return;
     }
@@ -895,14 +932,6 @@ export function initModelWorkspace(api) {
       }
     }
     if (f) {
-      const shapeButton = document.createElement("button");
-      shapeButton.textContent = "結果のプロパティ・生成接続";
-      shapeButton.onclick = () => {
-        selectedFeature = null;
-        selection = f.outputSlots.map((s) => ({ entityId: s.entityId }));
-        properties();
-      };
-      host.append(shapeButton);
       const caption = document.createElement("p");
       caption.textContent = `${f.name} · ${f.status}`;
       host.append(caption);
@@ -1275,7 +1304,8 @@ export function initModelWorkspace(api) {
     }
     if (f) {
       const apply = document.createElement("button");
-      apply.textContent = "設定変更を確定";
+      apply.textContent = "確定";
+      apply.setAttribute("aria-label", "設定変更を確定");
       apply.onclick = () => {
         if (settingsForm.reportValidity())
           store
@@ -1283,20 +1313,15 @@ export function initModelWorkspace(api) {
             .catch(report);
       };
       host.append(apply);
-      const hide = document.createElement("button");
-      hide.textContent =
-        f.status === "suppressed" ? "抑制を解除" : "操作を抑制";
-      hide.onclick = () =>
-        store.suppress(f.id, f.status !== "suppressed").catch(report);
-      host.append(hide);
-      const remove = document.createElement("button");
-      remove.textContent = "削除（後段を未解決で残す）";
-      remove.onclick = () => {
-        store.remove(f.id);
+      const close = document.createElement("button");
+      close.textContent = "キャンセル";
+      close.onclick = () => {
         selectedFeature = null;
+        propertiesOpen = false;
+        featureEditActive = false;
         render();
       };
-      host.append(remove);
+      host.append(close);
     }
   }
   function updateBindings(connectBindingId = null) {
@@ -1336,10 +1361,11 @@ export function initModelWorkspace(api) {
       "curve.polygon", "curve.circle", "curve.arc", "curve.ellipse",
       "curve.nurbs", "curve.interpolate",
     ]);
+    view.showReferencePlanes?.(referencePlanePicking, planeSelect.value);
     planeControls.hidden = !planePicking && !(
       session && (session.parameters.plane || planeOperation.has(operationId))
     );
-    const q = $("modelCommandSearch").value;
+    const q = "";
     const list = $("modelCommands");
     list.replaceChildren();
     const commands = findCommands(q);
@@ -1372,7 +1398,9 @@ export function initModelWorkspace(api) {
     }
     $("modelSession").textContent = session
       ? `${session.command.displayName} · ${session.state} · ${sessionReady(session) ? "入力済み" : "入力を選択してください"}`
-      : "待機中";
+      : "";
+    inspector.hidden = !session && !featureEditActive;
+    panel.classList.toggle("has-inspector", !inspector.hidden);
     $("modelCommit").disabled = !session || session.state === "committing";
     $("modelPreview").disabled = !session || session.state === "committing";
     if (!keepProperties && !document.activeElement?.closest("#modelProperties"))
@@ -1407,7 +1435,7 @@ export function initModelWorkspace(api) {
         selection = f.outputSlots.map((s) => ({ entityId: s.entityId }));
         render({ keepHistory: true });
       };
-      b.onclick = () => activate(false);
+      b.onclick = () => activate(true);
       b.ondblclick = () => {
         activate(true);
         requestAnimationFrame(() => {
@@ -1417,6 +1445,10 @@ export function initModelWorkspace(api) {
           input?.focus();
           input?.scrollIntoView({ block: "nearest" });
         });
+      };
+      b.oncontextmenu = (event) => {
+        event.preventDefault();
+        showHistoryMenu(f, event);
       };
       history.append(b);
       }
@@ -1548,6 +1580,7 @@ export function initModelWorkspace(api) {
       const ok = await store.add(target);
       if (ok) {
         session = null;
+        referencePlanePicking = false;
         propertiesOpen = false;
         featureEditActive = false;
         invalidFields.clear();
@@ -1764,16 +1797,12 @@ export function initModelWorkspace(api) {
         f.status = "dirty";
     store.recompute().catch(report);
   };
-  $("modelPlane").onchange = () => {
-    if ($("modelPlane").value === "face") {
-      if (!planePicking) pickFilterBeforePlane = $("modelPickFilter").value;
-      planePicking = true;
-      setStatus("作業平面にする平面上の face をクリックしてください。");
-      return;
-    }
+  function applyReferenceWorkplane(name) {
+    if (!new Set(["XY", "XZ", "YZ"]).has(name)) return;
+    planeSelect.value = name;
+    referencePlanePicking = false;
     snapPoint = null;
     invalidFields.delete("plane");
-    const name = $("modelPlane").value;
     planeBeforeFace = name;
     store.document.uiState.workPlane = {
       origin: [0, 0, 0],
@@ -1786,9 +1815,22 @@ export function initModelWorkspace(api) {
         key: "plane",
         value: store.document.uiState.workPlane,
       });
+      saveDraft();
       properties();
       queuePreview();
     }
+    setStatus(`${name}基準面を作業平面に設定しました。`);
+    render({ keepProperties: true });
+  }
+  $("modelPlane").onchange = () => {
+    if ($("modelPlane").value === "face") {
+      if (!planePicking) pickFilterBeforePlane = $("modelPickFilter").value;
+      planePicking = true;
+      setStatus("作業平面にする平面上の face をクリックしてください。");
+      return;
+    }
+    const name = $("modelPlane").value;
+    applyReferenceWorkplane(name);
   };
   function applyFaceWorkplane(hit) {
     const entity = store.getEntity(hit.entityId);
@@ -2120,6 +2162,18 @@ export function initModelWorkspace(api) {
         } catch (error) {
           report(error);
         }
+        return;
+      }
+      if (referencePlanePicking) {
+        const planeHit = view.hit(event, "workplane")[0];
+        if (!planeHit) {
+          setStatus("基準面または既存の平面をクリックしてください。");
+          return;
+        }
+        applyReferenceWorkplane(planeHit.referencePlane);
+        if (session && !session.command.inputs.some((slot) =>
+          ["entity", "subshape"].includes(slot.kind)))
+          acceptPoint(planeHit.point);
         return;
       }
       if (

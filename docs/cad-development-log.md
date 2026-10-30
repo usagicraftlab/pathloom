@@ -1594,3 +1594,22 @@ OS dialog、実機Issue #37、指示011は未実施・未着手。
 - 実装head `91696ddd` のPR checks run 40787882931 attempt 1はnative 85成功/任意USD2skipとmacOS Rust 22が成功、JS208も成功したがbrowserは61件中60成功1失敗。新規変換testがMirror確定直後、履歴表示は4件になった一方で非同期recompute完了前にentityを読んだtest raceで、製品診断/演算失敗ではなかった。各変換後に最後の履歴が`valid`になることを待ってから次へ進むようtestを修正し、旧runを成功へ置換せず最終headで全件再実行する。
 - 修正後の実装head `27bacdc450ebf621175a809b3b8949d6004fdcf2` は、push run [40788651265](https://github.com/usagicraftlab/pathloom/actions/runs/40788651265) とPR run [40788660019](https://github.com/usagicraftlab/pathloom/actions/runs/40788660019) が各attempt 1で成功した。両runの全6 job生ログを照合し、Node20.20.2 JS 208、native 87件中85成功・任意NVIDIA USD 2 skip、macOS Rust 22、browser 61成功（失敗/skip/retry/flaky 0）を確認した。CI browser成功をローカルbrowser成功とは記載せず、ローカルは上記の実行不能のまま区別する。
 - この記録追記だけの最終文書headは、実行コードを変更しない。ただし最終headとしてpush/PR双方の全CIを改めて確認し、結果はPR本文とボードのCodexログへ記録する。
+
+## 2026-10-30 JST — 指示018 UIレビュー反映（実装・ローカル検証途中）
+
+- main `5f609964` から `feat/18-ui-review` を作成。既存の4領域、アイコンcommand、
+  outliner表示/lock/context actions、履歴編集、既存面作業平面、mouse作図、occlusion pickingを
+  実装済みとして確認し、未達項目だけをボードへ記録した。
+- 上部からUndo/Redo/searchを除き、分類展開を縦並びにした。透明アウトライナー、編集中だけの
+  右設定、右下の確定/キャンセル、下部履歴アイコンと抑制/削除context menuへ整理した。
+  Library/生成/削除はアウトライナーcontext menuに残し、プロパティ入口・STEP書出し・
+  custom command JSON・左側座標/snap/plane・右側preview/retry/generation/delete/suppressを露出しない。
+- `cad/view-adapter.js`へXY/XZ/YZの半透明参照平面を原点中心に追加し、平面clickを現在の
+  作図sessionのplane選択と最初のpoint入力へ接続した。hidden shapeの非選択とface/edge overlayは
+  既存実装を保持する。CAD演算、正本、保存schema、generation bindingは変更していない。
+- 既存browser fixtureのUndo/Redoをkeyboard shortcutへ、生成接続をoutliner context menuへ移行。
+  UIレビュー専用fixtureを追加した。Node24.22.1全JS208成功、Node20.20.2全JS208成功、
+  Python3/OCP7.8.1.1 native全87件中85成功・任意NVIDIA USD2skip。
+- ローカルbrowserは`npx playwright install chromium`を5回試行したが、各CDN応答が0 MiBの
+  truncated zipで展開不能。製品testは未実行であり成功に置換しない。最終headのCI browserと
+  ローカル実行不能を別々に記録する。ローカルRustと実Mac GUI/Tauri/OS dialogも未実施。

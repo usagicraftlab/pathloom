@@ -83,8 +83,8 @@ test("#34: the same rounded Rectangle bottom edge reaches exact sections and G-c
     await page.getByLabel("CAD input edges", { exact: true }).selectOption(selected.value);
     await commit(page, 3);
     await page.locator(".model-history-entry").last().click();
-    await page.getByRole("button", { name: "結果のプロパティ・生成接続", exact: true }).click();
-    await page.getByRole("button", { name: "生成で使用（現在のbody結果）", exact: true }).click();
+    await page.locator('#modelOutliner .model-outline-select[aria-selected="true"]').click({ button: "right" });
+    await page.getByRole("menuitem", { name: "生成で使用", exact: true }).click();
     await expect(page.locator("#cadStatus")).toHaveAttribute("data-state", "ready");
     await save(page);
     // A normal v2 project seeds only graph wiring, without replacing any

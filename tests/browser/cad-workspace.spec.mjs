@@ -424,7 +424,7 @@ test("A01/A03/T01: real center rectangle, dimension edit, Undo, portable save an
       ),
     )
     .toBe(50);
-  await page.locator("#modelUndo").click();
+  await page.keyboard.press("Control+z");
   await expect
     .poll(() =>
       page.evaluate(
@@ -432,7 +432,7 @@ test("A01/A03/T01: real center rectangle, dimension edit, Undo, portable save an
       ),
     )
     .toBe(40);
-  await page.locator("#modelRedo").click();
+  await page.keyboard.press("Control+Shift+z");
   await expect
     .poll(() =>
       page.evaluate(
@@ -532,12 +532,8 @@ test("A05/A07/A08/A24: sketch width drives exact solid and fillet; a lost edge r
     )
     .toBeCloseTo(80000, 4);
   await page.locator(".model-history-entry").last().click();
-  await page
-    .getByRole("button", { name: "結果のプロパティ・生成接続", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "生成で使用（現在のbody結果）", exact: true })
-    .click();
+  await page.locator('#modelOutliner .model-outline-select[aria-selected="true"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "生成で使用", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -854,7 +850,7 @@ test("A11/T07: Join gap remains until the user explicitly changes tolerance", as
   // single chain so that its original gap/tolerance acceptance stays intact.
   const groups=page.getByRole('checkbox',{name:'離れた連結グループも全て保持',exact:true});
   await expect(groups).toBeChecked();await groups.uncheck();await groups.dispatchEvent('input');
-  await page.getByRole("button", { name: "プレビュー", exact: true }).click();
+  await page.locator("#modelPreview").evaluate((button) => button.click());
   await expect(page.locator("#modelDiagnostics")).toContainText("CAD_JOIN_GAP");
   await expect(
     page.getByRole("textbox", { name: "Join許容差 mm", exact: true }),

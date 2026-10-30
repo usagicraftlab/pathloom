@@ -2,6 +2,7 @@ import { deriveVisibleEntities } from "./document.js";
 export function createViewAdapter(preview, { pick = () => {} } = {}) {
   let group = null,
     previewGroup = null;
+  let referencePlaneGroup = null;
   const shown = new Map();
   function ensure() {
     const { THREE, scene } = preview();
@@ -12,6 +13,10 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       scene.add(group);
       previewGroup = new THREE.Group();
       scene.add(previewGroup);
+      referencePlaneGroup = new THREE.Group();
+      referencePlaneGroup.name = "CAD reference planes";
+      referencePlaneGroup.visible = false;
+      scene.add(referencePlaneGroup);
     }
     return true;
   }
@@ -102,6 +107,37 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
     return g;
   }
   return {
+    showReferencePlanes(visible, selected = "XY") {
+      if (!ensure()) return;
+      referencePlaneGroup.visible = visible;
+      if (!visible) {
+        preview().dirty();
+        return;
+      }
+      if (!referencePlaneGroup.children.length) {
+        const { THREE } = preview();
+        for (const name of ["XY", "XZ", "YZ"]) {
+          const geometry = new THREE.PlaneGeometry(80, 80);
+          const material = new THREE.MeshBasicMaterial({
+            color: name === "XY" ? 0x4aa878 : name === "XZ" ? 0x4f84c4 : 0xc68d46,
+            transparent: true,
+            opacity: 0.13,
+            side: THREE.DoubleSide,
+            depthWrite: false,
+          });
+          const mesh = new THREE.Mesh(geometry, material);
+          if (name === "XZ") mesh.rotation.x = Math.PI / 2;
+          if (name === "YZ") mesh.rotation.y = Math.PI / 2;
+          mesh.userData.referencePlane = name;
+          mesh.renderOrder = -1;
+          referencePlaneGroup.add(mesh);
+        }
+      }
+      for (const mesh of referencePlaneGroup.children) {
+        mesh.material.opacity = mesh.userData.referencePlane === selected ? 0.24 : 0.13;
+      }
+      preview().dirty();
+    },
     fit(entities) {
       const { THREE, camera, controls } = preview();
       if (!camera || !entities.length) return;
@@ -306,16 +342,29 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
         ),
         camera,
       );
+      const roots = filter === "workplane"
+        ? referencePlaneGroup?.children || []
+        : group.children;
       const hits = ray
-        .intersectObjects(group.children, true)
+        .intersectObjects(roots, true)
         .filter(
           (h) =>
-            !h.object.parent.userData.ghost &&
-            h.object.parent.userData.selectable !== false,
+            filter === "workplane" || (
+              !h.object.parent.userData.ghost &&
+              h.object.parent.userData.selectable !== false
+            ),
         );
       const result = [];
       for (const hit of hits) {
         const data = hit.object.userData;
+        if (filter === "workplane" && data.referencePlane) {
+          result.push({
+            key: `workplane:${data.referencePlane}`,
+            referencePlane: data.referencePlane,
+            point: hit.point.toArray(),
+          });
+          break;
+        }
         if (!data.entityId) continue;
         let kind = null,
           topologyId = null;
@@ -343,6 +392,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
     dispose() {
       if (group) dispose(group);
       if (previewGroup) dispose(previewGroup);
+      if (referencePlaneGroup) dispose(referencePlaneGroup);
       shown.clear();
     },
   };

@@ -260,10 +260,10 @@ test("#5 AUD-002: UI preserves both targets, tool retention, Undo/Redo and v2 sa
     `argument/${a}`,
     `argument/${b}`,
   ]);
-  await page.locator("#modelUndo").click();
+  await page.keyboard.press("Control+z");
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
   expect((await cutState(page)).visible.sort()).toEqual([a, b, tool].sort());
-  await page.locator("#modelRedo").click();
+  await page.keyboard.press("Control+Shift+z");
   await expect(page.locator(".model-history-entry")).toHaveCount(4);
   expect((await cutState(page)).slots).toEqual(initial.slots);
   await page.evaluate(() => document.querySelector("#projectSave").click());
@@ -321,14 +321,14 @@ test("#5 T19/T20: default tool consumption and single, noncontact and empty resu
   const single = await cutState(page);
   expect(Math.round(single.slots[0].volume)).toBe(500);
   expect(single.visible).not.toContain(tool);
-  await page.locator("#modelUndo").click();
+  await page.keyboard.press("Control+z");
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
   await beginDifference(page, [b], [tool]);
   await expect(page.locator(".model-history-entry").last()).toContainText(
     "valid",
   );
   expect(Math.round((await cutState(page)).slots[0].volume)).toBe(1000);
-  await page.locator("#modelUndo").click();
+  await page.keyboard.press("Control+z");
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
   await beginDifference(page, [a], [a]);
   await expect(page.locator(".model-history-entry").last()).toContainText(
@@ -338,7 +338,7 @@ test("#5 T19/T20: default tool consumption and single, noncontact and empty resu
   expect(empty.slots).toHaveLength(1);
   expect(empty.slots[0].empty).toBe(true);
   expect(empty.slots[0].volume).toBe(0);
-  await page.locator("#modelUndo").click();
+  await page.keyboard.press("Control+z");
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
   await beginDifference(page, [a, b], [a]);
   await expect(page.locator(".model-history-entry").last()).toContainText(
