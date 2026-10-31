@@ -1953,3 +1953,16 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   Ready/merge/Issue closeを行わない。
 - `npm ci`は成功。依存symlinkは検証専用ignored領域だけに作成し、製品依存は変更していない。
   PR、CI、merge、Issue自動closeはこの時点で未実施。
+
+### 指示016 製品実装headのpush/PR CI（最終文書commit前）
+
+- 製品実装head `07bf8ec9d72a65144dc2dc5b7adb974d80e0cb2d` のpush CI
+  `41197184623` attempt 1とPR CI `41197198172` attempt 1は、いずれも全3job成功した。
+  全6jobの生ログを照合し、各runでNode20.20.2 JS 216成功、native 103件中101成功・
+  任意NVIDIA USD 2skip、macOS Rust 22成功、browser 85成功（失敗/skip/retry/flaky 0）を
+  確認した。CI再実行は行っていない。
+- local browserはChromium取得失敗のためtest body未実行、local Rustはcargo不在で未実行の
+  ままであり、CI成功へ置換しない。直接`git push`も認証情報不在で失敗したため、同一tree
+  `7398beef4b30c21fc0ccd0b51d3f0a34eba0e864`をGitHub Git Data APIでbranchへ反映した。
+- Draft PR #48は作成済みだが、この記録を含む最終文書commitのpush/PR CIを確認するまで
+  Ready、merge、Issue自動closeは行わない。指示017、Issue #37、Draft PR #43は未着手。
