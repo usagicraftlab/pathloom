@@ -33,6 +33,7 @@ import {
   inDrawingPlane,
 } from "./commands/input.js";
 import { makeSubshapeRef } from "./references.js";
+import { boundsOverlap, centerOf, snapCandidates, thumbnailPath } from "./ui-interactions.js";
 const $ = (id) => document.getElementById(id);
 const labels = {
   points:"底面の作図点 XYZ（順序付き）",chainPolicy:"edge連鎖の選択",radiiMm:"3軸半径 XYZ mm",transitionMode:"Pipe角部の方式",frameMode:"掃引フレーム",distance1Mm:"距離1 mm（指定face側）",distance2Mm:"距離2 mm（nullは等距離）",
@@ -60,6 +61,7 @@ const labels = {
   axis: "軸（原点・方向）",
   angleRad: "角度 rad",
   factor: "倍率",
+  axisFactors: "軸倍率 XYZ",
   anchorMode: "基準モード",
   keepTools: "工具を保持する",
   allowMultipleGroups:"離れた連結グループも全て保持",
@@ -198,8 +200,37 @@ export function initModelWorkspace(api) {
     autosaveRevision = -1,
     draftVersion = 0,
     savedDraftVersion = -1;
-  let lastCommand = null, curvePointPicking = false, planePicking = false, planeBeforeFace = "XY", pickFilterBeforePlane = "object";
-  const openCommandGroups = new Set(["curve-create"]);
+  let lastCommand = null, curvePointPicking = false, planePicking = false,
+    referencePlanePicking = false, planeBeforeFace = "XY", pickFilterBeforePlane = "object";
+  const openCommandGroups = new Set(commandGroupDefinitions.map((group) => group.id));
+  const defaultUiPreferences = {
+    pinnedCommands: [],
+    commandOrder: [],
+    colors: {},
+    showThumbnails: true,
+    folders: {},
+  };
+  let uiPreferences = clone(defaultUiPreferences);
+  try {
+    uiPreferences = {
+      ...defaultUiPreferences,
+      ...JSON.parse(localStorage.getItem("pathloom.cad-ui.v1") || "{}"),
+    };
+  } catch {}
+  const saveUiPreferences = () => {
+    try {
+      localStorage.setItem("pathloom.cad-ui.v1", JSON.stringify(uiPreferences));
+    } catch {}
+  };
+  let commandEditMode = false,
+    panelsTemporarilyHidden = false,
+    measureMode = false,
+    measurePoints = [],
+    mirrorPlanePicking = false,
+    frozenHistoryStage = null,
+    hoveredSubshape = null,
+    closePolylineAsFace = false;
+  let activeDrag = null, pivotPicking = false, pendingPivot = null;
   let session = null,
     selectedFeature = null,
     propertiesOpen = false,
@@ -230,6 +261,27 @@ export function initModelWorkspace(api) {
   commandBar.className = "model-command-bar";
   commandBar.setAttribute("role", "toolbar");
   commandBar.setAttribute("aria-label", "CADコマンド");
+  const commandBarTools = document.createElement("div");
+  commandBarTools.className = "model-command-bar-tools";
+  const makeToolButton = (label, title = label) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.title = title;
+    return button;
+  };
+  const commandEditButton = makeToolButton("配置編集", "ピン留めとアイコン順を編集");
+  commandEditButton.id = "modelCommandEdit";
+  const measureButton = makeToolButton("↔", "2点の距離を測定");
+  measureButton.id = "modelMeasure";
+  measureButton.setAttribute("aria-label", "2点の距離を測定");
+  const arrayButton = makeToolButton("⠿", "配列コピー");
+  arrayButton.id = "modelArrayCopy";
+  arrayButton.setAttribute("aria-label", "配列コピー");
+  const thumbnailToggle = makeToolButton("▧", "アウトライナーのサムネイル表示");
+  thumbnailToggle.id = "modelThumbnailToggle";
+  thumbnailToggle.setAttribute("aria-label", "サムネイル表示切替");
+  commandBarTools.append(commandEditButton, measureButton, arrayButton, thumbnailToggle);
   const commandSearch = panel.querySelector("#modelCommandSearch").closest("label");
   const commandList = panel.querySelector("#modelCommands");
   const commandSession = panel.querySelector("#modelSession");
@@ -261,9 +313,12 @@ export function initModelWorkspace(api) {
     setStatus("作業平面にする平面上の face をクリックしてください。");
   });
   planeControls.append(planeFromFaceButton);
+  planeLabel.hidden = true;
+  workplaneControls.querySelector("#modelCoordinate").closest("label").hidden = true;
   const actionControls = panel.querySelector(".model-actions");
   const modelStatus = panel.querySelector("#modelStatus");
   const diagnosticsPanel = panel.querySelector("#modelDiagnostics");
+  diagnosticsPanel.querySelector("summary")?.remove();
   const libraryDetails = [...leftPanel.querySelectorAll("details")].find(
     (details) => details.querySelector(":scope > summary")?.textContent === "形状Library",
   );
@@ -276,13 +331,18 @@ export function initModelWorkspace(api) {
   const recentOperationsDetails = [...leftPanel.querySelectorAll("details")].find(
     (details) => details.querySelector(":scope > summary")?.textContent === "最近の操作",
   );
+  commandSearch.hidden = true;
+  undoButton.hidden = true;
+  redoButton.hidden = true;
   libraryDetails.open = true;
+  const libraryDialog = document.createElement("dialog");
+  libraryDialog.className = "model-library-dialog";
+  document.body.append(libraryDialog);
   const libraryClose = document.createElement("button");
   libraryClose.type = "button";
   libraryClose.textContent = "閉じる";
   libraryClose.addEventListener("click", () => {
-    libraryDetails.hidden = true;
-    properties();
+    libraryDialog.close();
   });
   libraryDetails.append(libraryClose);
   const helpDialog = document.createElement("dialog");
@@ -309,16 +369,28 @@ export function initModelWorkspace(api) {
       const steps = document.createElement("ol");
       for (const text of [
         "上部の分類を開き、コマンドアイコンを選びます。",
-        "右側の操作パネルで平面・寸法・入力形状を指定します。",
-        "プレビューで確認し、確定して下部の履歴へ追加します。",
-        "履歴をダブルクリックすると右側で設定を編集できます。",
-        "左の形状を右クリックすると、プロパティやLibrary登録、生成接続を選べます。",
+        "画面上の参照平面や形状をクリックし、右側の操作パネルで寸法を指定します。",
+        "右下の確定またはキャンセルで操作を終えます。",
+        "下部の履歴をクリックすると右側で設定を編集できます。",
+        "左の形状を右クリックすると、Library登録・生成接続・削除を選べます。",
       ]) {
         const item = document.createElement("li");
         item.textContent = text;
         steps.append(item);
       }
       content.append(steps);
+      const shortcuts = document.createElement("dl");
+      shortcuts.className = "model-shortcut-list";
+      for (const [keys, meaning] of [
+        ["Esc", "ドラッグを開始前へ戻してコマンド終了"], ["Tab", "パネルを一時的に隠す／戻す"],
+        ["H", "選択形状を隠す"], ["Shift+H", "隠れた形状をすべて戻す"], ["I", "選択形状だけを表示"],
+        ["Cmd/Ctrl+Z", "Undo"], ["Cmd/Ctrl+Shift+Z", "Redo"], ["Enter", "作図を確定／右入力欄では次の欄"],
+        ["Ctrl/Cmd+ドラッグ", "コピーして移動"], ["Alt+ドラッグ", "精密移動"], ["Shift+回転ドラッグ", "角度スナップ解除"],
+      ]) {
+        const key = document.createElement("dt"), description = document.createElement("dd");
+        key.textContent = keys; description.textContent = meaning; shortcuts.append(key, description);
+      }
+      content.append(shortcuts);
     }
     helpDialog.showModal();
   };
@@ -330,27 +402,137 @@ export function initModelWorkspace(api) {
   leftPanel.replaceChildren(leftHeader);
   leftHeader.replaceChildren(document.createElement("strong"));
   leftHeader.firstElementChild.textContent = "アウトライナー";
+  const folderButton = makeToolButton("▱+", "選択形状をグループ化");
+  folderButton.setAttribute("aria-label", "選択形状をグループ化");
+  folderButton.onclick = () => {
+    const bodyIds = [...new Set(selection.map((reference) => store.getEntity(reference.entityId)?.bodyId).filter(Boolean))];
+    if (!bodyIds.length) return setStatus("グループにまとめる形状を選択してください。");
+    const folders = uiPreferences.folders[store.document.id] ||= [];
+    for (const folder of folders) folder.bodyIds = folder.bodyIds.filter((bodyId) => !bodyIds.includes(bodyId));
+    folders.push({ id: id(), name: `グループ ${folders.length + 1}`, bodyIds });
+    saveUiPreferences();
+    renderOutliner();
+  };
+  leftHeader.append(folderButton);
   const outliner = document.createElement("div");
   outliner.id = "modelOutliner";
   outliner.setAttribute("role", "tree");
-  leftPanel.append(outliner);
+  const generationDrop = document.createElement("div");
+  generationDrop.className = "model-generation-drop";
+  generationDrop.textContent = "生成パネルへ形状をドロップ";
+  generationDrop.setAttribute("role", "region");
+  generationDrop.setAttribute("aria-label", "生成で使用");
+  leftPanel.append(outliner, generationDrop);
   const inspector = panel.querySelector(".model-inspector");
-  inspector.prepend(commandSearch, workplaneControls, actionControls);
+  inspector.prepend(commandSearch, workplaneControls);
   inspector.append(commandSession, modelStatus, diagnosticsPanel);
-  libraryDetails.hidden = true;
-  inspector.append(libraryDetails);
-  actionControls.append(panel.querySelector("#modelRetry"));
-  commandBar.append(
-    undoButton,
-    redoButton,
-    commandList,
-  );
+  libraryDialog.append(libraryDetails);
+  actionControls.querySelector("#modelPreview").hidden = true;
+  panel.querySelector("#modelRetry").hidden = true;
+  // Keep keyboard-command targets connected for compatibility, but do not
+  // expose Undo/Redo as command-bar controls in the reviewed layout.
+  undoButton.hidden = true;
+  redoButton.hidden = true;
+  commandBar.append(undoButton, redoButton, commandBarTools, commandList);
   panel.prepend(commandBar);
   const timeline = document.createElement("section");
   timeline.className = "model-timeline";
   timeline.setAttribute("aria-label", "作成履歴");
   timeline.append(panel.querySelector(".model-history"));
   panel.append(timeline);
+  const historyScrubber = document.createElement("input");
+  historyScrubber.type = "range";
+  historyScrubber.className = "model-history-scrubber";
+  historyScrubber.min = "-1";
+  historyScrubber.value = "-1";
+  historyScrubber.setAttribute("aria-label", "履歴表示位置");
+  historyScrubber.title = "ドラッグで履歴を表示。クリック位置で表示だけを固定します。";
+  historyScrubber.addEventListener("input", () => {
+    const index = Number(historyScrubber.value);
+    index < 0 ? view.clearStage() : view.setStage(store.document.features[index]?.id || null);
+  });
+  historyScrubber.addEventListener("change", () => {
+    const index = Number(historyScrubber.value);
+    frozenHistoryStage = index < 0 ? null : store.document.features[index]?.id || null;
+    frozenHistoryStage ? view.setStage(frozenHistoryStage) : view.clearStage();
+  });
+  historyScrubber.addEventListener("dblclick", () => {
+    historyScrubber.value = "-1";
+    frozenHistoryStage = null;
+    view.clearStage();
+  });
+  panel.querySelector(".model-history header").append(historyScrubber);
+  const viewportOverlay = document.createElement("div");
+  viewportOverlay.className = "model-viewport-overlay";
+  const cursorReadout = document.createElement("output");
+  cursorReadout.className = "model-cursor-readout";
+  cursorReadout.hidden = true;
+  const snapGuide = document.createElement("div");
+  snapGuide.className = "model-snap-guide";
+  snapGuide.hidden = true;
+  const measurementLine = document.createElement("div");
+  measurementLine.className = "model-measure-line";
+  measurementLine.hidden = true;
+  const measurementLabel = document.createElement("output");
+  measurementLabel.className = "model-measure-label";
+  measurementLabel.setAttribute("aria-label", "測定距離");
+  measurementLabel.hidden = true;
+  const dimensions = document.createElement("output");
+  dimensions.className = "model-selection-dimensions";
+  dimensions.hidden = true;
+  const projectedDimensions = document.createElement("div");
+  projectedDimensions.className = "model-projected-dimensions";
+  projectedDimensions.hidden = true;
+  for (const key of ["widthMm", "depthMm", "heightMm"]) {
+    const label = document.createElement("span");
+    label.dataset.dimension = key;
+    projectedDimensions.append(label);
+  }
+  const inlineDimensionInput = document.createElement("input");
+  inlineDimensionInput.className = "model-inline-dimension";
+  inlineDimensionInput.setAttribute("aria-label", "3D寸法を編集");
+  inlineDimensionInput.hidden = true;
+  const distanceHandle = document.createElement("div");
+  distanceHandle.className = "model-distance-handle";
+  distanceHandle.hidden = true;
+  const distanceArrow = makeToolButton("↥", "距離・量をドラッグ");
+  distanceArrow.setAttribute("aria-label", "距離・量をドラッグ");
+  const symmetricArrow = makeToolButton("↕", "対称押し出しをドラッグ");
+  symmetricArrow.setAttribute("aria-label", "対称押し出しをドラッグ");
+  distanceHandle.append(distanceArrow, symmetricArrow);
+  const gizmo = document.createElement("div");
+  gizmo.className = "model-transform-gizmo";
+  gizmo.hidden = true;
+  gizmo.setAttribute("aria-label", "移動・回転ギズモ");
+  for (const axis of ["X", "Y", "Z"]) {
+    const move = makeToolButton(`${axis}→`, `${axis}軸へ移動`);
+    move.dataset.gizmo = "move";
+    move.dataset.axis = axis;
+    const rotate = makeToolButton(`↻${axis}`, `${axis}軸で回転`);
+    rotate.dataset.gizmo = "rotate";
+    rotate.dataset.axis = axis;
+    const scale = makeToolButton(`□${axis}`, `${axis}軸だけ伸縮`);
+    scale.dataset.gizmo = "scale";
+    scale.dataset.axis = axis;
+    rotate.className = "model-rotation-ring";
+    gizmo.append(move, rotate, scale);
+  }
+  const uniformScale = makeToolButton("⤢", "均等スケールをドラッグ");
+  uniformScale.dataset.gizmo = "scale";
+  uniformScale.dataset.axis = "all";
+  uniformScale.setAttribute("aria-label", "均等スケールをドラッグ");
+  const pivotButton = makeToolButton("◎", "変換の中心をクリックで指定");
+  pivotButton.setAttribute("aria-label", "変換の中心をクリックで指定");
+  pivotButton.onclick = () => {
+    pivotPicking = true;
+    setStatus("回転・スケールの中心点をクリックしてください。");
+  };
+  gizmo.append(uniformScale, pivotButton);
+  const boxSelection = document.createElement("div");
+  boxSelection.className = "model-box-selection";
+  boxSelection.hidden = true;
+  viewportOverlay.append(cursorReadout, snapGuide, measurementLine, measurementLabel, dimensions, projectedDimensions, inlineDimensionInput, distanceHandle, gizmo, boxSelection);
+  document.body.append(viewportOverlay);
   const libraryPlacementLabel = document.createElement("label"),
     libraryPlacementInput = document.createElement("input");
   libraryPlacementLabel.textContent = "挿入位置 XYZ mm";
@@ -363,9 +545,289 @@ export function initModelWorkspace(api) {
   exportStepButton.textContent = "STEP⇩";
   exportStepButton.setAttribute("aria-label", "Export selected CAD as STEP");
   exportStepButton.title = "Export STEP";
-  actionControls.append(exportStepButton);
+  exportStepButton.hidden = true;
+  inspector.append(actionControls, exportStepButton);
   document.body.append(panel);
   view = createViewAdapter(api.preview);
+  commandEditButton.addEventListener("click", () => {
+    commandEditMode = !commandEditMode;
+    setStatus(commandEditMode
+      ? "コマンド配置編集：右クリックでピン留め、ドラッグで並べ替えます。"
+      : "コマンド配置編集を終了しました。");
+    render({ keepProperties: true, keepHistory: true });
+  });
+  thumbnailToggle.addEventListener("click", () => {
+    uiPreferences.showThumbnails = !uiPreferences.showThumbnails;
+    saveUiPreferences();
+    render({ keepProperties: true, keepHistory: true });
+  });
+  measureButton.addEventListener("click", () => {
+    measureMode = !measureMode;
+    measurePoints = [];
+    measurementLabel.hidden = true;
+    measurementLine.hidden = true;
+    setStatus(measureMode ? "距離を測る2点をクリックしてください。" : "距離測定を終了しました。");
+    render({ keepProperties: true, keepHistory: true });
+  });
+  function editDisplayedDimension(event) {
+    const entity = store.getEntity(selection[0]?.entityId);
+    const feature = store.getFeature(selectedFeature || entity?.producer.featureId);
+    const key = event.target.closest("[data-dimension]")?.dataset.dimension || "widthMm";
+    const parameter = Object.hasOwn(feature?.parameters || {}, key) ? key :
+      ["distanceMm", "radiusMm", "widthMm", "heightMm", "factor"].find((name) => typeof feature?.parameters[name] === "number");
+    if (!feature || !parameter) return;
+    const rect = event.target.getBoundingClientRect();
+    inlineDimensionInput.value = feature.parameters[parameter];
+    inlineDimensionInput.style.left = `${rect.left}px`;
+    inlineDimensionInput.style.top = `${rect.top}px`;
+    inlineDimensionInput.hidden = false;
+    inlineDimensionInput.onkeydown = async (keyEvent) => {
+      if (keyEvent.key === "Escape") inlineDimensionInput.hidden = true;
+      if (keyEvent.key !== "Enter") return;
+      keyEvent.preventDefault();
+      try {
+        const parameters = clone(feature.parameters);
+        parameters[parameter] = parseScalar(inlineDimensionInput.value);
+        await store.edit(feature.id, parameters);
+        inlineDimensionInput.hidden = true;
+        render();
+      } catch (error) { report(error); }
+    };
+    inlineDimensionInput.focus();
+    inlineDimensionInput.select();
+  }
+  dimensions.addEventListener("dblclick", editDisplayedDimension);
+  projectedDimensions.addEventListener("dblclick", editDisplayedDimension);
+  const arrayDialog = document.createElement("dialog");
+  arrayDialog.className = "model-switch-dialog model-array-dialog";
+  arrayDialog.innerHTML = `<form method="dialog"><h3>配列コピー</h3><label>個数<input name="count" type="number" min="2" max="100" value="3"></label><label>間隔 XYZ mm<input name="spacing" value="20,0,0"></label><button value="cancel">キャンセル</button><button value="apply" class="primary">作成</button></form>`;
+  document.body.append(arrayDialog);
+  let arrayPreviewTimer = null, arrayPreviewSequence = 0, arrayPreviewPromise = Promise.resolve();
+  async function previewArrayCopies() {
+    clearTimeout(arrayPreviewTimer);
+    const sequence = ++arrayPreviewSequence;
+    const original = selection.length === 1 && store.getEntity(selection[0].entityId);
+    if (!original || !arrayDialog.open) return;
+    const document = store.document, outputs = [];
+    try {
+      await startRuntime();
+      const count = Number(arrayDialog.querySelector('[name="count"]').value);
+      const spacing = parseCoordinate(arrayDialog.querySelector('[name="spacing"]').value);
+      if (!Number.isSafeInteger(count) || count < 2 || count > 100) return;
+      native.release(previewHandles);
+      previewHandles = [];
+      for (let index = 1; index < count; index++) {
+        const command = clone(commandById("transform.move"));
+        command.resultPolicy = "independent";
+        const copySession = createCommandSession(command, {
+          selection: [{ entityId: original.id, entityKind: original.kind }],
+        });
+        copySession.parameters.translation = spacing.map((value) => value * index);
+        const result = await store.preview(copySession);
+        if (!result || !["ok", "warning"].includes(result.status))
+          throw new Error(result?.diagnostics?.[0]?.message || "配列のプレビューを作成できません。");
+        outputs.push(...result.outputs);
+        if (sequence !== arrayPreviewSequence || !arrayDialog.open || document !== store.document) {
+          native.release(outputs.map((output) => output.handle));
+          return;
+        }
+      }
+      previewHandles = outputs.map((output) => output.handle);
+      view.setPreview({ outputs }, { sourceEntityIds: [original.id] });
+      setStatus(`${count}個の等間隔配列をプレビューしています。`);
+    } catch (error) {
+      native.release(outputs.map((output) => output.handle));
+      if (sequence === arrayPreviewSequence && arrayDialog.open) report(error);
+    }
+  }
+  for (const input of arrayDialog.querySelectorAll("input"))
+    input.addEventListener("input", () => {
+      clearTimeout(arrayPreviewTimer);
+      arrayPreviewSequence++;
+      arrayPreviewTimer = setTimeout(() => { arrayPreviewPromise = previewArrayCopies(); }, 180);
+    });
+  arrayButton.addEventListener("click", () => {
+    const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
+    if (!entity) return setStatus("配列コピーする形状を1つ選択してください。");
+    arrayDialog.returnValue = "cancel";
+    arrayDialog.show();
+    setStatus("形状をドラッグして配列の間隔を決め、個数を調整してください。");
+    render({ keepProperties: true, keepHistory: true });
+    arrayPreviewPromise = previewArrayCopies();
+  });
+  arrayDialog.addEventListener("close", async () => {
+    clearTimeout(arrayPreviewTimer);
+    arrayPreviewSequence++;
+    await arrayPreviewPromise;
+    view.clearPreview();
+    native.release(previewHandles);
+    previewHandles = [];
+    if (arrayDialog.returnValue !== "apply") {
+      render({ keepProperties: true, keepHistory: true });
+      return;
+    }
+    try {
+      await startRuntime();
+      const original = selection.length === 1 && store.getEntity(selection[0].entityId);
+      if (!original) throw new Error("配列コピーする形状を1つ選択してください");
+      const count = Number(arrayDialog.querySelector('[name="count"]').value);
+      const spacing = parseCoordinate(arrayDialog.querySelector('[name="spacing"]').value);
+      if (!Number.isSafeInteger(count) || count < 2 || count > 100)
+        throw new Error("個数は2〜100の整数です");
+      let added = 0;
+      for (let index = 1; index < count; index++) {
+        const command = clone(commandById("transform.move"));
+        command.resultPolicy = "independent";
+        const copySession = createCommandSession(command, {
+          selection: [{ entityId: original.id, entityKind: original.kind }],
+        });
+        copySession.parameters.translation = spacing.map((value) => value * index);
+        if (await store.add(copySession)) added++;
+        else {
+          if (added > 1) store.transactions.squashLast(added, "配列コピー");
+          if (added) store.transactions.undo();
+          throw new Error("配列コピーを確定できませんでした。元形状を保持しました。");
+        }
+      }
+      if (added > 1) store.transactions.squashLast(added, "配列コピー");
+      setStatus(`${added + 1}個の等間隔配列を作成しました。`);
+      render();
+    } catch (error) {
+      report(error);
+    }
+  });
+  gizmo.addEventListener("pointerdown", async (event) => {
+    const handle = event.target.closest("button[data-gizmo]");
+    if (!handle || session) return;
+    const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
+    if (!entity) return;
+    event.preventDefault();
+    const kind = handle.dataset.gizmo;
+    const axisName = handle.dataset.axis;
+    const axisIndex = { X: 0, Y: 1, Z: 2 }[axisName];
+    const startX = event.clientX;
+    const command = clone(commandById(`transform.${kind}`, kind === "scale" ? 2 : 1));
+    if (event.ctrlKey || event.metaKey) command.resultPolicy = "independent";
+    await begin(command);
+    if (!session) return;
+    handle.disabled = false;
+    const target = session;
+    const pivot = pendingPivot?.entityId === entity.id ? pendingPivot.point : centerOf(entity);
+    if (kind === "scale") {
+      target.parameters.factor = 1;
+      target.parameters.center = [...pivot];
+    }
+    const move = (moveEvent) => {
+      if (session !== target) return;
+      const delta = moveEvent.clientX - startX;
+      if (kind === "move") {
+        let amount = moveEvent.altKey ? Math.round(delta) / 10 : Math.round(delta);
+        const center = entity.bbox.min.map(
+          (minimum, index) => (minimum + entity.bbox.max[index]) / 2,
+        );
+        const aligned = snapCandidates(store.document, { includeIntersections: false })
+          .filter((candidate) => candidate.entityId !== entity.id)
+          .map((candidate) => ({
+            ...candidate,
+            offset: candidate.point[axisIndex] - center[axisIndex],
+          }))
+          .sort((a, b) => Math.abs(a.offset - amount) - Math.abs(b.offset - amount))
+          .find((candidate) => Math.abs(candidate.offset - amount) <= 5);
+        if (aligned && !moveEvent.altKey) {
+          amount = aligned.offset;
+          const point = view.project(aligned.point);
+          if (point) {
+            snapGuide.hidden = false;
+            snapGuide.style.left = `${point.x}px`;
+            snapGuide.style.top = `${point.y}px`;
+          }
+        } else snapGuide.hidden = true;
+        const translation = [0, 0, 0];
+        translation[axisIndex] = amount;
+        dispatchSession(session, { type: "setting.change", key: "translation", value: translation });
+        cursorReadout.textContent = `${axisName} ${amount.toFixed(moveEvent.altKey ? 1 : 0)} mm · ${moveEvent.altKey ? "精密" : "1mm snap"}`;
+      } else if (kind === "rotate") {
+        const degrees = moveEvent.shiftKey ? delta : Math.round(delta / 15) * 15;
+        const direction = [0, 0, 0];
+        direction[axisIndex] = 1;
+        dispatchSession(session, { type: "setting.change", key: "axis", value: { origin: [...pivot], direction } });
+        dispatchSession(session, { type: "setting.change", key: "angleRad", value: degrees * Math.PI / 180 });
+        cursorReadout.textContent = `${axisName} ${degrees.toFixed(1)}° · ${moveEvent.shiftKey ? "自由" : "15° snap"}`;
+      } else {
+        const factor = Math.max(0.01, 1 + delta * (moveEvent.altKey ? 0.001 : 0.01));
+        if (axisName === "all") target.parameters.factor = factor;
+        else {
+          const factors = [1, 1, 1];
+          factors[axisIndex] = factor;
+          target.parameters.axisFactors = factors;
+        }
+        target.previewSequence++;
+        cursorReadout.textContent = `${axisName === "all" ? "均等" : axisName} × ${factor.toFixed(3)}`;
+      }
+      cursorReadout.hidden = false;
+      cursorReadout.style.left = `${moveEvent.clientX}px`;
+      cursorReadout.style.top = `${moveEvent.clientY}px`;
+      saveDraft();
+      queuePreview();
+    };
+    trackDrag(handle, event, move, async () => {
+      if (session === target) await commit();
+    }, () => { if (session === target) cancel(); });
+  });
+  function trackDrag(handle, event, onMove, onEnd, onCancel) {
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    const cleanup = () => {
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", finish);
+      handle.removeEventListener("pointercancel", abort);
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      activeDrag = null;
+      cursorReadout.hidden = true;
+      snapGuide.hidden = true;
+    };
+    const finish = () => { cleanup(); Promise.resolve(onEnd?.()).catch(report); };
+    const abort = () => { cleanup(); onCancel?.(); };
+    activeDrag = { abort };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", finish);
+    handle.addEventListener("pointercancel", abort);
+  }
+  function sessionAmountKey(target) {
+    // Point-first drawing must leave the canvas free for its next point.
+    if (["point.create", "curve.line", "curve.polyline", "curve.rectangle",
+      "curve.polygon", "curve.circle", "curve.arc", "curve.ellipse",
+      "curve.nurbs", "curve.interpolate"].includes(target?.command.baseOperation.id)) return null;
+    return ["distanceMm", "radiusMm", "distance1Mm", "thicknessMm", "heightMm"].find(
+      (key) => typeof target?.parameters?.[key] === "number",
+    );
+  }
+  function dragSessionAmount(handle, event, symmetric = false) {
+    const target = session, key = sessionAmountKey(target);
+    if (!target || !key) return;
+    const initial = target.parameters[key], initialX = event.clientX;
+    const parameters = clone(target.parameters);
+    if (symmetric && target.command.baseOperation.id === "shape.extrude") target.parameters.bothSides = true;
+    trackDrag(handle, event, (moveEvent) => {
+      if (session !== target) return;
+      const raw = initial + (moveEvent.clientX - initialX) * (moveEvent.altKey ? 0.1 : 1);
+      const value = moveEvent.altKey || !$("modelSnap").checked ? raw : Math.round(raw);
+      dispatchSession(target, { type: "setting.change", key, value });
+      cursorReadout.hidden = false;
+      cursorReadout.style.left = `${moveEvent.clientX}px`;
+      cursorReadout.style.top = `${moveEvent.clientY}px`;
+      cursorReadout.textContent = `${value.toFixed(moveEvent.altKey ? 1 : 0)} mm${target.parameters.bothSides ? " · 両側" : ""}`;
+      const field = $("modelProperties").querySelector(`[data-parameter="${key}"]`);
+      if (field) field.value = String(value);
+      saveDraft();
+      queuePreview();
+    }, () => { if (session === target) return commit(); }, () => {
+      target.parameters = parameters;
+      if (session === target) cancel();
+    });
+  }
+  distanceArrow.addEventListener("pointerdown", (event) => dragSessionAmount(distanceArrow, event));
+  symmetricArrow.addEventListener("pointerdown", (event) => dragSessionAmount(symmetricArrow, event, true));
   function setStatus(text) {
     status = text;
     $("modelStatus").textContent = text;
@@ -400,6 +862,51 @@ export function initModelWorkspace(api) {
   objectMenu.setAttribute("role", "menu");
   objectMenu.hidden = true;
   document.body.append(objectMenu);
+  const historyMenu = document.createElement("div");
+  historyMenu.className = "model-object-menu";
+  historyMenu.setAttribute("role", "menu");
+  historyMenu.hidden = true;
+  document.body.append(historyMenu);
+  function closeHistoryMenu() {
+    historyMenu.hidden = true;
+  }
+  function showHistoryMenu(feature, event) {
+    closeObjectMenu();
+    historyMenu.replaceChildren();
+    historyMenu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - 220))}px`;
+    historyMenu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - 160))}px`;
+    const action = (label, run) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.textContent = label;
+      button.onclick = () => {
+        closeHistoryMenu();
+        Promise.resolve(run()).catch(report);
+      };
+      historyMenu.append(button);
+    };
+    action(feature.status === "suppressed" ? "操作の抑制を解除" : "操作を抑制", () =>
+      store.suppress(feature.id, feature.status !== "suppressed"));
+    action("履歴を削除", () => {
+      const outputIds = new Set(feature.outputSlots.map((slot) => slot.entityId));
+      const dependents = store.document.features.filter(
+        (candidate) => candidate !== feature && references(candidate.inputs).some(
+          (reference) => outputIds.has(reference.entityId),
+        ),
+      );
+      if (dependents.length && !window.confirm(
+        `この履歴を削除すると、${dependents.length}件の後続操作が未解決になります。削除しますか？`,
+      )) return;
+      store.remove(feature.id);
+      selectedFeature = null;
+      propertiesOpen = false;
+      featureEditActive = false;
+      render();
+    });
+    historyMenu.hidden = false;
+    historyMenu.querySelector("button")?.focus();
+  }
   function showObjectMenu(entity, event) {
     event.preventDefault();
     selectOutlinerEntity(entity);
@@ -417,14 +924,26 @@ export function initModelWorkspace(api) {
       });
       objectMenu.append(button);
     };
-    addAction("プロパティ", () => selectOutlinerEntity(entity, { showProperties: true }));
     addAction("形状 Library に登録 / Library を開く", () => {
       selectOutlinerEntity(entity);
       $("modelShapeName").value = entity.name || "CAD shape";
       libraryDetails.hidden = false;
       libraryDetails.open = true;
+      libraryDialog.showModal();
     });
     addAction("生成で使用", () => useEntityForGeneration(entity));
+    for (const binding of store.document.outputBindings.filter(
+      (binding) => ["split", "missing"].includes(binding.status),
+    )) {
+      addAction(`「${binding.name}」の生成参照をこの形状へ変更`, () => {
+        try {
+          store.rebindOutput(binding.id, entity.id);
+          setStatus("生成参照を修復しました。既存のノード配線を維持します。");
+        } catch (error) {
+          report(error);
+        }
+      });
+    }
     addAction("削除", () => {
       const feature = store.getFeature(entity.producer.featureId);
       if (!feature) return;
@@ -449,8 +968,94 @@ export function initModelWorkspace(api) {
     objectMenu.hidden = false;
     objectMenu.querySelector("button")?.focus();
   }
+  function showSubshapeMenu(hit, event) {
+    const entity = store.getEntity(hit.entityId);
+    if (!entity || !hit.kind) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const topology = entity.displayCache?.topology?.find(
+      (candidate) => candidate.topologyId === hit.topologyId,
+    );
+    if (!topology) return;
+    const reference = makeSubshapeRef(entity, topology);
+    selection = [{ entityId: entity.id }, reference];
+    store.document.uiState.selection = clone(selection);
+    objectMenu.replaceChildren();
+    objectMenu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - 220))}px`;
+    objectMenu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - 180))}px`;
+    const commands = hit.kind === "edge"
+      ? entity.kind === "solid"
+        ? [["Fillet", "D05"], ["Chamfer", "D06"]]
+        : [["Reverse Curve", "E10"], ["Offset Curve", "E06"]]
+      : [
+        ...(entity.kind === "solid" ? [["Shell", "D07"]] : [["Reverse Normal", "F11"]]),
+        ["Mirror（このfaceを基準）", "transform.mirror"],
+      ];
+    for (const [label, commandId] of commands) {
+      const command = findCommands().find((candidate) => candidate.id === commandId);
+      if (!command) continue;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.textContent = label;
+      button.onclick = async () => {
+        closeObjectMenu();
+        await begin(clone(command));
+        if (commandId === "transform.mirror" && session) {
+          applyFaceWorkplane(hit);
+          dispatchSession(session, {
+            type: "setting.change",
+            key: "plane",
+            value: clone(store.document.uiState.workPlane),
+          });
+          mirrorPlanePicking = false;
+          referencePlanePicking = false;
+          view.showReferencePlanes?.(false);
+          queuePreview();
+        }
+      };
+      objectMenu.append(button);
+    }
+    objectMenu.hidden = false;
+    objectMenu.querySelector("button")?.focus();
+    render({ keepProperties: true, keepHistory: true });
+  }
   function renderOutliner() {
     outliner.replaceChildren();
+    const folderHosts = new Map();
+    for (const folder of uiPreferences.folders[store.document.id] || []) {
+      const host = document.createElement("details");
+      host.className = "model-outline-folder";
+      host.open = true;
+      host.dataset.folderId = folder.id;
+      const heading = document.createElement("summary");
+      heading.textContent = `▱ ${folder.name}`;
+      heading.ondblclick = (event) => {
+        event.preventDefault();
+        const input = document.createElement("input");
+        input.value = folder.name;
+        input.setAttribute("aria-label", "グループ名");
+        input.onkeydown = (keyEvent) => {
+          if (keyEvent.key === "Escape") renderOutliner();
+          if (keyEvent.key === "Enter" && input.value.trim()) {
+            folder.name = input.value.trim(); saveUiPreferences(); renderOutliner();
+          }
+        };
+        heading.replaceChildren(input); input.focus(); input.select();
+      };
+      host.ondragover = (event) => {
+        if (event.dataTransfer.types.includes("application/x-pathloom-body")) event.preventDefault();
+      };
+      host.ondrop = (event) => {
+        event.preventDefault(); event.stopPropagation();
+        const bodyId = event.dataTransfer.getData("application/x-pathloom-body");
+        if (!store.document.bodies.some((body) => body.id === bodyId)) return;
+        for (const existing of uiPreferences.folders[store.document.id])
+          existing.bodyIds = existing.bodyIds.filter((value) => value !== bodyId);
+        folder.bodyIds.push(bodyId); saveUiPreferences(); renderOutliner();
+      };
+      host.append(heading); outliner.append(host); folderHosts.set(folder.id, host);
+    }
     const entitiesById = new Map(store.document.entities.map((entity) => [entity.id, entity]));
     for (const body of store.document.bodies) {
       const entity = entitiesById.get(body.tipEntityId);
@@ -458,6 +1063,8 @@ export function initModelWorkspace(api) {
       const group = document.createElement("details");
       group.className = "model-outline-body";
       group.open = true;
+      group.draggable = true;
+      group.dataset.bodyId = body.id;
       group.setAttribute("role", "treeitem");
       const heading = document.createElement("summary");
       heading.textContent = `${entity.kind === "solid" ? "立体" : entity.kind === "curve" ? "カーブ" : "サーフェス"} · ${entity.name || "無題"}`;
@@ -473,9 +1080,59 @@ export function initModelWorkspace(api) {
       select.setAttribute("aria-selected", String(selected));
       row.classList.toggle("is-selected", selected);
       select.textContent = entity.name || entity.kind;
+      group.classList.toggle("is-suppressed", store.getFeature(entity.producer.featureId)?.status === "suppressed");
       select.title = `${entity.kind} · ${entity.closure.enclosesVolume ? "閉体積" : "開いた形状"}`;
-      select.addEventListener("click", () => selectOutlinerEntity(entity));
+      let selectClickTimer = null;
+      select.addEventListener("click", () => {
+        clearTimeout(selectClickTimer);
+        selectClickTimer = setTimeout(() => selectOutlinerEntity(entity), 180);
+      });
+      select.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        clearTimeout(selectClickTimer);
+        const input = document.createElement("input");
+        input.className = "model-outline-name-input";
+        input.value = entity.name || "形状";
+        input.setAttribute("aria-label", "アウトライナー形状名");
+        let finished = false;
+        const finish = (apply) => {
+          if (finished) return;
+          finished = true;
+          if (apply && input.value.trim()) {
+            entity.name = input.value.trim();
+            const feature = store.getFeature(entity.producer.featureId);
+            if (feature) feature.name = input.value.trim();
+            store.document.documentRevision++;
+            queueAutosave();
+          }
+          renderOutliner();
+        };
+        input.addEventListener("keydown", (keyEvent) => {
+          if (keyEvent.key === "Enter") finish(true);
+          if (keyEvent.key === "Escape") finish(false);
+        });
+        input.addEventListener("blur", () => finish(true), { once: true });
+        select.replaceWith(input);
+        input.focus();
+        input.select();
+      });
       select.addEventListener("contextmenu", (event) => showObjectMenu(entity, event));
+      if (uiPreferences.showThumbnails) {
+        const thumbnail = document.createElement("span");
+        thumbnail.className = "model-outline-thumbnail";
+        thumbnail.style.setProperty("--shape-color", uiPreferences.colors[body.id] || "#7693a8");
+        thumbnail.setAttribute("aria-hidden", "true");
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", "0 0 28 28");
+        const path = document.createElementNS(svg.namespaceURI, "path");
+        path.setAttribute("d", thumbnailPath(entity));
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", "currentColor");
+        path.setAttribute("stroke-width", "1.2");
+        svg.append(path); thumbnail.append(svg);
+        row.append(thumbnail);
+      }
       const visibility = document.createElement("button");
       visibility.type = "button";
       visibility.className = "model-outline-toggle";
@@ -498,16 +1155,66 @@ export function initModelWorkspace(api) {
         store.document.documentRevision++;
         render();
       });
-      row.append(select, visibility, lock);
+      const color = document.createElement("input");
+      color.type = "color";
+      color.className = "model-outline-color";
+      color.value = uiPreferences.colors[body.id] || "#7693a8";
+      color.setAttribute("aria-label", `${entity.name || "形状"}の色タグ`);
+      color.addEventListener("input", () => {
+        uiPreferences.colors[body.id] = color.value;
+        saveUiPreferences();
+        render();
+      });
+      row.append(select, color, visibility, lock);
       group.append(row);
-      outliner.append(group);
+      group.addEventListener("dragstart", (event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-pathloom-body", body.id);
+        event.dataTransfer.setData("application/x-pathloom-entity", entity.id);
+      });
+      group.addEventListener("dragover", (event) => {
+        if (!event.dataTransfer.types.includes("application/x-pathloom-body")) return;
+        event.preventDefault();
+        group.classList.add("is-drop-target");
+      });
+      group.addEventListener("dragleave", () => group.classList.remove("is-drop-target"));
+      group.addEventListener("drop", (event) => {
+        event.preventDefault();
+        group.classList.remove("is-drop-target");
+        const movingId = event.dataTransfer.getData("application/x-pathloom-body");
+        const from = store.document.bodies.findIndex((candidate) => candidate.id === movingId);
+        const to = store.document.bodies.findIndex((candidate) => candidate.id === body.id);
+        if (from < 0 || to < 0 || from === to) return;
+        const [moving] = store.document.bodies.splice(from, 1);
+        store.document.bodies.splice(to, 0, moving);
+        store.document.documentRevision++;
+        render();
+      });
+      const folder = (uiPreferences.folders[store.document.id] || []).find((item) => item.bodyIds.includes(body.id));
+      (folderHosts.get(folder?.id) || outliner).append(group);
     }
   }
+  generationDrop.addEventListener("dragover", (event) => {
+    if (!event.dataTransfer.types.includes("application/x-pathloom-entity")) return;
+    event.preventDefault();
+    generationDrop.classList.add("is-drop-target");
+  });
+  generationDrop.addEventListener("dragleave", () => generationDrop.classList.remove("is-drop-target"));
+  generationDrop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    generationDrop.classList.remove("is-drop-target");
+    const entity = store.getEntity(event.dataTransfer.getData("application/x-pathloom-entity"));
+    if (entity) useEntityForGeneration(entity);
+  });
   document.addEventListener("pointerdown", (event) => {
     if (!objectMenu.contains(event.target)) closeObjectMenu();
+    if (!historyMenu.contains(event.target)) closeHistoryMenu();
   });
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") closeObjectMenu();
+    if (event.key === "Escape") {
+      closeObjectMenu();
+      closeHistoryMenu();
+    }
   });
   function active() {
     return document.body.dataset.workspaceMode === "model";
@@ -618,6 +1325,10 @@ export function initModelWorkspace(api) {
   }
   function cancel() {
     curvePointPicking=false;
+    referencePlanePicking=false;
+    mirrorPlanePicking = false;
+    closePolylineAsFace = false;
+    planeTooltip.hidden = true;
     propertiesOpen = false;
     featureEditActive = false;
     invalidFields.clear();
@@ -637,7 +1348,14 @@ export function initModelWorkspace(api) {
     render();
   }
   async function begin(command) {
+    if (arrayDialog.open) {
+      arrayDialog.close("cancel");
+      await arrayPreviewPromise;
+    }
     curvePointPicking=false;
+    closePolylineAsFace = false;
+    frozenHistoryStage = null;
+    view.clearStage();
     lastCommand = clone(command);
     if (session) {
       saveDraft();
@@ -667,13 +1385,74 @@ export function initModelWorkspace(api) {
     ) || store.document.commandDefinitions.push(clone(command));
     if (command.defaults.plane)
       session.parameters.plane = clone(store.document.uiState.workPlane);
-    setStatus("設定・入力を指定し、プレビューまたは確定してください。");
-    if (command.baseOperation.id === "shape.transform" && selection.length > 1)
+    referencePlanePicking = new Set([
+      "point.create", "curve.line", "curve.polyline", "curve.rectangle",
+      "curve.polygon", "curve.circle", "curve.arc", "curve.ellipse",
+      "curve.nurbs", "curve.interpolate",
+    ]).has(command.baseOperation.id);
+    mirrorPlanePicking = command.id === "transform.mirror";
+    if (mirrorPlanePicking) {
+      referencePlanePicking = true;
+      view.showReferencePlanes?.(true, planeSelect.value);
+    }
+    setStatus(referencePlanePicking
+      ? mirrorPlanePicking
+        ? "ミラー基準にするfaceまたは基準面をクリックしてください。"
+        : "基準面または既存の平面をクリックしてください。"
+      : "設定・入力を指定して確定してください。");
+    if (command.baseOperation.id === "shape.transform" && new Set(selection.map((reference) => reference.entityId)).size > 1)
       setStatus(
         `${command.displayName}は形状1件が対象です。入力欄または重なり候補から対象を1件選んでください。`,
       );
     render();
     await startRuntime();
+  }
+  function enhanceNumericFields(host) {
+    for (const input of host.querySelectorAll("input")) {
+      if (input.type === "checkbox" || input.dataset.numericEnhanced) continue;
+      const value = Number(input.value);
+      if (!Number.isFinite(value)) continue;
+      input.dataset.numericEnhanced = "true";
+      input.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        input.focus({ preventScroll: true });
+        const angle = /角度|angle/i.test(input.getAttribute("aria-label") || "");
+        const step = angle ? (event.shiftKey ? Math.PI / 180 : Math.PI / 12) : event.altKey ? 0.1 : 1;
+        const next = Number(input.value) + (event.deltaY < 0 ? step : -step);
+        input.value = String(angle && !event.shiftKey ? Math.round(next / step) * step : next);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }, { passive: false });
+      const handle = document.createElement("span");
+      handle.className = "model-parameter-drag";
+      handle.tabIndex = 0;
+      handle.setAttribute("role", "slider");
+      handle.setAttribute("aria-label", `${input.getAttribute("aria-label") || "数値"}をドラッグ`);
+      handle.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        const startX = event.clientX;
+        const initial = Number(input.value);
+        const angle = /角度|angle/i.test(input.getAttribute("aria-label") || "");
+        const move = (moveEvent) => {
+          const raw = initial + (moveEvent.clientX - startX) * (angle ? Math.PI / 180 : moveEvent.altKey ? 0.1 : 1);
+          const step = angle && !moveEvent.shiftKey ? Math.PI / 12 : moveEvent.altKey ? 0.1 : 1;
+          input.value = String(Math.round(raw / step) * step);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          cursorReadout.hidden = false;
+          cursorReadout.style.left = `${moveEvent.clientX}px`;
+          cursorReadout.style.top = `${moveEvent.clientY}px`;
+          cursorReadout.textContent = angle
+            ? `${(Number(input.value) * 180 / Math.PI).toFixed(1)}°${moveEvent.shiftKey ? " · 自由" : " · 15° snap"}`
+            : `${Number(input.value).toFixed(moveEvent.altKey ? 1 : 0)} mm${moveEvent.altKey ? " · 精密" : " · 1mm snap"}`;
+        };
+        trackDrag(handle, event, move, () => {}, () => {
+          input.value = String(initial);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          if (session) cancel();
+          else { selectedFeature = null; featureEditActive = false; render(); }
+        });
+      });
+      input.insertAdjacentElement("afterend", handle);
+    }
   }
   function properties() {
     const host = $("modelProperties");
@@ -755,34 +1534,6 @@ export function initModelWorkspace(api) {
         const text = document.createElement("p");
         text.textContent = `${e.kind} · ${e.closure.enclosesVolume ? "閉体積" : "開いた形状を含む"}\n${e.displayCache?.volumeMm3?.toFixed(3) || 0} mm³`;
         host.append(text);
-        const use = document.createElement("button");
-        use.textContent = "生成で使用（現在のbody結果）";
-        use.onclick = () => useEntityForGeneration(e);
-        if (e.kind === "curve" || e.displayCache?.preview?.meshes?.length) {
-          host.append(use);
-          for (const binding of store.document.outputBindings.filter(
-            (binding) => ["split", "missing"].includes(binding.status),
-          )) {
-            const repair = document.createElement("button");
-            repair.textContent = `「${binding.name}」の生成参照をこの形状へ変更`;
-            repair.onclick = () => {
-              try {
-                store.rebindOutput(binding.id, e.id);
-                setStatus(
-                  "生成参照を修復しました。既存のノード配線を維持します。",
-                );
-              } catch (error) {
-                report(error);
-              }
-            };
-            host.append(repair);
-          }
-        } else {
-          const note = document.createElement("p");
-          note.textContent =
-            "この形状はCAD内で保存・編集できます。生成入力へのadapterは未対応です。";
-          host.append(note);
-        }
       }
       return;
     }
@@ -895,14 +1646,6 @@ export function initModelWorkspace(api) {
       }
     }
     if (f) {
-      const shapeButton = document.createElement("button");
-      shapeButton.textContent = "結果のプロパティ・生成接続";
-      shapeButton.onclick = () => {
-        selectedFeature = null;
-        selection = f.outputSlots.map((s) => ({ entityId: s.entityId }));
-        properties();
-      };
-      host.append(shapeButton);
       const caption = document.createElement("p");
       caption.textContent = `${f.name} · ${f.status}`;
       host.append(caption);
@@ -997,7 +1740,6 @@ export function initModelWorkspace(api) {
             : "";
     if (note.textContent) settingsForm.append(note);
     for (const [key, value] of Object.entries(f?.sketchId ? {} : params)) {
-      if (key === "plane" && session) continue;
       if (
         session?.command.id === "C04" &&
         session.drawingMode &&
@@ -1104,7 +1846,11 @@ export function initModelWorkspace(api) {
             lastPoint = v;
             pointStep = key === "end" ? 2 : 1;
           }
-          if (key === "plane") snapPoint = null;
+          if (key === "plane") {
+            snapPoint = null;
+            referencePlanePicking = false;
+            view.showReferencePlanes?.(false);
+          }
           if (session) {
             dispatchSession(session, { type: "setting.change", key, value: v });
             saveDraft();
@@ -1273,9 +2019,11 @@ export function initModelWorkspace(api) {
       label.append(select);
       host.append(label);
     }
+    queueMicrotask(() => enhanceNumericFields(settingsForm));
     if (f) {
       const apply = document.createElement("button");
-      apply.textContent = "設定変更を確定";
+      apply.textContent = "確定";
+      apply.setAttribute("aria-label", "設定変更を確定");
       apply.onclick = () => {
         if (settingsForm.reportValidity())
           store
@@ -1283,20 +2031,15 @@ export function initModelWorkspace(api) {
             .catch(report);
       };
       host.append(apply);
-      const hide = document.createElement("button");
-      hide.textContent =
-        f.status === "suppressed" ? "抑制を解除" : "操作を抑制";
-      hide.onclick = () =>
-        store.suppress(f.id, f.status !== "suppressed").catch(report);
-      host.append(hide);
-      const remove = document.createElement("button");
-      remove.textContent = "削除（後段を未解決で残す）";
-      remove.onclick = () => {
-        store.remove(f.id);
+      const close = document.createElement("button");
+      close.textContent = "キャンセル";
+      close.onclick = () => {
         selectedFeature = null;
+        propertiesOpen = false;
+        featureEditActive = false;
         render();
       };
-      host.append(remove);
+      host.append(close);
     }
   }
   function updateBindings(connectBindingId = null) {
@@ -1325,6 +2068,43 @@ export function initModelWorkspace(api) {
       bindingStamps.set(b.id, stamp);
     }
   }
+  function updateView() {
+    view.update(store.document, selection, { colors: uiPreferences.colors });
+  }
+  function positionViewportControls() {
+    if (activeDrag) return;
+    const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
+    if (entity?.bbox && entity.visibility !== "hidden") {
+      const center = centerOf(entity);
+      const pivot = pendingPivot?.entityId === entity.id ? pendingPivot.point : center;
+      const screen = view.project(pivot);
+      if (screen && !gizmo.hidden) {
+        gizmo.style.left = `${screen.x + 18}px`;
+        gizmo.style.top = `${screen.y - 42}px`;
+      }
+      projectedDimensions.hidden = !!session || arrayDialog.open || !!selection[0]?.kind || !screen?.visible;
+      for (const [axis, label] of [...projectedDimensions.children].entries()) {
+        const point = [...entity.bbox.max];
+        point[axis] = center[axis];
+        const projected = view.project(point);
+        label.hidden = !projected?.visible;
+        if (projected) {
+          label.style.left = `${Math.min(projected.x - 12, screen.x - 18)}px`;
+          label.style.top = `${projected.y + 8 + axis * 15}px`;
+          label.textContent = `${["W", "D", "H"][axis]} ${(entity.bbox.max[axis] - entity.bbox.min[axis]).toFixed(2)} mm`;
+        }
+      }
+    } else projectedDimensions.hidden = true;
+    if (session && !distanceHandle.hidden) {
+      const source = Object.values(session.inputs).flat().map((reference) => store.getEntity(reference.entityId)).find(Boolean);
+      const point = source ? centerOf(source) : session.parameters.center || session.parameters.anchor || [0,0,0];
+      const screen = view.project(point);
+      if (screen) {
+        distanceHandle.style.left = `${screen.x + 38}px`;
+        distanceHandle.style.top = `${screen.y - 50}px`;
+      }
+    }
+  }
   function render({ keepProperties = false, keepHistory = false } = {}) {
     if (!panel.isConnected) return;
     $("modelStatus").textContent = status;
@@ -1336,13 +2116,67 @@ export function initModelWorkspace(api) {
       "curve.polygon", "curve.circle", "curve.arc", "curve.ellipse",
       "curve.nurbs", "curve.interpolate",
     ]);
+    view.showReferencePlanes?.(referencePlanePicking, planeSelect.value);
+    if (!referencePlanePicking)
+      document.querySelector(".model-plane-tooltip")?.setAttribute("hidden", "");
     planeControls.hidden = !planePicking && !(
       session && (session.parameters.plane || planeOperation.has(operationId))
     );
-    const q = $("modelCommandSearch").value;
+    const q = "";
     const list = $("modelCommands");
     list.replaceChildren();
-    const commands = findCommands(q);
+    const commandRank = new Map(uiPreferences.commandOrder.map((commandId, index) => [commandId, index]));
+    const commands = findCommands(q).sort((a, b) =>
+      (commandRank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+      (commandRank.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+    const buildCommandButton = (command) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "model-command-button";
+      button.dataset.commandId = command.id;
+      button.setAttribute("aria-label", command.displayName);
+      button.title = `${command.displayName} · ${command.description}`;
+      button.classList.toggle("is-pinned", uiPreferences.pinnedCommands.includes(command.id));
+      button.append(createCommandIcon(command));
+      button.onclick = () => begin(command).catch(report);
+      button.oncontextmenu = (event) => {
+        event.preventDefault();
+        const pins = new Set(uiPreferences.pinnedCommands);
+        pins.has(command.id) ? pins.delete(command.id) : pins.add(command.id);
+        uiPreferences.pinnedCommands = [...pins];
+        saveUiPreferences();
+        render({ keepProperties: true, keepHistory: true });
+      };
+      button.draggable = commandEditMode;
+      button.addEventListener("dragstart", (event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-pathloom-command", command.id);
+      });
+      button.addEventListener("dragover", (event) => {
+        if (!commandEditMode || !event.dataTransfer.types.includes("application/x-pathloom-command")) return;
+        event.preventDefault();
+      });
+      button.addEventListener("drop", (event) => {
+        if (!commandEditMode) return;
+        event.preventDefault();
+        const moving = event.dataTransfer.getData("application/x-pathloom-command");
+        const order = commands.map((candidate) => candidate.id).filter((id) => id !== moving);
+        const target = order.indexOf(command.id);
+        order.splice(Math.max(0, target), 0, moving);
+        uiPreferences.commandOrder = order;
+        saveUiPreferences();
+        render({ keepProperties: true, keepHistory: true });
+      });
+      return button;
+    };
+    const pinned = commands.filter((command) => uiPreferences.pinnedCommands.includes(command.id));
+    if (pinned.length) {
+      const pinnedSection = document.createElement("section");
+      pinnedSection.className = "model-command-pinned";
+      pinnedSection.setAttribute("aria-label", "ピン留めしたコマンド");
+      for (const command of pinned) pinnedSection.append(buildCommandButton(command));
+      list.append(pinnedSection);
+    }
     for (const group of commandGroupDefinitions) {
       const members = commands.filter((command) => commandGroup(command) === group.id);
       if (!members.length) continue;
@@ -1353,36 +2187,40 @@ export function initModelWorkspace(api) {
         if (section.open) openCommandGroups.add(group.id);
         else openCommandGroups.delete(group.id);
       });
+      section.addEventListener("pointerenter", () => { section.open = true; });
       const heading = document.createElement("summary");
       heading.textContent = group.label;
+      heading.addEventListener("focus", () => { section.open = true; });
       const buttons = document.createElement("div");
       buttons.className = "model-command-group-buttons";
       for (const command of members) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "model-command-button";
-        button.setAttribute("aria-label", command.displayName);
-        button.title = `${command.displayName} · ${command.description}`;
-        button.append(createCommandIcon(command));
-        button.onclick = () => begin(command).catch(report);
-        buttons.append(button);
+        buttons.append(buildCommandButton(command));
       }
       section.append(heading, buttons);
       list.append(section);
     }
     $("modelSession").textContent = session
       ? `${session.command.displayName} · ${session.state} · ${sessionReady(session) ? "入力済み" : "入力を選択してください"}`
-      : "待機中";
+      : "";
+    inspector.hidden = !session && !featureEditActive;
+    inspector.closest(".model-right").hidden = inspector.hidden;
+    inspector.querySelector("header strong").textContent =
+      session?.command.displayName || store.getFeature(selectedFeature)?.name || "操作";
+    actionControls.hidden = !session;
+    panel.classList.toggle("has-inspector", !inspector.hidden);
     $("modelCommit").disabled = !session || session.state === "committing";
     $("modelPreview").disabled = !session || session.state === "committing";
-    if (!keepProperties && !document.activeElement?.closest("#modelProperties"))
+    if (!activeDrag && !keepProperties && !document.activeElement?.closest("#modelProperties"))
       properties();
     if (!keepHistory) {
       const history = $("modelHistory");
       history.replaceChildren();
+      historyScrubber.max = String(store.document.features.length - 1);
+      if (!frozenHistoryStage) historyScrubber.value = "-1";
       for (const f of store.document.features) {
       const b = document.createElement("button");
       b.className = "model-history-entry";
+      b.classList.toggle("is-suppressed", f.status === "suppressed");
       b.dataset.featureId = f.id;
       b.setAttribute("aria-pressed", String(selectedFeature === f.id));
       const historyLabel = `${f.name} · ${f.status}${!["valid", "warning", "empty"].includes(f.status) && f.lastValid ? " · 更新前を表示" : ""}`;
@@ -1407,7 +2245,7 @@ export function initModelWorkspace(api) {
         selection = f.outputSlots.map((s) => ({ entityId: s.entityId }));
         render({ keepHistory: true });
       };
-      b.onclick = () => activate(false);
+      b.onclick = () => activate(true);
       b.ondblclick = () => {
         activate(true);
         requestAnimationFrame(() => {
@@ -1417,6 +2255,16 @@ export function initModelWorkspace(api) {
           input?.focus();
           input?.scrollIntoView({ block: "nearest" });
         });
+      };
+      b.oncontextmenu = (event) => {
+        event.preventDefault();
+        showHistoryMenu(f, event);
+      };
+      b.onpointerenter = () => {
+        if (!frozenHistoryStage) view.setStage(f.id);
+      };
+      b.onpointerleave = () => {
+        if (!frozenHistoryStage) view.clearStage();
       };
       history.append(b);
       }
@@ -1470,7 +2318,45 @@ export function initModelWorkspace(api) {
     $("modelDiagnostics").open = diagnostics.length > 0;
     $("modelUndo").disabled = !store.transactions.canUndo;
     $("modelRedo").disabled = !store.transactions.canRedo;
-    view.update(store.document, selection);
+    updateView();
+    const selectedEntity = selection.length === 1 && store.getEntity(selection[0].entityId)?.visibility !== "hidden" ? store.getEntity(selection[0].entityId) : null;
+    if (selectedEntity?.bbox) {
+      const size = selectedEntity.bbox.max.map((value, index) => value - selectedEntity.bbox.min[index]);
+      dimensions.replaceChildren();
+      for (const [index, label] of ["W", "D", "H"].entries()) {
+        const item = document.createElement("span");
+        item.dataset.dimension = ["widthMm", "depthMm", "heightMm"][index];
+        item.textContent = `${index ? " × " : ""}${label} ${size[index].toFixed(2)}`;
+        dimensions.append(item);
+      }
+      dimensions.append(" mm");
+      dimensions.hidden = false;
+      const center = selectedEntity.bbox.min.map((value, index) => (value + selectedEntity.bbox.max[index]) / 2);
+      const screen = view.project(center);
+      if (!activeDrag) gizmo.hidden = !screen?.visible || !!selection[0]?.kind || arrayDialog.open || (!!session && session.command.baseOperation.id !== "shape.transform") || featureEditActive;
+      if (!activeDrag) for (const handle of gizmo.querySelectorAll("[data-gizmo]")) handle.disabled = !!session;
+    } else {
+      dimensions.hidden = true;
+      gizmo.hidden = true;
+    }
+    if (!activeDrag) {
+      const amountKey = sessionAmountKey(session);
+      distanceHandle.hidden = !amountKey || !sessionReady(session);
+      if (!distanceHandle.hidden) {
+        const source = Object.values(session.inputs).flat().map((reference) => store.getEntity(reference.entityId)).find(Boolean);
+        const point = source ? centerOf(source) : session.parameters.center || session.parameters.anchor || [0,0,0];
+        const screen = view.project(point);
+        distanceHandle.hidden = !screen?.visible;
+        symmetricArrow.hidden = session.command.baseOperation.id !== "shape.extrude";
+        distanceArrow.title = `${labels[amountKey] || amountKey}をドラッグ`;
+      }
+    }
+    positionViewportControls();
+    thumbnailToggle.setAttribute("aria-pressed", String(uiPreferences.showThumbnails));
+    commandEditButton.setAttribute("aria-pressed", String(commandEditMode));
+    commandBar.classList.toggle("is-editing", commandEditMode);
+    measureButton.setAttribute("aria-pressed", String(measureMode));
+    document.body.classList.toggle("model-panels-hidden", panelsTemporarilyHidden);
     store.resolveBindings();
     queueAutosave();
     try {
@@ -1503,7 +2389,67 @@ export function initModelWorkspace(api) {
       if (result && target === session) {
         native.release(previewHandles);
         previewHandles = (result.outputs || []).map((o) => o.handle);
-        view.setPreview(result);
+        const sourceEntityIds = [...new Set(Object.values(target.inputs || {})
+            .flat()
+            .map((reference) => reference.entityId)
+            .filter(Boolean))];
+        const sequence = target.previewSequence, document = store.document;
+        const scratch = [];
+        const raw = async (operation, parameters, inputs) => {
+          const output = await native.evaluate({
+            documentId: document.id, documentRevision: document.documentRevision,
+            featureId: target.id, featureRevision: 0, sessionId: target.id,
+            previewSequence: sequence, requestedHash: id(), intent: "preview",
+            operation: { id: operation, version: 1 }, parameters, inputs,
+            tolerances: document.tolerances,
+          });
+          scratch.push(...output.outputs.map((item) => item.handle));
+          if (output.status === "failed") throw new Error(output.diagnostics[0]?.message || "変更プレビューを計算できません。");
+          return output.outputs;
+        };
+        const ref = (output) => ({ handle: output.handle, geometryHash: output.geometryHash, selector: null });
+        let displayed = result.outputs, removed = null, sources = sourceEntityIds.map((entityId) => store.getEntity(entityId)).filter((entity) => entity?.kind === "solid");
+        try {
+          if (target.command.baseOperation.id === "shape.extrude" && displayed.length === 1 && displayed[0].kind === "solid") {
+            const extrusion = displayed[0], overlaps = [];
+            for (const entity of deriveVisibleEntities(document).filter((entity) => entity.kind === "solid" && !entity.locked && boundsOverlap(entity.bbox, extrusion.summary.bbox))) {
+              const source = await store.handle(entity);
+              const common = await raw("solid.intersection", {}, { arguments: [ref(source)], tools: [ref(extrusion)] });
+              if (common.some((output) => !output.summary.empty)) overlaps.push({ entity, source });
+            }
+            if (overlaps.length === 1) {
+              const operation = target.parameters.distanceMm < 0 ? "solid.difference" : "solid.union";
+              displayed = await raw(operation, operation === "solid.difference" ? {keepTools:false} : {},
+                operation === "solid.difference"
+                  ? { arguments: [ref(overlaps[0].source)], tools: [ref(extrusion)] }
+                  : { arguments: [ref(overlaps[0].source), ref(extrusion)] });
+              sources = [overlaps[0].entity];
+              sourceEntityIds.push(overlaps[0].entity.id);
+            }
+          }
+          if (sources.length && displayed.length && displayed.every((output) => output.kind === "solid")) {
+            const before = [];
+            for (const entity of sources) before.push(ref(await store.handle(entity)));
+            const after = displayed.map(ref);
+            const added = await raw("solid.difference", {keepTools:false}, { arguments: after, tools: before });
+            removed = target.command.resultPolicy === "independent" ? [] :
+              await raw("solid.difference", {keepTools:false}, { arguments: before, tools: after });
+            displayed = added;
+          }
+          if (target !== session || document !== store.document || sequence !== target.previewSequence) {
+            native.release([...previewHandles, ...scratch]); previewHandles = []; return;
+          }
+          previewHandles.push(...scratch);
+        } catch (error) {
+          native.release(scratch);
+          if (target !== session) return;
+          target.diagnostics = [...target.diagnostics, {code:"CAD_PREVIEW_UNAVAILABLE", severity:"warning", message:`変更範囲の表示を更新できません。設定と元形状を保持しています。${error.message}`, actions:[]}];
+          displayed = result.outputs; removed = null;
+        }
+        view.setPreview({ outputs: displayed }, {
+          sourceEntityIds,
+          removedOutputs: removed,
+        });
       }
       setStatus(
         result?.status === "failed"
@@ -1535,6 +2481,12 @@ export function initModelWorkspace(api) {
     if (!$("modelSettingsForm")?.reportValidity()) return;
     if (invalidFields.size) return;
     const target = session;
+    const operationId = target.command.baseOperation.id;
+    const previousSolidIds = new Set(
+      deriveVisibleEntities(store.document)
+        .filter((entity) => entity.kind === "solid" && !entity.locked)
+        .map((entity) => entity.id),
+    );
     commitBusy = true;
     try {
       if (previewBusy) {
@@ -1547,14 +2499,84 @@ export function initModelWorkspace(api) {
       if (session !== target) return;
       const ok = await store.add(target);
       if (ok) {
+        const committedFeature = store.document.features.at(-1);
+        const committedEntity = committedFeature?.outputSlots
+          .map((slot) => store.getEntity(slot.entityId))
+          .find(Boolean);
+        let composed = false,
+          multipleExtrudeTargets = false,
+          compositionFailed = false;
+        if (operationId === "curve.polyline" && closePolylineAsFace && committedEntity) {
+          const regionCommand = clone(commandById("S03"));
+          const regionSession = createCommandSession(regionCommand, {
+            selection: [{ entityId: committedEntity.id, entityKind: committedEntity.kind }],
+          });
+          if (await store.add(regionSession)) {
+            store.transactions.squashLast(2, "ポリラインを閉じた面にする");
+            composed = true;
+          } else compositionFailed = true;
+          closePolylineAsFace = false;
+        }
+        if (operationId === "shape.extrude" && committedEntity?.kind === "solid") {
+          const overlaps = [];
+          for (const entity of store.document.entities.filter((candidate) => previousSolidIds.has(candidate.id))) {
+            if (!boundsOverlap(entity.bbox, committedEntity.bbox, store.document.tolerances.kernelLinearMm)) continue;
+            const intersection = createCommandSession(commandById("D03"), {
+              selection: [
+                { entityId: entity.id, entityKind: entity.kind },
+                { entityId: committedEntity.id, entityKind: committedEntity.kind },
+              ],
+            });
+            intersection.inputs = {
+              arguments: [{entityId: entity.id, role:"arguments"}],
+              tools: [{entityId: committedEntity.id, role:"tools"}],
+            };
+            const common = await store.preview(intersection);
+            if (!common || common.status === "failed") {
+              compositionFailed = true;
+              break;
+            }
+            if (common.outputs.some((output) => !output.summary.empty)) overlaps.push(entity);
+            native.release(common.outputs.map((output) => output.handle));
+          }
+          if (!compositionFailed && overlaps.length === 1) {
+            const cutting = Number(target.parameters.distanceMm) < 0;
+            const booleanCommand = clone(commandById(cutting ? "D02" : "D01"));
+            const booleanSession = createCommandSession(booleanCommand, {
+              selection: [
+                { entityId: overlaps[0].id, entityKind: overlaps[0].kind },
+                { entityId: committedEntity.id, entityKind: committedEntity.kind },
+              ],
+            });
+            if (cutting) booleanSession.inputs = {
+              arguments: [{entityId: overlaps[0].id, role:"arguments"}],
+              tools: [{entityId: committedEntity.id, role:"tools"}],
+            };
+            if (await store.add(booleanSession)) {
+              store.transactions.squashLast(2, cutting ? "押し出し切取" : "押し出し追加");
+              composed = true;
+            } else compositionFailed = true;
+          } else if (overlaps.length > 1) {
+            multipleExtrudeTargets = true;
+            setStatus(
+              "複数bodyと交差するため自動追加/切取は行わず、通常のExtrudeとして確定しました。",
+            );
+          }
+        }
         session = null;
+        referencePlanePicking = false;
         propertiesOpen = false;
         featureEditActive = false;
         invalidFields.clear();
         view.clearPreview();
         native.release(previewHandles);
         previewHandles = [];
-        setStatus("形状を確定しました。履歴から寸法を変更できます。");
+        if (compositionFailed)
+          setStatus("後続演算を確定できませんでした。作成済みの元操作と失敗した下書きを保持しています。");
+        else if (!composed && !multipleExtrudeTargets)
+          setStatus("形状を確定しました。履歴から寸法を変更できます。");
+        else if (composed)
+          setStatus("既存コマンドを1つのUndo単位として合成し、形状を確定しました。");
       } else
         setStatus(
           "確定できません。元の形状を保持し、失敗した設定を下書きとして残しました。",
@@ -1641,7 +2663,11 @@ export function initModelWorkspace(api) {
   const recoveryReview = document.createElement("button");
   recoveryReview.textContent = "保留中の回復データを確認";
   recoveryReview.hidden = true;
-  $("modelStatus").after(recoveryNotice, recoveryReview);
+  const recoveryMessage = document.createElement("section");
+  recoveryMessage.className = "model-recovery-message";
+  recoveryMessage.hidden = true;
+  recoveryMessage.append(recoveryNotice, recoveryReview);
+  panel.append(recoveryMessage);
   recoveryReview.onclick = () => recoveryDialog.showModal();
   let recoveryData = null, recoveryPending = false;
   let recoveryReadable = false, autosaveDocument = null, autosaveBusy = false;
@@ -1650,6 +2676,7 @@ export function initModelWorkspace(api) {
     recoveryNotice.textContent = recoveryPending
       ? "前回の回復候補を保持しています。回復または明示破棄するまで、現在の文書の自動回復保存は上書きせず保留します。必要な作業はプロジェクトとして保存してください。"
       : recoveryReadable ? "" : "回復候補を確認できるまで、自動回復保存を保留しています。";
+    recoveryMessage.hidden = !recoveryNotice.textContent;
   }
   recoveryDialog.onclick = async (event) => {
     const choice = event.target.dataset.recovery;
@@ -1764,16 +2791,12 @@ export function initModelWorkspace(api) {
         f.status = "dirty";
     store.recompute().catch(report);
   };
-  $("modelPlane").onchange = () => {
-    if ($("modelPlane").value === "face") {
-      if (!planePicking) pickFilterBeforePlane = $("modelPickFilter").value;
-      planePicking = true;
-      setStatus("作業平面にする平面上の face をクリックしてください。");
-      return;
-    }
+  function applyReferenceWorkplane(name) {
+    if (!new Set(["XY", "XZ", "YZ"]).has(name)) return;
+    planeSelect.value = name;
+    referencePlanePicking = false;
     snapPoint = null;
     invalidFields.delete("plane");
-    const name = $("modelPlane").value;
     planeBeforeFace = name;
     store.document.uiState.workPlane = {
       origin: [0, 0, 0],
@@ -1786,9 +2809,22 @@ export function initModelWorkspace(api) {
         key: "plane",
         value: store.document.uiState.workPlane,
       });
+      saveDraft();
       properties();
       queuePreview();
     }
+    setStatus(`${name}基準面を作業平面に設定しました。`);
+    render({ keepProperties: true });
+  }
+  $("modelPlane").onchange = () => {
+    if ($("modelPlane").value === "face") {
+      if (!planePicking) pickFilterBeforePlane = $("modelPickFilter").value;
+      planePicking = true;
+      setStatus("作業平面にする平面上の face をクリックしてください。");
+      return;
+    }
+    const name = $("modelPlane").value;
+    applyReferenceWorkplane(name);
   };
   function applyFaceWorkplane(hit) {
     const entity = store.getEntity(hit.entityId);
@@ -1853,7 +2889,15 @@ export function initModelWorkspace(api) {
       invalidFields.delete(key);
     } else if (op === "curve.polyline") {
       if (pointStep++ === 0) params.points = [p];
-      else params.points.push(p);
+      else if (
+        params.points.length >= 3 &&
+        Math.hypot(...p.map((value, index) => value - params.points[0][index])) <= 1
+      ) {
+        params.closed = true;
+        closePolylineAsFace = true;
+        lastPoint = clone(params.points[0]);
+        setStatus("始点へ閉じるスナップ · 確定時に閉じた面を作成します。");
+      } else params.points.push(p);
       invalidFields.delete("points");
     } else if (op === "curve.rectangle") {
       if (session.drawingMode && session.drawingMode !== "center") {
@@ -1951,7 +2995,7 @@ export function initModelWorkspace(api) {
   }
   function selectHit(hit, event) {
     const e = store.getEntity(hit.entityId);
-    if (e?.locked) return;
+    if (!e || e.locked || e.visibility === "hidden") return;
     if (hit.kind) {
       const t =
         typeof hit.topologyId === "object"
@@ -2012,90 +3056,271 @@ export function initModelWorkspace(api) {
     }
     render();
   }
+  function visibilityShortcut(key, showAll) {
+    const before = clone(store.document);
+    const selected = new Set(selection.map((reference) => store.getEntity(reference.entityId)?.bodyId));
+    if (!showAll && !selected.size) return;
+    for (const entity of store.document.entities) {
+      if (showAll) entity.visibility = "visible";
+      else if (key === "h" && selected.has(entity.bodyId)) entity.visibility = "hidden";
+      else if (key === "i") entity.visibility = selected.has(entity.bodyId) ? "visible" : "hidden";
+    }
+    store.document.documentRevision++;
+    store.transactions.record(before, store.document, showAll ? "すべて表示" : key === "i" ? "選択形状をisolate" : "選択形状を隠す");
+    render();
+  }
   let down = null,
+    boxDragged = false,
     snapPoint = null;
   $("modelSnap").onchange = () => {
     snapPoint = null;
   };
   const canvas = api.preview().canvas;
+  api.preview().controls?.addEventListener("change", positionViewportControls);
+  document.addEventListener("pathloom:camera-changed", positionViewportControls);
+  const planeTooltip = document.createElement("div");
+  planeTooltip.className = "model-plane-tooltip";
+  planeTooltip.textContent = "平面を選択";
+  planeTooltip.hidden = true;
+  document.body.append(planeTooltip);
+  canvas.addEventListener("pointerleave", () => {
+    planeTooltip.hidden = true;
+    cursorReadout.hidden = true;
+    snapGuide.hidden = true;
+    hoveredSubshape = null;
+    view.hover(null);
+    view.hoverReferencePlane?.(null);
+  });
+  let cachedSnaps = null;
+  function snapCandidate(event) {
+    if (!$("modelSnap").checked) return null;
+    const { THREE, camera } = api.preview();
+    if (!camera) return null;
+    let nearest = 8,
+      found = null;
+    if (cachedSnaps?.document !== store.document || cachedSnaps?.revision !== store.document.documentRevision)
+      cachedSnaps = { document: store.document, revision: store.document.documentRevision, points: snapCandidates(store.document) };
+    const candidates = [...cachedSnaps.points];
+    if (session?.command.baseOperation.id === "curve.polyline" && session.parameters.points.length >= 3)
+      candidates.unshift({ point: session.parameters.points[0], label: "閉じる" });
+    for (const candidate of candidates) {
+        if (
+          session &&
+          pointStep % 2 === 1 &&
+          (session.command.baseOperation.id === "curve.circle" ||
+            (session.command.baseOperation.id === "curve.rectangle" &&
+              session.drawingMode !== "threePoints"))
+        ) {
+          try {
+            if (!inDrawingPlane(candidate.point, inputPlane(true))) continue;
+          } catch {
+            continue;
+          }
+        }
+        const p = view.project(candidate.point);
+        if (!p?.visible) continue;
+        const distance = Math.hypot(
+          p.x - event.clientX,
+          p.y - event.clientY,
+        );
+        if (distance < nearest && view.pointVisible(candidate.point)) {
+          nearest = distance;
+          found = candidate;
+        }
+    }
+    return found;
+  }
+  function drawingPoint(event) {
+    const featureSnap = snapCandidate(event)?.point || snapPoint;
+    if (featureSnap) return [...featureSnap];
+    const point = view.pointAt(event, inputPlane(true));
+    return point && !event.altKey && $("modelSnap").checked ? point.map((value) => Math.round(value)) : point;
+  }
   canvas.addEventListener(
     "pointermove",
     (event) => {
-      if (!active() || !session || event.buttons) return;
-      if (!$("modelSnap").checked) {
-        snapPoint = null;
+      if (!active()) return;
+      if (activeDrag) return;
+      if (down && event.buttons === 1 && !session) {
+        const distance = Math.hypot(event.clientX - down[0], event.clientY - down[1]);
+        if (distance > 3) {
+          boxDragged = true;
+          boxSelection.hidden = false;
+          boxSelection.style.left = `${Math.min(down[0], event.clientX)}px`;
+          boxSelection.style.top = `${Math.min(down[1], event.clientY)}px`;
+          boxSelection.style.width = `${Math.abs(event.clientX - down[0])}px`;
+          boxSelection.style.height = `${Math.abs(event.clientY - down[1])}px`;
+        }
         return;
       }
-      const { THREE, camera } = api.preview();
-      if (!camera) return;
-      const r = canvas.getBoundingClientRect();
-      let nearest = 8,
-        found = null;
-      for (const e of deriveVisibleEntities(store.document)) {
-        if (e.locked) continue;
-        const candidates = (e.displayCache?.preview?.points || []).map((p) => ({
-          point: p.point,
-          label: "端点",
-        }));
-        const feature = store.getFeature(e.producer.featureId);
-        if (!["valid", "warning"].includes(feature?.status)) continue;
-        if (feature?.parameters.center)
-          candidates.push({ point: feature.parameters.center, label: "中心" });
-        if (feature?.operation.id === "curve.rectangle") {
-          const params = feature.parameters;
-          candidates.push({
-            point: params.anchor.map(
-              (n, i) =>
-                n +
-                (params.anchorMode === "center"
-                  ? 0
-                  : (params.widthMm * params.plane.xAxis[i] +
-                      params.heightMm * params.plane.yAxis[i]) /
-                    2),
-            ),
-            label: "中心",
-          });
-        }
-        for (const candidate of candidates) {
-          if (
-            session &&
-            pointStep % 2 === 1 &&
-            (session.command.baseOperation.id === "curve.circle" ||
-              (session.command.baseOperation.id === "curve.rectangle" &&
-                session.drawingMode !== "threePoints"))
-          ) {
-            try {
-              if (!inDrawingPlane(candidate.point, inputPlane(true))) continue;
-            } catch {
-              continue;
-            }
-          }
-          const p = new THREE.Vector3(...candidate.point).project(camera);
-          const distance = Math.hypot(
-            ((p.x + 1) * r.width) / 2 + r.left - event.clientX,
-            ((1 - p.y) * r.height) / 2 + r.top - event.clientY,
-          );
-          if (distance < nearest) {
-            nearest = distance;
-            found = candidate;
-          }
-        }
+      if (event.buttons) return;
+      if (!session) {
+        const hit = view.hit(event, "edge")[0] || view.hit(event, "face")[0] || view.hit(event, "object")[0] || null;
+        hoveredSubshape = hit;
+        view.hover(hit);
       }
+      let cursorPoint = null;
+      try {
+        cursorPoint = view.pointAt(event, inputPlane(true));
+      } catch {}
+      if (cursorPoint) {
+        const point = event.altKey || !$("modelSnap").checked ? cursorPoint : cursorPoint.map((value) => Math.round(value));
+        cursorReadout.hidden = false;
+        cursorReadout.style.left = `${event.clientX}px`;
+        cursorReadout.style.top = `${event.clientY}px`;
+        cursorReadout.textContent = `${point.map((value) => value.toFixed(event.altKey ? 1 : 0)).join(", ")} mm · ${event.altKey ? "精密" : "1mm snap"}`;
+      }
+      if (!session) return;
+      const hoveredPlane = referencePlanePicking && view.hit(event, "workplane")[0];
+      planeTooltip.hidden = !hoveredPlane;
+      if (hoveredPlane) {
+        planeTooltip.style.left = Math.min(event.clientX + 14, innerWidth - 110) + "px";
+        planeTooltip.style.top = Math.min(event.clientY + 14, innerHeight - 34) + "px";
+      }
+      view.hoverReferencePlane?.(hoveredPlane?.referencePlane);
+      const found = snapCandidate(event);
       snapPoint = found?.point || null;
-      if (found)
+      snapGuide.hidden = !found;
+      if (found) {
+        snapGuide.style.left = `${event.clientX}px`;
+        snapGuide.style.top = `${event.clientY}px`;
         setStatus(
           `${found.label}にスナップ · ${found.point.map((n) => n.toFixed(3)).join(", ")} mm`,
         );
+      }
     },
     true,
   );
   canvas.addEventListener(
     "pointerdown",
-    (event) => {
+    async (event) => {
       if (active() && event.button === 0) {
         down = [event.clientX, event.clientY];
+        boxDragged = false;
         event.stopImmediatePropagation();
+        if (session || pivotPicking || measureMode) return;
+        if (arrayDialog.open) {
+          const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
+          const hit = view.hit(event, "object")[0];
+          if (!entity || hit?.entityId !== entity.id) return;
+          const plane = { ...clone(store.document.uiState.workPlane), origin: centerOf(entity) };
+          const start = view.pointAt(event, plane);
+          if (!start) return;
+          trackDrag(canvas, event, (moveEvent) => {
+            const point = view.pointAt(moveEvent, plane);
+            if (!point) return;
+            const translation = point.map((value, axis) => value - start[axis]);
+            const spacing = moveEvent.altKey || !$("modelSnap").checked ? translation : translation.map(Math.round);
+            const field = arrayDialog.querySelector('[name="spacing"]');
+            field.value = spacing.join(",");
+            field.dispatchEvent(new Event("input", {bubbles:true}));
+          }, () => { arrayPreviewPromise = previewArrayCopies(); }, () => arrayDialog.close("cancel"));
+          return;
+        }
+        const edge = view.hit(event, "edge")[0];
+        if (edge && store.getEntity(edge.entityId)?.kind === "solid" && selection.some((reference) => reference.entityId === edge.entityId && reference.topologyId === edge.topologyId)) {
+          const entity = store.getEntity(edge.entityId);
+          const topology = entity.displayCache.topology.find((item) => item.topologyId === edge.topologyId);
+          selection = [{ entityId: entity.id }, makeSubshapeRef(entity, topology)];
+          let target = null, pending = null, latest = event, dragged = false, cancelled = false, initial = 0, key = null;
+          const apply = () => {
+            if (!target || session !== target) return;
+            const raw = initial + (latest.clientX - event.clientX) * (latest.altKey ? 0.1 : 1);
+            const value = latest.altKey || !$("modelSnap").checked ? raw : Math.round(raw);
+            dispatchSession(target, {type:"setting.change",key,value});
+            const field = $("modelProperties").querySelector(`[data-parameter="${key}"]`);
+            if (field) field.value = String(value);
+            cursorReadout.hidden = false;
+            cursorReadout.style.left = `${latest.clientX}px`;
+            cursorReadout.style.top = `${latest.clientY}px`;
+            cursorReadout.textContent = `${value.toFixed(latest.altKey ? 1 : 0)} mm`;
+            saveDraft(); queuePreview();
+          };
+          trackDrag(canvas, event, (moveEvent) => {
+            latest = moveEvent;
+            if (!dragged && Math.hypot(latest.clientX-event.clientX,latest.clientY-event.clientY) <= 3) return;
+            if (!pending) {
+              dragged = true;
+              pending = begin(commandById(event.shiftKey ? "D06" : "D05", 2)).then(() => {
+                if (cancelled) { cancel(); return; }
+                target = session; key = sessionAmountKey(target); initial = target.parameters[key]; properties(); apply();
+              });
+            } else apply();
+          }, async () => {
+            if (!dragged) return;
+            await pending;
+            if (session === target) { apply(); await commit(); }
+          }, () => {
+            cancelled = true;
+            if (target && session === target) cancel();
+          });
+        } else if (event.ctrlKey || event.metaKey) {
+          const hit = view.hit(event, "object")[0];
+          const entity = hit && store.getEntity(hit.entityId);
+          if (!entity || entity.locked) return;
+          selection = [{ entityId: entity.id }];
+          const plane = clone(store.document.uiState.workPlane);
+          plane.origin = centerOf(entity);
+          const start = view.pointAt(event, plane);
+          if (!start) return;
+          const command = clone(commandById("transform.move"));
+          command.resultPolicy = "independent";
+          await begin(command);
+          const target = session;
+          trackDrag(canvas, event, (moveEvent) => {
+            const point = view.pointAt(moveEvent, plane);
+            if (!point || target !== session) return;
+            const translation = point.map((value, axis) => value - start[axis]);
+            dispatchSession(target, { type: "setting.change", key: "translation", value:
+              $("modelSnap").checked && !moveEvent.altKey ? translation.map(Math.round) : translation });
+            saveDraft(); queuePreview();
+          }, () => { if (session === target) return commit(); }, () => { if (session === target) cancel(); });
+        }
       }
+    },
+    true,
+  );
+  canvas.addEventListener(
+    "pointerup",
+    (event) => {
+      if (!active() || arrayDialog.open || event.button !== 0 || !down || !boxDragged || session) return;
+      const rect = {
+        left: Math.min(down[0], event.clientX),
+        right: Math.max(down[0], event.clientX),
+        top: Math.min(down[1], event.clientY),
+        bottom: Math.max(down[1], event.clientY),
+      };
+      const touching = event.clientX < down[0];
+      selection = view.entitiesInRect(store.document, rect, touching).map((entityId) => ({ entityId }));
+      store.document.uiState.selection = clone(selection);
+      boxSelection.hidden = true;
+      setStatus(
+        `${touching ? "接触" : "包含"}矩形で${selection.length}件を選択しました。`,
+      );
+      render({ keepProperties: true, keepHistory: true });
+      event.stopImmediatePropagation();
+    },
+    true,
+  );
+  canvas.addEventListener(
+    "dblclick",
+    (event) => {
+      if (!active() || arrayDialog.open || session || event.button !== 0) return;
+      const hit = view.hit(event, "object")[0];
+      if (!hit) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      selectHit({ entityId: hit.entityId }, event);
+      setStatus("形状全体を選択しました。");
+    },
+    true,
+  );
+  canvas.addEventListener(
+    "contextmenu",
+    (event) => {
+      if (!active() || arrayDialog.open || session) return;
+        const hit = view.hit(event, "edge")[0] || view.hit(event, "face")[0];
+      if (hit) showSubshapeMenu(hit, event);
     },
     true,
   );
@@ -2103,12 +3328,82 @@ export function initModelWorkspace(api) {
     "click",
     (event) => {
       if (!active() || event.button !== 0) return;
+      planeTooltip.hidden = true;
       event.stopImmediatePropagation();
+      if (arrayDialog.open) return;
       if (
         down &&
         Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 3
       )
         return;
+      if (pivotPicking) {
+        const entity = store.getEntity(selection[0]?.entityId);
+        const hit = view.hit(event, "vertex")[0] || view.hit(event, "face")[0];
+        const point = snapCandidate(event)?.point || hit?.point || view.pointAt(event, inputPlane(true));
+        if (entity && point) {
+          pendingPivot = { entityId: entity.id, point: [...point] };
+          if (session?.parameters.mode === "rotate")
+            dispatchSession(session, { type:"setting.change", key:"axis", value:{...session.parameters.axis, origin:[...point]} });
+          if (session?.parameters.mode === "scale")
+            dispatchSession(session, { type:"setting.change", key:"center", value:[...point] });
+          if (session) { saveDraft(); properties(); queuePreview(); }
+          pivotPicking = false;
+          setStatus(`変換の中心 ${point.map((value) => value.toFixed(3)).join(", ")} mm`);
+        }
+        return;
+      }
+      if (measureMode) {
+        try {
+          const point = drawingPoint(event);
+          if (!point) return;
+          measurePoints.push(point);
+          if (measurePoints.length === 1) {
+            setStatus("2点目をクリックしてください。");
+          } else {
+            const distance = Math.hypot(...measurePoints[1].map((value, index) => value - measurePoints[0][index]));
+            setStatus(`測定距離 ${distance.toFixed(3)} mm`);
+            measurementLabel.textContent = `${distance.toFixed(3)} mm`;
+            measurementLabel.hidden = false;
+            const a = view.project(measurePoints[0]), b = view.project(measurePoints[1]);
+            if (a && b) {
+              measurementLabel.style.left = `${(a.x + b.x) / 2}px`;
+              measurementLabel.style.top = `${(a.y + b.y) / 2 - 24}px`;
+              Object.assign(measurementLine.style, {
+                left: `${a.x}px`, top: `${a.y}px`, width: `${Math.hypot(b.x-a.x,b.y-a.y)}px`,
+                transform: `rotate(${Math.atan2(b.y-a.y,b.x-a.x)}rad)`,
+              });
+              measurementLine.hidden = false;
+            }
+            measurePoints = [];
+          }
+        } catch (error) {
+          report(error);
+        }
+        return;
+      }
+      if (mirrorPlanePicking && session) {
+        const hit = view.hit(event, "face")[0];
+        try {
+          if (hit) applyFaceWorkplane(hit);
+          else {
+            const planeHit = view.hit(event, "workplane")[0];
+            if (!planeHit)
+              return setStatus("ミラー基準にするfaceまたは基準面をクリックしてください。");
+            applyReferenceWorkplane(planeHit.referencePlane);
+          }
+          dispatchSession(session, { type: "setting.change", key: "plane", value: clone(store.document.uiState.workPlane) });
+          mirrorPlanePicking = false;
+          referencePlanePicking = false;
+          view.showReferencePlanes?.(false);
+          saveDraft();
+          properties();
+          queuePreview();
+          setStatus("選択面をミラー基準にしました。反転プレビューを確認してください。");
+        } catch (error) {
+          report(error);
+        }
+        return;
+      }
       if (planePicking) {
         const hit = view.hit(event, "face")[0];
         if (!hit) {
@@ -2122,10 +3417,37 @@ export function initModelWorkspace(api) {
         }
         return;
       }
+      if (referencePlanePicking) {
+        const faceHit = view.hit(event, "face")[0];
+        if (faceHit) {
+          try {
+            applyFaceWorkplane(faceHit);
+            referencePlanePicking = false;
+            view.showReferencePlanes?.(false);
+            if (session && !session.command.inputs.some((slot) =>
+              ["entity", "subshape"].includes(slot.kind)))
+              acceptPoint(drawingPoint(event) || faceHit.point);
+            render({ keepProperties: true });
+          } catch (error) {
+            report(error);
+          }
+          return;
+        }
+        const planeHit = view.hit(event, "workplane")[0];
+        if (!planeHit) {
+          setStatus("基準面または既存の平面をクリックしてください。");
+          return;
+        }
+        applyReferenceWorkplane(planeHit.referencePlane);
+        if (session && !session.command.inputs.some((slot) =>
+          ["entity", "subshape"].includes(slot.kind)))
+          acceptPoint(drawingPoint(event) || planeHit.point);
+        return;
+      }
       if (
         session && curvePointPicking
       ) {
-        try{const p=view.pointAt(event,inputPlane(true));if(p)acceptPoint(p);}catch(error){rejectDrawingPoint(error);}
+        try{const p=drawingPoint(event);if(p)acceptPoint(p);}catch(error){rejectDrawingPoint(error);}
         return;
       }
       if (
@@ -2135,7 +3457,7 @@ export function initModelWorkspace(api) {
         )
       ) {
         try {
-          const p = snapPoint || view.pointAt(event, inputPlane(true));
+          const p = drawingPoint(event);
           if (p) acceptPoint(p);
         } catch (error) {
           rejectDrawingPoint(error);
@@ -2143,7 +3465,8 @@ export function initModelWorkspace(api) {
         return;
       }
       const filter = $("modelPickFilter").value,
-        hits = view.hit(event, filter);
+        adaptiveHit = !session && (view.hit(event, "edge")[0] || view.hit(event, "face")[0]),
+        hits = adaptiveHit ? [adaptiveHit] : view.hit(event, filter);
       if (hits.length > 1) {
         choosePick(hits, event.shiftKey);
       } else if (hits.length) {
@@ -2159,7 +3482,7 @@ export function initModelWorkspace(api) {
           return;
         }
         try {
-          const p = view.pointAt(event, inputPlane(true));
+          const p = drawingPoint(event);
           if (p) acceptPoint(p);
         } catch (error) {
           rejectDrawingPoint(error);
@@ -2171,13 +3494,32 @@ export function initModelWorkspace(api) {
   document.addEventListener(
     "keydown",
     (event) => {
+      const eventTarget = event.target instanceof Element ? event.target : document.body;
+      if (active() && event.key === "Escape" && arrayDialog.open) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (activeDrag) activeDrag.abort();
+        else arrayDialog.close("cancel");
+        return;
+      }
+      if (active() && event.key === "Escape" && activeDrag) {
+        event.preventDefault(); event.stopImmediatePropagation(); activeDrag.abort(); return;
+      }
+      if (active() && event.key === "Enter" && eventTarget.closest("#modelProperties") &&
+          eventTarget.matches("input,textarea,select") && !event.isComposing) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        const fields = [...$("modelProperties").querySelectorAll("input,textarea,select")].filter(
+          (field) => !field.disabled && field.getClientRects().length,
+        );
+        const next = fields[fields.indexOf(eventTarget) + 1] || $("modelCommit");
+        next.focus(); return;
+      }
       if (
         !active() ||
         event.isComposing ||
         event.keyCode === 229 ||
-        (event.key === "Enter" && event.target.closest("button")) ||
-        (event.target.closest("input,textarea,select,[contenteditable=true]") &&
-          !(planePicking && event.key === "Escape"))
+        (event.key === "Enter" && eventTarget.closest("button")) ||
+        (eventTarget.closest("input,textarea,select,[contenteditable=true]") &&
+          !(event.key === "Escape" && (planePicking || session)))
       )
         return;
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
@@ -2185,6 +3527,14 @@ export function initModelWorkspace(api) {
         event.stopImmediatePropagation();
         event.shiftKey ? store.transactions.redo() : store.transactions.undo();
         render();
+      } else if (!event.ctrlKey && !event.metaKey && ["h", "i"].includes(event.key.toLowerCase())) {
+        event.preventDefault(); event.stopImmediatePropagation();
+        visibilityShortcut(event.key.toLowerCase(), event.shiftKey && event.key.toLowerCase() === "h");
+      } else if (event.key === "Tab") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        panelsTemporarilyHidden = !panelsTemporarilyHidden;
+        render({ keepProperties: true, keepHistory: true });
       } else if (event.key === "Escape") {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -2192,8 +3542,23 @@ export function initModelWorkspace(api) {
           planePicking = false;
           planeSelect.value = planeBeforeFace;
           $("modelPickFilter").value = pickFilterBeforePlane;
-          setStatus("作業平面の選択を取り消しました。");
-        } else cancel();
+        }
+        pivotPicking = false;
+        down = null;
+        boxSelection.hidden = true;
+        if (session) cancel();
+        else {
+          measureMode = false;
+          measurementLabel.hidden = true;
+          measurementLine.hidden = true;
+          mirrorPlanePicking = false;
+          selectedFeature = null;
+          propertiesOpen = false;
+          featureEditActive = false;
+          view.hover(null);
+          setStatus("操作を終了しました。");
+          render({ keepProperties: true, keepHistory: true });
+        }
       } else if (event.key === "Enter") {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -2253,7 +3618,7 @@ export function initModelWorkspace(api) {
   new MutationObserver(() => {
     store.document.uiState.activeStage = document.body.dataset.workspaceMode;
     if (active()) startRuntime();
-    view.update(store.document, selection);
+    updateView();
   }).observe(document.body, {
     attributes: true,
     attributeFilter: ["data-workspace-mode"],
@@ -2308,7 +3673,9 @@ export function initModelWorkspace(api) {
   render();
   return {
     store,
-    refreshView: () => view.update(store.document, selection),
+    refreshView: () => updateView(),
+    projectPoint: (point) => view.project(point),
+    displayState: () => view.displayState(),
     async snapshot() {
       saveDraft();
       return store.snapshot();
@@ -2336,7 +3703,7 @@ export function initModelWorkspace(api) {
       selection = [{ entityId }];
       selectedFeature = store.getEntity(entityId)?.producer.featureId || null;
       render();
-      view.update(store.document, selection);
+      updateView();
       return entityId;
     },
     render,

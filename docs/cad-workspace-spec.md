@@ -1838,3 +1838,10 @@ Boxはmodeでdimensions/底面2点/底面3点を選ぶ。Fillet v2はselected/ta
 selectedでkernelが連鎖を必要とする場合は診断する。旧v1のOCCT連鎖挙動は再現性のため保持する。
 2距離Chamferはedgeと同順の距離1側隣接faceを明示する。
 詳細な受入・境界・検証証拠はcad-regions-solids-plan.md/開発ログ/PR40を参照。
+
+## 2026-10-31 指示018 直接操作の追加契約
+
+追加46項目、display-only履歴、既存Extrude/Boolean合成、配列/取消、UI設定の境界は
+[追加UI受入対応](cad-ui-review-additions.md)にまとめる。08:35のユーザー判断により、
+軸別Scaleだけnative変換/軸倍率parameterを拡張する。新規transform.scale v2は
+center/factor/axisFactors、保存済みv1定義と等方変換は保持する。他演算や保存schema/bindingの変更許可ではない。

@@ -466,7 +466,20 @@ def evaluate(op,p,inputs,tol,selectors=None):
         s=input_one(inputs,'object');t=gp_Trsf();mode=p['mode']
         if mode=='move':t.SetTranslation(gp_Vec(*vec(p['translation'])))
         elif mode=='rotate':t.SetRotation(gp_Ax1(point(p['axis']['origin']),direction(p['axis']['direction'])),finite(p['angleRad']))
-        elif mode=='scale':t.SetScale(point(p['center']),positive(p['factor']))
+        elif mode=='scale':
+            center=vec(p['center']);factor=positive(p['factor'])
+            axis_factors=[positive(value) for value in vec(p.get('axisFactors',[1,1,1]))]
+            if axis_factors!=[1,1,1]:
+                from OCP.gp import gp_GTrsf
+                from OCP.BRepBuilderAPI import BRepBuilderAPI_GTransform
+                general=gp_GTrsf()
+                for row in range(3):
+                    scale=factor*axis_factors[row]
+                    for col in range(3):general.SetValue(row+1,col+1,scale if row==col else 0)
+                    general.SetValue(row+1,4,center[row]*(1-scale))
+                result=BRepBuilderAPI_GTransform(s,general,True).Shape()
+                return [('result',result,semantic)]
+            t.SetScale(point(center),factor)
         elif mode=='mirror':t.SetMirror(axis2(p['plane']))
         else:raise CadError('CAD_SCHEMA_UNSUPPORTED','未実装の変換です。')
         result=BRepBuilderAPI_Transform(s,t,True).Shape()

@@ -328,3 +328,28 @@ D02/D04は既存の複数対象・全結果・正本由来のnative/JS/browser�
 Undo/Redo、失敗lastValid、command版/asset hash/accuracyのv2復元を確認する。
 browserは実OCP/実UI、OS/Tauri transportとstorageはfixture代替。実機#37は未実施。
 全実行/失敗/再実行/最終CIは開発ログ・PR40・ボードで別々に記録する。
+
+## 2026-10-30 — 指示018 UIレビュー証拠
+
+既存A/T/R 62行の状態は保持する。追加browser fixtureは、上部のUndo/Redo・検索・
+プレビューが露出しないこと、コマンド展開の縦並び、透明アウトライナー、編集中だけの
+右設定、履歴の抑制/削除context menu、アウトライナーのLibrary/生成/削除context menuを
+操作する。既存fixtureはUndo/Redoをショートカットで、生成接続をアウトライナー右クリックで
+行うよう更新し、削除したUIへの依存を残さない。製品CAD演算の数値fixture、実Mac GUI、
+Tauri/OS dialogはこのUI証拠で合格へ変更しない。
+第12弾の基準面hover highlight/tooltip/直接選択も実pointer操作で照合する。
+JSON登録UIの削除後も、shared commandファイルとproject内定義の読込・遅延読込・
+shared file不在時の復元を検証する。修復操作はoutliner context menu、回復保留は
+独立メッセージ、Libraryはdialogで確認する。詳細と旧失敗runは開発ログ・PR #44に保持する。
+
+追加レビュー7〜10は同じA/T/R 62行を昇格させず、UI fixtureへview cube、Tab、command edit/
+pin、inline rename、色タグ、thumbnail、および既存Extrude＋Unionの自動合成と1単位Undo/Redoを
+追加する。native/schema/bindingは不変。ローカル実Mac GUI/Tauri/OS dialogは引き続き
+Issue #37で未実施とし、自動browser成功で置換しない。
+
+2026-10-31追記：上記の後、08:35明示許可で軸Scaleのnative変換/axisFactorsだけを追加した。
+A/T/R62行は維持し、[UI受入対応](cad-ui-review-additions.md)へ46項目の検証入口を対応づけた。
+追加nativeはpivot/軸倍率の体積とbbox、fresh runtime asset再読込、v1互換、invalid値失敗。
+JSは複合Undo、消費前tipの表示と正本不変、推論snap。browserは実mouse/key操作、生成drop、
+exact delta、Boolean/複数対象、配列、取消、履歴、表示、寸法入力を実OCCTで照合する。
+成否/旧失敗/最終CI/mergeは開発ログ/PR44/ボードへ区別して記録し、実機を昇格しない。

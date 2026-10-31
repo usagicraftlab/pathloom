@@ -32,6 +32,18 @@ export function createTransactions(get, set, cancel = () => {}) {
       if (undo.length > 100) undo.shift();
       redo = [];
     },
+    squashLast(count, label) {
+      if (!Number.isSafeInteger(count) || count < 2 || undo.length < count)
+        return false;
+      const entries = undo.splice(undo.length - count, count);
+      undo.push({
+        before: entries[0].before,
+        after: entries.at(-1).after,
+        label: label || entries.at(-1).label,
+      });
+      redo = [];
+      return true;
+    },
     undo() {
       const entry = undo.pop();
       if (!entry) return false;

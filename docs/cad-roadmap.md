@@ -116,3 +116,28 @@ Issue13 / PR40はS03/B01〜B08/D01〜D07の不足モードを
 穴/複数領域・Pipe/Cap・面押出・Boolean複数入力/接触次元・Shell失敗を全検証で照合。
 旧command版と既存D02/D04の由来/全結果の契約を保持し、実機#37やPhase3の合格へ広げない。
 最終CIとマージ結果はPR/Codexログで記録し、#14/#15はMuse有効化待ちを維持する。
+
+## 2026-10-30 — 指示018 UI評価ラウンド
+
+Phase 3演算へ進む前のUI評価として、既存CADワークスペースの情報配置と操作入口だけを
+レビュー結果へ合わせる。上部コマンド、左アウトライナー、右の編集中設定、下部履歴を
+維持し、削除/抑制/Library/生成はcontext menuへ集約する。3DのXY/XZ/YZ参照平面は
+既存作図sessionへ入力を渡すが、新しい演算・schema・bindingは追加しない。実Macの
+ポインティング/VoiceOver/OS統合はIssue #37の未実施範囲を維持する。
+
+### 追加レビュー 7〜10
+
+追加評価では、ビューキューブ、command分類のhover展開、Esc一回終了、配列コピー、
+command配置編集、形状色タグ、inline rename、Mirror面選択、生成へのdrag、形状間snap guide、
+Tabによる一時panel非表示、選択形状寸法、outliner thumbnailをUI層へ追加する。
+履歴scrubは表示だけに限定し、保存正本・後続履歴・生成を変更しない。自動Extrudeは新演算を
+追加せず、交差bodyが厳密に1件のときだけ既存Extrude＋Union/Differenceを1 Undo単位として
+合成する。複数body候補では通常Extrudeを保持する。centerline symmetry、collision highlight、
+selection filter/view animation、数値矢印step、recent commandは今回の採用範囲外とする。
+
+### 2026-10-31 追加レビュー11〜13と範囲回答
+
+drag前復元、folder、suppressed表示、確認付き再開、H/Shift+H/I、原点XYZ、Enter次欄、pivot、
+角/軸Scale、shortcutも018へ含める。08:35回答で軸Scaleだけnative変換/axisFactorsを拡張し、
+v1互換と他項目の機構境界を維持する。全採用項目は[UI受入対応](cad-ui-review-additions.md)。
+014〜017はMuse有効化待ち、#37とPR43は別枠。UI成功を65機能の最終照合に置換しない。

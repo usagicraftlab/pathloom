@@ -468,6 +468,11 @@ for (const definition of [
     ],
     { resultPolicy: "replace", aliases: definition.aliases },
   );
+// v1's scalar factor remains readable; axis stretch is explicitly versioned.
+add("transform.scale", "Scale", "shape.transform", {
+  mode: "scale", center: [0, 0, 0], factor: 2, axisFactors: [1, 1, 1],
+}, [input("object", ["point", "curve", "surface", "shell", "solid", "compound"])],
+{version: 2, resultPolicy: "replace", aliases: ["Scale", "拡大縮小"]});
 add(
   "E01",
   "Join Curves",

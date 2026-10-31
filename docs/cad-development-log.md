@@ -1594,3 +1594,191 @@ OS dialog、実機Issue #37、指示011は未実施・未着手。
 - 実装head `91696ddd` のPR checks run 40787882931 attempt 1はnative 85成功/任意USD2skipとmacOS Rust 22が成功、JS208も成功したがbrowserは61件中60成功1失敗。新規変換testがMirror確定直後、履歴表示は4件になった一方で非同期recompute完了前にentityを読んだtest raceで、製品診断/演算失敗ではなかった。各変換後に最後の履歴が`valid`になることを待ってから次へ進むようtestを修正し、旧runを成功へ置換せず最終headで全件再実行する。
 - 修正後の実装head `27bacdc450ebf621175a809b3b8949d6004fdcf2` は、push run [40788651265](https://github.com/usagicraftlab/pathloom/actions/runs/40788651265) とPR run [40788660019](https://github.com/usagicraftlab/pathloom/actions/runs/40788660019) が各attempt 1で成功した。両runの全6 job生ログを照合し、Node20.20.2 JS 208、native 87件中85成功・任意NVIDIA USD 2 skip、macOS Rust 22、browser 61成功（失敗/skip/retry/flaky 0）を確認した。CI browser成功をローカルbrowser成功とは記載せず、ローカルは上記の実行不能のまま区別する。
 - この記録追記だけの最終文書headは、実行コードを変更しない。ただし最終headとしてpush/PR双方の全CIを改めて確認し、結果はPR本文とボードのCodexログへ記録する。
+
+## 2026-10-30 JST — 指示018 UIレビュー反映（実装・ローカル検証途中）
+
+- main `5f609964` から `feat/18-ui-review` を作成。既存の4領域、アイコンcommand、
+  outliner表示/lock/context actions、履歴編集、既存面作業平面、mouse作図、occlusion pickingを
+  実装済みとして確認し、未達項目だけをボードへ記録した。
+- 上部からUndo/Redo/searchを除き、分類展開を縦並びにした。透明アウトライナー、編集中だけの
+  右設定、右下の確定/キャンセル、下部履歴アイコンと抑制/削除context menuへ整理した。
+  Library/生成/削除はアウトライナーcontext menuに残し、プロパティ入口・STEP書出し・
+  custom command JSON・左側座標/snap/plane・右側preview/retry/generation/delete/suppressを露出しない。
+- `cad/view-adapter.js`へXY/XZ/YZの半透明参照平面を原点中心に追加し、平面clickを現在の
+  作図sessionのplane選択と最初のpoint入力へ接続した。hidden shapeの非選択とface/edge overlayは
+  既存実装を保持する。CAD演算、正本、保存schema、generation bindingは変更していない。
+- 既存browser fixtureのUndo/Redoをkeyboard shortcutへ、生成接続をoutliner context menuへ移行。
+  UIレビュー専用fixtureを追加した。Node24.22.1全JS208成功、Node20.20.2全JS208成功、
+  Python3/OCP7.8.1.1 native全87件中85成功・任意NVIDIA USD2skip。
+- ローカルbrowserは`npx playwright install chromium`を5回試行したが、各CDN応答が0 MiBの
+  truncated zipで展開不能。製品testは未実行であり成功に置換しない。最終headのCI browserと
+  ローカル実行不能を別々に記録する。ローカルRustと実Mac GUI/Tauri/OS dialogも未実施。
+- 初回PR run `40995633123` attempt 1はJS208、native85成功/任意USD2skip、macOS Rust22が成功。
+  browserは共通初期化で全19件が45秒timeoutになり、15分job制限でcancelled（残り未実行）。
+  一時的に`maxFailures:1`を設定した診断run `40997226534` attempt 1でも最初の1件がfixture setup中に
+  timeoutし、61件未実行。traceのpage errorは`workspace-ui.js:349`のnullなpreview buttonに対する
+  `hidden`設定だった。左panel再構成でbuttonが一時的にDOM外へ出た後に`panel.querySelector`していたため、
+  保持済み`actionControls`から参照するよう修正した。診断用`maxFailures`は最終headから除去する。
+- 修正headの全件PR run `40997555193` attempt 1はJS208、native85成功/任意USD2skip、macOS Rust22が
+  成功した一方、browserは18件が同じ45秒timeoutとなり15分制限でcancelledした。2回目の診断run
+  `40999055679` attempt 1は最初の1件で停止し、traceから「確定」buttonがvisible/enabledでも
+  viewport外と判定され続けていたことを確認した。右panelの内外2重overflowとcontent-boxの
+  `height:100%`で下端actionsがpanel外へ押し出されていたため、外枠を`overflow:hidden`、内側を
+  `box-sizing:border-box; max-height:100%; overflow:auto`へ修正した。旧cancelled/failure runを
+  成功へ置換せず、診断用`maxFailures`を除いた最終headの全62件で再確認する。
+- 続く全件run `41028060647` attempt 1もJS208、native85成功/任意USD2skip、macOS Rust22は成功したが、
+  browserは18件が45秒timeoutとなり15分でcancelled、残り44件は未実行だった。前回traceのlayoutを
+  再精査すると、開いた「カーブをつくる」分類の縦command 25件がgridのauto行をviewport高以上へ
+  拡張し、中央行と右panel全体を画面外へ押し出していた。分類の縦並びは維持したまま、開いた分類の
+  button列を最大210pxの内部scrollへ制限する。まず`maxFailures:1`の診断runで最初のfixtureが
+  通過することを確認し、その後に設定を外して全62件を再実行する。
+- 診断run `41029873262` attempt 1では最初のRectangle fixtureが4.1秒で成功し、右panelの
+  viewport問題が解消したことを確認した。次のfixtureは折りたたまれた「移動・回転・ミラーなど」内の
+  Moveを直接待って45秒timeout、1成功/1失敗/60未実行だった。分類は折りたたみ可能な`details`の
+  まま全分類を初期展開し、各縦button列の内部scrollで高さを制限する。既存の全command操作経路を
+  維持し、診断用`maxFailures`を除いた全62件を最終headで再実行する。
+
+## 2026-10-30 JST — 指示018 残存UI回帰と第12弾の反映
+
+- 20:12のボード回答を読み、原点中心の有限な3基準面へ境界線、hover時の面ハイライト、
+  「平面を選択」tooltipを追加した。平面または既存の見えているfaceを直接選んで作図できる。
+  明示した右パネルのplane設定と端点/中心snapは維持する。
+- 右パネル外枠の非表示、`[hidden]`を上書きしていたgrid/flex規則、初回plane選択時の
+  snap再解決を修正した。Libraryはmodal、回復候補保留の理由/再確認は独立メッセージへ置き、
+  非編集中のinspectorを再表示しなくても操作できる。生成参照の明示修復は右パネルから
+  アウトライナーcontext menuへ移し、既存の`store.rebindOutput`を呼ぶ。
+- 旧単一lock/hideボタンを選択outliner行へ限定し、非表示STEPのtransport検証はhandlerへ接続。
+  削除したcustom JSON登録UIのfixture3件は、既存shared command読込・project内定義復元、
+  遅延shared読込、shared file不在でもproject定義が使える経路へ更新した。
+  CAD数値assertion・tolerance・45秒timeout・retries0は緩めず、skip/xfail化はしていない。
+- Playwright公式CDN取得はこの回も5回0 MiB/truncated zipで失敗した。検証専用scratchへ
+  npm版`@sparticuz/chromium@153.0.0`を取得し、初回chown EINVAL後に標準tarで復旧した。
+  実Chromium153.0.8010.0、Python/OCP7.8.1.1でローカル実行可能になった。
+  検証用追加依存はpackage.json/lockfileへ入れず、製品依存/CI browserは従来どおり。
+- ローカル対象7件の最初は3成功/1失敗/3未実行（plane欄省略）、次は6成功/1失敗
+  （旧lock selector）。その後の全62件は60成功/2失敗/skip・retry・flaky0、
+  errors[]、306.382秒。失敗は旧生成参照修復buttonを待つtimeoutと、新fixtureが
+  normalize前のcommandをbeginへ渡したTypeError。両方を修正した対象4件は4成功、
+  失敗/skip/retry/flaky0（20.0秒）。修正前の結果を成功へ置換しない。
+- Node24.22.1 npm testは208成功、Node20.20.2全JSは208成功（各失敗/skip0）。
+  native全87件は85成功・任意NVIDIA USD2skip（8.305秒）。local Rustはcargo不在で未実行。
+  実Mac GUI/Tauri IPC/OS dialogとIssue #37は未実施。
+- 旧branch全22 runの全job結果とbrowser生ログを再照合した。すべてattempt1、
+  同一runの再実行はない。各runのnpm test/native/Rustは成功、browserだけが下表の結果。
+  cancelledでは最終集計が出ていないため、ログ行から成功/失敗/未実行を数えている。
+  `41030217718`の正値は27/18/17で、途中のチャット28/17およびボード26/19は
+  誤計数としてボード追記で訂正した。旧失敗/中断を最終成功に置換しない。
+
+| head | push結果 · browser成功/失敗/未実行 | PR結果 · browser成功/失敗/未実行 |
+| --- | --- | --- |
+| `32ae668` | [40995618222](https://github.com/usagicraftlab/pathloom/actions/runs/40995618222) cancelled · 0/18/44 | [40995633123](https://github.com/usagicraftlab/pathloom/actions/runs/40995633123) cancelled · 0/19/43 |
+| `d13fac6` | [40997220991](https://github.com/usagicraftlab/pathloom/actions/runs/40997220991) failure · 0/1/61 | [40997226534](https://github.com/usagicraftlab/pathloom/actions/runs/40997226534) failure · 0/1/61 |
+| `d0a2199` | [40997551235](https://github.com/usagicraftlab/pathloom/actions/runs/40997551235) cancelled · 0/18/44 | [40997555193](https://github.com/usagicraftlab/pathloom/actions/runs/40997555193) cancelled · 0/18/44 |
+| `34c2c82` | [40999049857](https://github.com/usagicraftlab/pathloom/actions/runs/40999049857) failure · 0/1/61 | [40999055679](https://github.com/usagicraftlab/pathloom/actions/runs/40999055679) failure · 0/1/61 |
+| `bf0393d` | [41028056120](https://github.com/usagicraftlab/pathloom/actions/runs/41028056120) cancelled · 0/19/43 | [41028060647](https://github.com/usagicraftlab/pathloom/actions/runs/41028060647) cancelled · 0/18/44 |
+| `48b8f0c` | [41029865498](https://github.com/usagicraftlab/pathloom/actions/runs/41029865498) failure · 1/1/60 | [41029873262](https://github.com/usagicraftlab/pathloom/actions/runs/41029873262) failure · 1/1/60 |
+| `d7b4d78` | [41030211009](https://github.com/usagicraftlab/pathloom/actions/runs/41030211009) cancelled · 27/18/17 | [41030217718](https://github.com/usagicraftlab/pathloom/actions/runs/41030217718) cancelled · 27/18/17 |
+| `a455f1a` | [41032194286](https://github.com/usagicraftlab/pathloom/actions/runs/41032194286) failure · 1/1/60 | [41032200444](https://github.com/usagicraftlab/pathloom/actions/runs/41032200444) failure · 1/1/60 |
+| `171b8d8` | [41032494823](https://github.com/usagicraftlab/pathloom/actions/runs/41032494823) failure · 2/1/59 | [41032501828](https://github.com/usagicraftlab/pathloom/actions/runs/41032501828) failure · 2/1/59 |
+| `300ff8f` | [41032798220](https://github.com/usagicraftlab/pathloom/actions/runs/41032798220) failure · 2/1/59 | [41032808951](https://github.com/usagicraftlab/pathloom/actions/runs/41032808951) failure · 2/1/59 |
+| `780d157` | [41033208855](https://github.com/usagicraftlab/pathloom/actions/runs/41033208855) failure · 3/1/58 | [41033216994](https://github.com/usagicraftlab/pathloom/actions/runs/41033216994) failure · 3/1/58 |
+
+上記の0/1診断、1/1診断、2/1診断、3/1診断は`maxFailures:1`で原因を採取したrun。
+設定は最終sourceから除去した。最終sourceの全63件結果、最終push/PR CI、
+Ready/merge結果は別途確認し、PR本文とボードへ記録する。
+
+### 指示018 最終ローカル結果
+
+最終sourceのbrowser全63件は63成功、失敗/skip/retry/flaky0、errors[]、
+261.651秒（約4分22秒）。45秒の個別timeout、workers1を維持し、maxFailures制限なし。
+第12弾のhover/tooltipと直接平面選択、修復context menu、回復候補保留/再確認、
+Library挿入、STEP再読込、shared command/project復元、全生成/maintenance回帰を通過した。
+idle/edit/plane-hoverの画面を目視し、CSSのhidden上書きによる禁止UI再露出も修正・再確認した。
+Node24.22.1/Node20.20.2各208成功、native85成功/任意USD2skipは上記と同じsourceで実測済み。
+ローカルRustは未実行。実Mac/実Tauri/OS dialogはIssue #37の未実施範囲のまま。
+最終headのpush/PR CIは公開後に全job生ログまで別に照合し、結果とmergeはPR/ボードへ記録する。
+
+## 2026-10-31 JST — 指示018 追加レビュー7〜10と自動Extrude方針の反映
+
+- ボード20:44〜20:58の追加レビューと20:53の自動Extrude回答を読み、状態を`作業中`へ戻した。
+  native演算、command schema、generation bindingは変更していない。
+- view cube、hover展開、Esc一回終了、配列preview/copy、command pin/reorder、outliner inline rename/
+  reorder/thumbnail/color、Mirror face/基準面選択、生成drag、adaptive face/edge選択とcontext command、
+  L→R包含/R→L接触矩形選択、Move中心snap、Tab panel toggle、選択寸法、履歴display-only scrub、
+  数値drag/wheel、15度Rotate、Ctrl-drag copy、対称Extrude toggleを追加した。
+- 閉じるPolylineは既存Planar Regionを後置し、自動Extrudeは交差する既存solidが1件のときだけ
+  距離の符号により既存Union/Differenceを後置する。履歴featureは両方保持し、transactionだけを
+  `squashLast`で1 Undo/Redo単位にする。複数交差は通常Extrudeを保持し、黙って対象を選ばない。
+- `squashLast`のJS回帰と、実OCCT browserでExtrude＋Unionのfeature列・Undo/Redoを検証した。
+  UI対象4件は成功。全JS/native/browserの最終集計、CI、Ready/mergeは後続記録で区別する。
+
+### 2026-10-31 08:20 JST — 作業確認と追加第11〜13弾の範囲判断
+
+- 上記追加操作の一覧はローカル試作の着手範囲であり、全項目の完成・合格ではない。
+  Node24.22.1 `npm test`209成功、Node20.20.2全JS209成功、native87件中85成功・任意USD2skip。
+  UI対象3件と自動Extrude＋Union/1単位Undo/Redo対象1件は成功した。自動合成の切取・複数候補・
+  正確な交差判定、配列/dragの中断、履歴stageの過去出力表示などの境界検証は未完了。
+- browser全65件の実行は開始したが、最初のRectangle fixtureで折りたたまれた分類内の
+  Rectangle buttonを待つ45秒timeoutを記録した。その後の最終集計は取得できず、現在の実行
+  processも参照不能のため、全件成功とはしない。準備中のbrowser起動失敗・WebGL runtime不足・
+  fixture失敗の履歴も、この最終集計の代替にはしない。retry/timeout/assertionの緩和は行わない。
+- ボード21:00/21:07/21:08の追加11項目を新たに確認した。Escでdrag前へ復元、folder grouping、
+  suppression表示、前回作業の確認付き再開、H/Shift+H、常時原点/XYZ軸、Enter次field、isolate、
+  pivot picking、角/軸Scale handles、shortcut helpは残件で、実装・検証済みとは扱わない。
+- 軸Scaleの既存経路を確認した。registry `transform.scale`は`center`と単一`factor`、native
+  `shape.transform`は`gp_Trsf.SetScale(center, factor)`だけを受ける。Move/Rotate/Mirrorと等方Scaleの
+  合成では1軸だけの伸縮は構成できず、一般形状の正確なB-repへ適用するにはnative演算とparameterの
+  拡張が必要になる。018のnative/schema機構変更禁止と衝突するため、許可範囲の回答が必要。
+- PR #44の公開headは`f27a5293eba4f506203231471757f22c25e8afea`のまま。今回の10 tracked file差分は
+  未commit/未push、追加差分のCIは未実施。公開headの旧63件成功は今回へ転用しない。
+  Draft/open・未Ready/未マージ、対応Issueなし。014〜017予約、Issue #37/PR #43は未着手を保持。
+
+### 2026-10-31 08:35回答後 — 追加46項目の実装と境界検証
+
+- ユーザー方針Aに従い、軸別Scaleだけnative変換/axisFactorsを追加。新規command v2に分け、
+  v1のcenter/factor定義・等方変換とdocument/asset schema/binding機構を保持する。
+  正のXYZ倍率とpivot、正確な体積/bbox、fresh runtime export/import、v1、不正値失敗をnativeで照合。
+- 追加の46項目をcad-ui-review-additions.mdへ対応づけた。推論snapは裏側遮蔽を確認し、
+  500線分超でも交点を一括省略しない。scrubは消費前tipの表示だけで正本/binding不変。
+  exact deltaは既存Differenceから増加緑/除去赤を表示。Move 5mmで各500mm³を実測した。
+- 自動Extrudeは既存Intersectionで1対象を確認しUnion/Differenceを既存役割で後置、
+  1 Undo/Redo単位にまとめた。切取1000→920mm³、複数対象は通常Extrude400mm³と理由を保持。
+  複数対象の扱いをボード@Museへ実測報告。配列は独立Move、個数/spacingと形状drag、全コピー1 Undo。
+- H/Shift+H/Iの実表示、folder、suppressed ghost、3D寸法inline入力、Enter次欄、確認付き既存回復、
+  origin XYZ、pivot、Scale handles、shortcut、生成drop、色/thumbnail/pin/順序設定を接続した。
+  既存SVG view cubeを右上へ移して再利用し、追加の重複cubeは除いた。
+- 旧成功の63件は旧公開headの証拠。今回のローカル失敗/修正履歴は次のとおり保持する。
+
+| 証拠（work内JSON） | 実測 | 分類・対応 |
+| --- | --- | --- |
+| 018-target-resume → 018-auto-fix | 3成功1失敗 → 1成功 | Intersectionのarguments/toolsを既存役割へ明示 |
+| 018-direct-initial → 018-direct-second | 4成功3失敗 → 7成功 | 新fixtureのbbox1e-7余白、cube遮蔽、複数対象理由の上書き |
+| 018-direct-extra | 3成功 | 矩形選択、部分選択/context、生成drop |
+| 018-pivot-delta / 018-cube-pivot | 各2成功1失敗 | pivotの期待点/裏側snap、既存cube再利用で再照合 |
+| 018-pivot-visible / 018-plane-recheck | 3成功1失敗 / 1失敗 | 点作図中の量handleが次点クリックを拾った。点作図から除外 |
+| 018-additions-final-target | 16成功、43.675秒 | 上記修正後のdirect/review対象 |
+| 018-boundaries-final / 018-boundaries-2 | 各3成功1失敗 | 投影寸法とgizmo干渉、配列dragと矩形選択の競合を修正 |
+| 018-final-direct（14件予定） | 最終集計未取得 | 7件目まで開始を観測、process参照不能。完走/合格とはしない |
+| 018-browser-full-final | 78成功2失敗、319.030秒 | 部分選択時の全体handle、curve edge再クリックで誤Fillet開始 |
+| 018-final-boundary-target | 4成功1失敗 | 上記後者が残存。curveにはsolid Filletを開始しない |
+| 018-selection-fix | 2成功、13.0秒 | 元の2選択fixtureをassertion変更なしで再照合 |
+| 018-edge-drag → 018-edge-drag-fix | 1失敗 → 1成功、4.5秒 | 実dragでform未構築を修正。Fillet7/Shift-Chamfer6を実測 |
+
+native対象4件の初回3成功1errorはfixtureのexport/import message名を修正して4成功。
+全件実行での数値assertion、個別45秒timeout、retries0、workers1は緩和せず、skip/xfail化なし。
+新fixtureのbboxは既存kernel境界余白1e-7を含む値を1e-6契約内で検証し、既存toleranceは不変。
+最終codeのNode24.22.1/Node20.20.2は各212成功/失敗skip0、native89件中87成功/任意USD2skip。
+local Rustはcargo不在で未実行。実Mac/Tauri/OS dialog/Issue37も未実施。追加最終browser/CI/mergeは
+後続結果で区別し、旧結果から推測しない。途中のボード09:12時刻記載は09:04の誤記として追記訂正済み。
+
+### 指示018 追加分の最終ローカル結果
+
+最終製品codeを固定して、Node24.22.1 `npm test`212成功、Node20.20.2全JS212成功、
+native89件中87成功/任意NVIDIA USD2skip（5.676秒）を実行した。
+`npm run test:browser`全81件は81成功、失敗/skip/retry/flaky0、errors[]、318.137秒（約5分18秒）。
+個別timeout45秒、workers1、retries0は維持。旧80件の2失敗を成功へ置換せず、別の全件runとして記録する。
+Scale v2のsnapshot/Open復元、実edge dragのFillet/Shift-Chamfer、配列の形状drag/個数/間隔/取消、
+cursor zoom、旧選択/lock/hide/生成/maintenance全件を含む。構文確認とdiff checkも成功。
+idle/edit/plane-hover、直接操作寸法/gizmo、配列drag画面を目視した。検証環境の日本語font欠落による
+文字表示は実Macの評価へ代替しない。local Rustと実Mac/Tauri/OS dialogは未実施のまま。
+最終sourceのCI全run/jobとmergeは公開後にPR44とボードへ別記録し、ここでは成功を先取りしない。

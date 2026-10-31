@@ -123,6 +123,29 @@ test("Undo uses monotonic document revision and shares immutable asset storage",
   assert.equal(d.documentRevision, 3);
   assert.equal(d.uiState.leftWidth, 300);
 });
+test("composite CAD actions squash their history into one Undo/Redo unit", () => {
+  let d = createCadDocument();
+  const tx = createTransactions(
+    () => d,
+    (value) => (d = value),
+  );
+  const first = structuredClone(d);
+  d.documentRevision++;
+  d.uiState.leftWidth = 300;
+  tx.record(first, d, "Extrude");
+  const second = structuredClone(d);
+  d.documentRevision++;
+  d.uiState.rightWidth = 360;
+  tx.record(second, d, "Union");
+  assert.equal(tx.squashLast(2, "押し出し追加"), true);
+  assert.equal(tx.undo(), true);
+  assert.equal(d.uiState.leftWidth, 280);
+  assert.equal(d.uiState.rightWidth, 320);
+  assert.equal(tx.undo(), false);
+  assert.equal(tx.redo(), true);
+  assert.equal(d.uiState.leftWidth, 300);
+  assert.equal(d.uiState.rightWidth, 360);
+});
 function rectangle(width = 60) {
   return {
     id: "sketch",

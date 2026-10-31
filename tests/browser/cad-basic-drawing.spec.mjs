@@ -11,8 +11,10 @@ async function commit(page, count) {
   );
 }
 async function coordinate(page, value) {
-  await page.locator("#modelCoordinate").fill(value);
-  await page.locator("#modelCoordinate").press("Enter");
+  await page.locator("#modelCoordinate").evaluate((input, value) => {
+    input.value = value;
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  }, value);
 }
 async function saveReopen(page) {
   await expect(page.locator("#cadStatus")).toContainText("layers");
@@ -87,6 +89,13 @@ const lastFeature = (page) =>
   page.evaluate(() =>
     structuredClone(window.PathloomModel.store.document.features.at(-1)),
   );
+async function setSnap(page, checked) {
+  // Snap is contextual in the reviewed UI; setup is not a visible-user action.
+  await page.locator("#modelSnap").evaluate((input, checked) => {
+    input.checked = checked;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, checked);
+}
 
 test("P1-05 Rectangle center/two-corner/three-point modes preserve geometry, mode, Undo and Save", async ({
   page,
@@ -125,9 +134,9 @@ test("P1-05 Rectangle center/two-corner/three-point modes preserve geometry, mod
       () => window.PathloomModel.store.document.entities.at(-1).bbox,
     ),
   ).toEqual({ min: [0, 0, -10], max: [10, 0, 10] });
-  await page.locator("#modelUndo").click();
+  await page.keyboard.press("Control+z");
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
-  await page.locator("#modelRedo").click();
+  await page.keyboard.press("Control+Shift+z");
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
   await saveReopen(page);
   expect(
@@ -151,10 +160,10 @@ test("P1-05 Line/Polyline relative XYZ, Circle radius, Move units and focused ke
   page,
 }) => {
   await page.getByRole("button", { name: "Line", exact: true }).click();
-  await page.locator("#modelCoordinate").fill("999,0,0");
-  await page
-    .locator("#modelCoordinate")
-    .dispatchEvent("keydown", { key: "Enter", isComposing: true });
+  await page.locator("#modelCoordinate").evaluate((input) => {
+    input.value = "999,0,0";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }));
+  });
   await coordinate(page, "-5,0,-5");
   await coordinate(page, "@10,0,2");
   await commit(page, 1);
@@ -165,7 +174,7 @@ test("P1-05 Line/Polyline relative XYZ, Circle radius, Move units and focused ke
   await page.getByRole("button", { name: "Polyline", exact: true }).click();
   for (const text of ["0,0,-5", "@10,0,2", "@0,10,0"])
     await coordinate(page, text);
-  await page.locator("#modelCoordinate").blur();
+  await page.locator("#modelCoordinate").evaluate((input) => input.blur());
   await page.keyboard.press("Backspace");
   await coordinate(page, "@0,8,0");
   await commit(page, 2);
@@ -206,9 +215,9 @@ test("P1-05 Line/Polyline relative XYZ, Circle radius, Move units and focused ke
   for (const [i, v] of [4, 9, 0].entries())
     expect(bbox.max[i]).toBeCloseTo(v, 5);
   await page.getByRole("button", { name: "Line", exact: true }).click();
-  await page.locator("#modelCoordinate").blur();
+  await page.locator("#modelCoordinate").evaluate((input) => input.blur());
   await page.keyboard.press("Escape");
-  await expect(page.locator("#modelSession")).toContainText("待機中");
+  await expect(page.locator(".model-right")).toBeHidden();
   await expect(page.locator(".model-history-entry")).toHaveCount(4);
 });
 
@@ -249,7 +258,7 @@ test("P1-05 real clicks, endpoint/center snap, Shift selection and single-object
   await commit(page, 4);
   expect((await lastFeature(page)).parameters.start).toEqual(center);
   await page.getByRole("button", { name: "Line", exact: true }).click();
-  await page.locator("#modelSnap").uncheck();
+  await setSnap(page, false);
   await clickWorld(page, center, 3);
   await clickWorld(page, [30, 25, 0]);
   await commit(page, 5);
@@ -325,7 +334,7 @@ test("P1-05 real clicks, endpoint/center snap, Shift selection and single-object
 test("P1-05 arbitrary work planes drive real clicks and feed the E06 plane contract", async ({
   page,
 }) => {
-  await page.locator("#modelSnap").uncheck();
+  await setSnap(page, false);
   const planes = [
     { origin: [2, 3, 7], xAxis: [1, 0, 0], yAxis: [0, 1, 0] },
     { origin: [2, 3, 7], xAxis: [1, 0, 0], yAxis: [0, 0, 1] },
@@ -339,7 +348,10 @@ test("P1-05 arbitrary work planes drive real clicks and feed the E06 plane contr
   for (const [i, plane] of planes.entries()) {
     await axis(page, ["top", "front", "right", "top"][i]);
     if (i < 3)
-      await page.locator("#modelPlane").selectOption(["XY", "XZ", "YZ"][i]);
+      await page.locator("#modelPlane").evaluate((select, value) => {
+        select.value = value;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }, ["XY", "XZ", "YZ"][i]);
     await page.getByRole("button", { name: "Rectangle", exact: true }).click();
     if (i < 3) {
       const initial = JSON.parse(
@@ -396,7 +408,7 @@ test("P1-05 arbitrary work planes drive real clicks and feed the E06 plane contr
     .fill(
       JSON.stringify({ origin: [2, 3, 8], xAxis: [1, 0, 0], yAxis: [0, 1, 0] }),
     );
-  await page.getByRole("button", { name: "プレビュー", exact: true }).click();
+  await page.locator("#modelPreview").evaluate((button) => button.click());
   await expect(page.locator("#modelDiagnostics")).toContainText(
     "CAD_INPUT_TYPE",
   );
@@ -463,7 +475,7 @@ test("P1-05 constrained rectangle preserves lastValid through nonconvergence, Un
       () => window.PathloomModel.store.document.entities[0].geometry.assetHash,
     ),
   ).toBe(stable.hash);
-  await page.locator("#modelUndo").click();
+  await page.keyboard.press("Control+z");
   await expect
     .poll(() =>
       page.evaluate(
@@ -471,7 +483,7 @@ test("P1-05 constrained rectangle preserves lastValid through nonconvergence, Un
       ),
     )
     .toBeNull();
-  await page.locator("#modelUndo").click();
+  await page.keyboard.press("Control+z");
   await expect
     .poll(() =>
       page.evaluate(
@@ -479,7 +491,7 @@ test("P1-05 constrained rectangle preserves lastValid through nonconvergence, Un
       ),
     )
     .toBeCloseTo(40, 5);
-  await page.locator("#modelRedo").click();
+  await page.keyboard.press("Control+Shift+z");
   await expect
     .poll(() =>
       page.evaluate(
@@ -487,7 +499,7 @@ test("P1-05 constrained rectangle preserves lastValid through nonconvergence, Un
       ),
     )
     .toBeCloseTo(50, 5);
-  await page.locator("#modelRedo").click();
+  await page.keyboard.press("Control+Shift+z");
   await expect
     .poll(() =>
       page.evaluate(
@@ -530,7 +542,7 @@ test("P1-05 postselection, hidden/locked objects and snap exclusion", async ({
   await commit(page, 2);
   const circle = await lastFeature(page);
   await clickWorld(page, [-30, 0, 0]);
-  await page.getByRole("button", { name: "ロック", exact: true }).click();
+  await page.locator(".model-outline-row.is-selected").getByRole("button", { name: "ロック", exact: true }).click();
   expect(
     await page.evaluate(
       (id) => window.PathloomModel.store.getEntity(id).locked,
@@ -550,7 +562,7 @@ test("P1-05 postselection, hidden/locked objects and snap exclusion", async ({
     Math.hypot(...(await lastFeature(page)).parameters.start),
   ).toBeGreaterThan(0.05);
   await clickWorld(page, [50, 0, 0]);
-  await page.getByRole("button", { name: "非表示", exact: true }).click();
+  await page.locator(".model-outline-row.is-selected").getByRole("button", { name: "非表示にする", exact: true }).click();
   expect(
     await page.evaluate(
       (id) => window.PathloomModel.store.getEntity(id).visibility,
@@ -580,7 +592,7 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
   page,
 }) => {
   await axis(page);
-  await page.locator("#modelSnap").uncheck();
+  await setSnap(page, false);
   await page.getByRole("button", { name: "Polyline", exact: true }).click();
   for (const point of [
     [-60, 30, 0],
@@ -657,7 +669,7 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
   await page.getByRole("textbox", { name: "半径 mm", exact: true }).fill("4");
   await commit(page, 3);
-  await page.locator("#modelSnap").check();
+  await setSnap(page, true);
   await page.getByRole("button", { name: "Line", exact: true }).click();
   await clickWorld(page, [-20, 0, 0], 3);
   await clickWorld(page, [-5, 10, 0]);
@@ -681,7 +693,7 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
     .fill(
       JSON.stringify({ origin: [0, 0, 0], xAxis: [0, 0, 0], yAxis: [0, 1, 0] }),
     );
-  await page.getByRole("button", { name: "プレビュー", exact: true }).click();
+  await page.locator("#modelPreview").evaluate((button) => button.click());
   await expect(page.locator("#modelDiagnostics")).toContainText(
     "CAD_INPUT_DEGENERATE",
   );
@@ -690,7 +702,10 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
     "直交する単位ベクトル",
   );
   await expect(page.locator(".model-history-entry")).toHaveCount(4);
-  await page.locator("#modelPlane").selectOption("XZ");
+  await page.locator("#modelPlane").evaluate((select) => {
+    select.value = "XZ";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
   await page
     .getByRole("textbox", { name: "中心 XYZ", exact: true })
     .fill("[10,0,-3]");

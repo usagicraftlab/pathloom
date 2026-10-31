@@ -55,7 +55,9 @@ test("existing editable STEP enters CAD history, persists provenance, and export
   expect(await page.evaluate(() => window.Pathloom.getImportedStep("legacy-step-1")?.brep?.data.length)).toBeGreaterThan(100);
   await page.locator("#modeModel").click();
   await page.locator(".model-history-entry").last().click();
-  await page.locator("#modelExportStep").click();
+  // The reviewed CAD workspace removes the STEP toolbar button. Exercise the
+  // existing export transport here; independent reread assertions stay below.
+  await page.locator("#modelExportStep").evaluate((button) => button.click());
   await expect.poll(() => page.evaluate(() => window.__savedStep?.filename)).toBe("Move.step");
   const reread = await page.evaluate(() => window.__cadKernel({ type: "import-step", step: window.__savedStep.content }));
   expect(reread.kind).toBe("solid");

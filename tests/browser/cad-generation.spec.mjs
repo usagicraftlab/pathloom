@@ -55,8 +55,8 @@ async function drawing(page, multiple = false) {
   await page.getByLabel("CAD input edges", { exact: true }).selectOption({ label: edge });
   await commit(page, 3);
   await page.locator(".model-history-entry").last().click();
-  await page.getByRole("button", { name: "結果のプロパティ・生成接続", exact: true }).click();
-  await page.getByRole("button", { name: "生成で使用（現在のbody結果）", exact: true }).click();
+  await page.locator('#modelOutliner .model-outline-select[aria-selected="true"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "生成で使用", exact: true }).click();
   await expect(page.locator("#cadStatus")).toHaveAttribute("data-state", "ready");
   await save(page);
   // A normal v2 project fixture seeds only the generation wiring. All CAD
@@ -231,8 +231,8 @@ test("P1-06: inactive shared outputs stay stale until selected, without changing
   await page.locator(`.object-card[data-source="${independent.id}"] .object-header`).click();
   await page.locator("#modeModel").click();
   await page.locator(".model-history-entry").nth(2).click();
-  await page.getByRole("button", { name: "結果のプロパティ・生成接続", exact: true }).click();
-  await page.getByRole("button", { name: "生成で使用（現在のbody結果）", exact: true }).click();
+  await page.locator('#modelOutliner .model-outline-select[aria-selected="true"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "生成で使用", exact: true }).click();
   await expect(page.locator("#cadStatus")).toHaveAttribute("data-state", "ready");
   const explicit = (await state(page)).sources.find((s) => s.id === independent.id);
   expect(explicit.inputs).toContain(ids.input);

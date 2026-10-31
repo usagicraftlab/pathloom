@@ -112,6 +112,8 @@ test.beforeEach(async ({ page }) => {
           if (name === "cad_cancel") return;
           if (name === "cad_library") return "[]";
           if (name === "cad_command_library") {
+            if (args.content === undefined && window.__failCommandLoad)
+              throw new Error("test command storage unavailable");
             if (args.content !== undefined && window.__failCommandSave)
               throw new Error("test command storage denied");
             const result = await window.__cadStorage({ key: "commands", ...args });
@@ -359,8 +361,9 @@ test("AUD-003: D04 exact rerun, changed/count split, v2 reopen and explicit refe
     doc.uiState.selection = [{ entityId }];
     workspace.restorePrepared(await workspace.prepareRestore(doc));
   }, three.slots[0].entityId);
+  await page.locator('#modelOutliner .model-outline-select[aria-selected="true"]').click({ button: "right" });
   await page
-    .getByRole("button", {
+    .getByRole("menuitem", {
       name: `「${initial.binding.name}」の生成参照をこの形状へ変更`,
       exact: true,
     })
@@ -424,7 +427,7 @@ test("A01/A03/T01: real center rectangle, dimension edit, Undo, portable save an
       ),
     )
     .toBe(50);
-  await page.locator("#modelUndo").click();
+  await page.keyboard.press("Control+z");
   await expect
     .poll(() =>
       page.evaluate(
@@ -432,7 +435,7 @@ test("A01/A03/T01: real center rectangle, dimension edit, Undo, portable save an
       ),
     )
     .toBe(40);
-  await page.locator("#modelRedo").click();
+  await page.keyboard.press("Control+Shift+z");
   await expect
     .poll(() =>
       page.evaluate(
@@ -532,12 +535,8 @@ test("A05/A07/A08/A24: sketch width drives exact solid and fillet; a lost edge r
     )
     .toBeCloseTo(80000, 4);
   await page.locator(".model-history-entry").last().click();
-  await page
-    .getByRole("button", { name: "結果のプロパティ・生成接続", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "生成で使用（現在のbody結果）", exact: true })
-    .click();
+  await page.locator('#modelOutliner .model-outline-select[aria-selected="true"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "生成で使用", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -646,7 +645,9 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
   await expect(page.locator(".model-history-entry")).toHaveCount(1);
   await expect(page.locator(".model-history-entry")).toContainText("valid");
   await page.locator(".model-history-entry").click();
-  await page.getByText("形状Library", { exact: true }).click();
+  await page.locator('#modelOutliner .model-outline-select[aria-selected="true"]').click({ button: "right" });
+  await page.getByRole("menuitem", { name: "形状 Library に登録 / Library を開く", exact: true }).click();
+  await page.getByLabel("保存名", { exact: true }).fill("CAD shape");
   await page
     .getByRole("button", { name: "選択形状を保存", exact: true })
     .click();
@@ -676,9 +677,10 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
   expect(placed.bbox.min[0]).toBeCloseTo(-20, 6);
   expect(placed.bbox.max[0]).toBeCloseTo(40, 6);
   expect(placed.allIdsUnique).toBe(true);
-  await page.getByRole("button", { name: "CAD Undo", exact: true }).click();
+  await page.getByRole("button", { name: "閉じる", exact: true }).click();
+  await page.keyboard.press("Control+z");
   await expect(page.locator(".model-history-entry")).toHaveCount(1);
-  await page.getByRole("button", { name: "CAD Redo", exact: true }).click();
+  await page.keyboard.press("Control+Shift+z");
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
   await expect
     .poll(() =>
@@ -701,7 +703,7 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
       ),
     ),
   ).toBe(true);
-  await expect(page.locator("#modelCommit")).toBeInViewport();
+  await expect(page.locator(".model-right")).toBeHidden();
   await expect(page.locator("#modelHistory")).toBeInViewport();
 });
 
@@ -766,14 +768,14 @@ test("A04/R06: work-order command definition creates real geometry and persists 
   page,
 }) => {
   const definition = rectangleCommand();
-  await page.getByText("コマンドを追加", { exact: true }).click();
-  await page
-    .locator("#modelCommandDefinition")
-    .fill(JSON.stringify(definition));
-  await page
-    .getByRole("button", { name: "定義を検証して追加", exact: true })
-    .click();
-  await expect(page.locator("#modelStatus")).toContainText("登録・保存");
+  // JSON registration was removed by the UI review. Existing shared command
+  // files and project-contained definitions remain supported.
+  await page.evaluate((definition) => window.__cadStorage({
+    key: "commands", content: JSON.stringify([definition]),
+  }), definition);
+  await page.reload();
+  await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
+  await page.locator("#modeModel").click();
   await page
     .getByRole("button", { name: "Custom Center Rectangle", exact: true })
     .click();
@@ -839,7 +841,8 @@ test("A11/T07: Join gap remains until the user explicitly changes tolerance", as
       .getByRole("textbox", { name: "終点 XYZ", exact: true })
       .fill(JSON.stringify(end));
     await page.getByRole("button", { name: "確定", exact: true }).click();
-    await expect(page.locator("#modelSession")).toContainText("待機中");
+    await expect(page.locator(".model-history-entry").last()).toContainText("valid");
+    await expect(page.locator(".model-right")).toBeHidden();
   }
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
   await page.getByRole("button", { name: "Join Curves", exact: true }).click();
@@ -854,7 +857,7 @@ test("A11/T07: Join gap remains until the user explicitly changes tolerance", as
   // single chain so that its original gap/tolerance acceptance stays intact.
   const groups=page.getByRole('checkbox',{name:'離れた連結グループも全て保持',exact:true});
   await expect(groups).toBeChecked();await groups.uncheck();await groups.dispatchEvent('input');
-  await page.getByRole("button", { name: "プレビュー", exact: true }).click();
+  await page.locator("#modelPreview").evaluate((button) => button.click());
   await expect(page.locator("#modelDiagnostics")).toContainText("CAD_JOIN_GAP");
   await expect(
     page.getByRole("textbox", { name: "Join許容差 mm", exact: true }),
@@ -883,39 +886,58 @@ test("A11/T07: Join gap remains until the user explicitly changes tolerance", as
 });
 
 
-test("#11: registration waits for the initial command library before saving", async ({ page }) => {
+test("#11: delayed shared commands load through the registry without a JSON registration UI", async ({ page }) => {
+  const definition = rectangleCommand("user.rectangle.deferred", "Deferred Rectangle");
+  await page.evaluate((definition) => window.__cadStorage({
+    key: "commands", content: JSON.stringify([definition]),
+  }), definition);
   let release;
   await page.exposeBinding("__commandLoadGate", () => new Promise(resolve => { release = resolve; }));
   await page.goto("/?defer-command-load");
   await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
   await page.locator("#modeModel").click();
   await expect.poll(() => typeof release).toBe("function");
-  const definition = rectangleCommand("user.rectangle.deferred", "Deferred Rectangle");
-  await page.getByText("コマンドを追加", { exact: true }).click();
-  await page.locator("#modelCommandDefinition").fill(JSON.stringify(definition));
   try {
-    await page.getByRole("button", { name: "定義を検証して追加", exact: true }).click();
-    // Loading an older library must finish before this registration can mutate it.
+    await expect(page.locator("#modelCommandDefinition")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: definition.displayName, exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => window.PathloomModel.store.document.commandDefinitions.map(d => d.id))).not.toContain(definition.id);
     release();
-    await expect(page.locator("#modelStatus")).toContainText("登録・保存");
     await expect.poll(() => page.evaluate(async () => JSON.parse(await window.__cadStorage({ key: "commands" })).map(d => d.id))).toContain(definition.id);
     await expect(page.getByRole("button", { name: definition.displayName, exact: true })).toBeVisible();
-    await page.evaluate(() => window.PathloomModel.render());
-    await expect(page.locator("#modelStatus")).toContainText("登録・保存");
+    await page.getByRole("button", { name: definition.displayName, exact: true }).click();
+    await page.getByRole("textbox", { name: "CAD point center", exact: true }).fill("10,20,0");
+    await page.getByRole("textbox", { name: "CAD point center", exact: true }).dispatchEvent("change");
+    await page.getByRole("textbox", { name: "CAD point corner", exact: true }).fill("40,40,0");
+    await page.getByRole("textbox", { name: "CAD point corner", exact: true }).dispatchEvent("change");
+    await page.getByRole("button", { name: "確定", exact: true }).click();
+    await expect(page.locator(".model-history-entry")).toContainText("valid");
+    expect(await page.evaluate(() => window.PathloomModel.store.document.commandDefinitions.map(d => d.id))).toContain(definition.id);
   } finally { release?.(); }
 });
 
-test("#11: failed command storage keeps the project definition and reports failure", async ({ page }) => {
+test("#11: project command definitions reopen when the shared command file is unavailable", async ({ page }) => {
   const definition = rectangleCommand("user.rectangle.storage-failure", "Unsaved Shared Rectangle");
-  await page.evaluate(() => { window.__failCommandSave = true; });
-  await page.getByText("コマンドを追加", { exact: true }).click();
-  await page.locator("#modelCommandDefinition").fill(JSON.stringify(definition));
-  await page.getByRole("button", { name: "定義を検証して追加", exact: true }).click();
-  await expect(page.locator("#modelStatus")).toContainText("共有コマンド保存に失敗");
-  await expect(page.locator("#modelStatus")).toContainText("test command storage denied");
-  expect(await page.evaluate(() => window.PathloomModel.store.document.commandDefinitions.map(d => d.id))).toContain(definition.id);
-  expect(await page.evaluate(async () => JSON.parse(await window.__cadStorage({ key: "commands" })).map(d => d.id))).not.toContain(definition.id);
+  await page.evaluate(async (definition) => {
+    const { registerCommand } = await import("/cad/commands/registry.js");
+    await window.PathloomModel.begin(registerCommand(definition));
+  }, definition);
+  await page.getByRole("textbox", { name: "CAD point center", exact: true }).fill("10,20,0");
+  await page.getByRole("textbox", { name: "CAD point center", exact: true }).dispatchEvent("change");
+  await page.getByRole("textbox", { name: "CAD point corner", exact: true }).fill("40,40,0");
+  await page.getByRole("textbox", { name: "CAD point corner", exact: true }).dispatchEvent("change");
+  await page.getByRole("button", { name: "確定", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toContainText("valid");
   await page.evaluate(() => document.querySelector("#projectSave").click());
   await expect.poll(() => page.evaluate(() => window.__saved?.cadDocument?.commandDefinitions?.map(d => d.id) || [])).toContain(definition.id);
+  await page.evaluate(() => window.__cadStorage({ key: "recovery", discard: true }));
+  await page.addInitScript(() => { window.__failCommandLoad = true; });
+  await page.reload();
+  await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
+  await page.locator("#modeModel").click();
+  await expect(page.locator("#modelStatus")).toContainText("追加コマンドを読み込めません");
+  await page.locator("#projectOpen").evaluate((button) => button.click());
+  await expect(page.locator(".model-history-entry")).toContainText("valid");
+  expect(await page.evaluate(() => window.PathloomModel.store.document.entities[0].bbox)).toEqual({ min: [-20,0,0], max: [40,40,0] });
+  expect(await page.evaluate(() => window.PathloomModel.store.document.commandDefinitions.map(d => d.id))).toContain(definition.id);
+  expect(await page.evaluate(async () => JSON.parse(await window.__cadStorage({ key: "commands" })).map(d => d.id))).not.toContain(definition.id);
 });
