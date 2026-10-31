@@ -1905,3 +1905,17 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   fixture不備で失敗したためawaitを追加する。もう1件は既存P1-05 basic drawingの
   history countが期待3に対して2となった単発失敗であり、新規fixture失敗と混同せず
   次の通常push CIで再確認する。この時点でCI再実行、Ready、mergeは行っていない。
+
+### 指示015 最終PR CI（Ready前）
+
+- fixture修正head `9ad5b53d599b73d11051c06b1f2667d364b9137b` のPR CI
+  `41188879708` attempt 1は全3job成功した。生ログでNode20.20.2 JS 215成功、
+  native 103件中101成功・任意NVIDIA USD 2skip、macOS Rust 22成功、
+  browser 85成功（失敗/skip/retry/flaky 0）を確認した。前runで失敗した新規保存fixture、
+  既存P1-05、既存B08はいずれもこの全件runで成功した。CI再実行は行っていない。
+- ローカルの正しい通常コマンドによる最終Node24.22.1 `npm test`は215成功。
+  その直前にNode test runner非対応の`--runInBand`を付けた確認コマンドがtest開始前に
+  失敗しており、製品test失敗や成功へ置換しない。ローカルbrowserはChromium取得不能、
+  local Rustはcargo不在のため未実行のままである。実Mac/Tauri/OS dialog/#37も未実施。
+- command-status ledgerのF01〜F11/D08/D09はPR CI browser 85成功へ更新した。
+  PR Ready、merge、Issue自動closeはまだ実施しておらず、最終文書commitのCI後に別記録する。
