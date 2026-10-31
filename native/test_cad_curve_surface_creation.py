@@ -188,6 +188,11 @@ class CurveSurfaceCreationTests(unittest.TestCase):
             ),
         )["outputs"][0]
         self.assertAlmostEqual(sweep["summary"]["areaMm2"], 50, places=4)
+        sweep_accuracy = sweep["summary"]["accuracy"]
+        self.assertEqual(sweep_accuracy["exactness"], "approximate")
+        self.assertLessEqual(sweep_accuracy["maxDeviationMm"], 0.01)
+        self.assertLessEqual(sweep_accuracy["maxRailDeviationMm"], 0.01)
+        self.assertLessEqual(sweep_accuracy["maxSectionDeviationMm"], 0.01)
 
         u = [self.line([0, y, 0], [10, y, 0]) for y in (0, 10)]
         v = [self.line([x, 0, 0], [x, 10, 0]) for x in (0, 10)]
@@ -206,6 +211,11 @@ class CurveSurfaceCreationTests(unittest.TestCase):
         )["outputs"][0]
         self.assertAlmostEqual(network["summary"]["areaMm2"], 100, places=4)
         self.assertAlmostEqual(patch["summary"]["areaMm2"], 100, places=4)
+        self.assertEqual(network["summary"]["accuracy"]["exactness"], "approximate")
+        self.assertEqual(network["summary"]["accuracy"]["intersectionToleranceMm"], 0.01)
+        self.assertLessEqual(network["summary"]["accuracy"]["maxDeviationMm"], 0.01)
+        self.assertEqual(patch["summary"]["accuracy"]["exactness"], "approximate")
+        self.assertLessEqual(patch["summary"]["accuracy"]["maxDeviationMm"], 0.01)
 
         assets = self.runtime.handle(dict(type="export", handles=[patch["handle"]]))[
             "assets"

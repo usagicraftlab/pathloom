@@ -86,15 +86,19 @@ class SurfaceEditingTests(unittest.TestCase):
         inputs = dict(first=[self.ref(first)], firstEdge=[first_edge],
                       second=[self.ref(second)], secondEdge=[second_edge])
         cases = [("surface.fillet", dict(radiusMm=2, trim=False, join=False)),
-                 ("surface.chamfer", dict(distanceMm=2, trim=False, join=False)),
-                 ("surface.blend", dict(continuity="G1", fitToleranceMm=.01)),
-                 ("surface.match", dict(continuity="G0", fitToleranceMm=.01))]
+                 ("surface.chamfer", dict(distanceMm=2, trim=False, join=False))]
+        cases += [(operation, dict(continuity=continuity, fitToleranceMm=.01))
+                  for operation in ("surface.blend", "surface.match")
+                  for continuity in ("G0", "G1", "G2")]
         for operation, parameters in cases:
             with self.subTest(operation=operation):
                 output = self.run_op(operation, parameters, inputs)[0]
                 self.assertEqual(output["kind"], "surface")
                 self.assertTrue(output["summary"]["valid"])
                 self.assertIn("accuracy", output["summary"])
+                self.assertEqual(output["summary"]["accuracy"]["exactness"], "approximate")
+                self.assertEqual(output["summary"]["accuracy"]["fitToleranceMm"], .01)
+                self.assertIn("maxBoundaryDeviationMm", output["summary"]["accuracy"])
                 self.assertEqual(output["summary"]["accuracy"]["achievedContinuity"],
                                  output["summary"]["accuracy"]["continuity"])
         joined = self.run_op("surface.chamfer", dict(distanceMm=2, trim=True,
@@ -104,11 +108,16 @@ class SurfaceEditingTests(unittest.TestCase):
         self.assertTrue(joined["summary"]["accuracy"]["trimAtSelectedBoundaries"])
 
     def test_rebuild_edit_poles_and_typed_failure(self):
-        face = self.plane()
+        face = self.run_op("surface.corners", dict(points=[
+            [0, 0, 0], [10, 0, 0], [10, 10, 3], [0, 10, 0]]))[0]
         rebuilt = self.run_op("surface.rebuild", dict(uDegree=3, vDegree=3,
             maxSegments=16, acceptApproximation=True), dict(surface=[self.ref(face)]))[0]
         self.assertTrue(rebuilt["summary"]["valid"])
         self.assertIn("maxDeviationMm", rebuilt["summary"]["accuracy"])
+        self.assertEqual(rebuilt["summary"]["accuracy"]["exactness"], "approximate")
+        self.assertEqual(rebuilt["summary"]["accuracy"]["classification"],
+                         "sampled-corresponding-parameter")
+        self.assertLessEqual(rebuilt["summary"]["accuracy"]["maxDeviationMm"], .01)
         edited = self.run_op("surface.editPoles", dict(uIndex=1, vIndex=1,
             position=[0, 0, 1]), dict(surface=[self.ref(rebuilt)]))[0]
         self.assertGreater(edited["summary"]["bbox"]["max"][2], 0)

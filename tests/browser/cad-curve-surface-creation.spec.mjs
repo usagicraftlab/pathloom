@@ -51,9 +51,27 @@ test("Issue16 Network/Patch keep ordered inputs and fitted accuracy through v2 S
   const patch = await add(page, "S11", {}, {
     boundaries: [lines[0].outputIds[0], lines[1].outputIds[0]],
   });
+  const sweepInputs = [];
+  for (const [start, end] of [
+    [[0, 0, 0], [0, 0, 10]],
+    [[5, 0, 0], [5, 0, 10]],
+    [[0, 0, 0], [5, 0, 0]],
+    [[0, 0, 10], [5, 0, 10]],
+  ]) sweepInputs.push(await add(page, "C02", { start, end }));
+  const sweep = await add(page, "S08", {
+    sectionReversed: [false, false], sectionStations: [0, 1],
+    sampleCount: 9, sectionSampleCount: 9, fitToleranceMm: 0.01,
+  }, {
+    rails: [sweepInputs[0].outputIds[0], sweepInputs[1].outputIds[0]],
+    sections: [sweepInputs[2].outputIds[0], sweepInputs[3].outputIds[0]],
+  });
   expect(network.outputs[0].displayCache.areaMm2).toBeCloseTo(100, 4);
   expect(network.outputs[0].accuracy.maxIntersectionGapMm).toBeLessThan(1e-6);
+  expect(network.outputs[0].accuracy.intersectionToleranceMm).toBe(0.01);
   expect(patch.outputs[0].accuracy.maxDeviationMm).toBeLessThanOrEqual(0.01);
+  expect(patch.outputs[0].accuracy.exactness).toBe("approximate");
+  expect(sweep.outputs[0].accuracy.maxRailDeviationMm).toBeLessThanOrEqual(0.01);
+  expect(sweep.outputs[0].accuracy.maxSectionDeviationMm).toBeLessThanOrEqual(0.01);
 
   const saveCount = await page.evaluate(() => window.__saveCount);
   await page.evaluate(() => document.querySelector("#projectSave").click());

@@ -84,8 +84,9 @@ M01の残りとM02以降のGUI/OS実利用は未実施。インストールし�
 - F01〜F11、D08/D09の一般面編集はIssue #17で低水準演算を具体化し、
   registry-first v2、typed subshape input、exact/fit accuracy、保存fixtureを実装した。
   実Mac/Tauri/OS dialogはIssue #37として未実施のまま区別する。
-- Sweep2/Network/Patch/Blend/Match/Rebuildは採用OCP APIを実行検証してから公開する。
-  近似は偏差を測り、exactnessと許容差を記録する。
+- Sweep2/Network/Patch/Blend/Match/RebuildはIssue #18で採用OCP APIをstartup probeと
+  受入fixtureから実行検証し、公開registry、近似分類、実測偏差と許容差を確定する。
+  詳細は`cad-sweep-publication-plan.md`。実MacはIssue #37として別に保持する。
 - 一般Modified/Generatedの由来、複数出力、再選択、保存・再開を演算ごとに検証する。
 - 65 IDすべての必要モードと正常/失敗fixtureを既存台帳で閉じる。高度機能を未実装のまま隠して全体完成としない。
 
