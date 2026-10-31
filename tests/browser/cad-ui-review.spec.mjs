@@ -131,11 +131,55 @@ test("P3 automatic extrusion composes existing boolean commands as one Undo unit
     ),
   );
   await page.locator('[data-parameter="distanceMm"]').fill("5");
+  await page.evaluate(() => {
+    const store = window.PathloomModel.store;
+    const originalRecompute = store.recompute.bind(store);
+    const originalUndo = store.transactions.undo.bind(store.transactions);
+    const originalRedo = store.transactions.redo.bind(store.transactions);
+    let releaseUnion;
+    const unionGate = new Promise((resolve) => { releaseUnion = resolve; });
+    window.__pathloomCompositeCommitProbe = {
+      started: false,
+      undoCalls: 0,
+      redoCalls: 0,
+      release: releaseUnion,
+    };
+    store.recompute = async (...args) => {
+      if (!window.__pathloomCompositeCommitProbe.started &&
+          store.document.features.at(-1)?.operation.id === "solid.union") {
+        window.__pathloomCompositeCommitProbe.started = true;
+        await unionGate;
+      }
+      return originalRecompute(...args);
+    };
+    store.transactions.undo = () => {
+      window.__pathloomCompositeCommitProbe.undoCalls += 1;
+      return originalUndo();
+    };
+    store.transactions.redo = () => {
+      window.__pathloomCompositeCommitProbe.redoCalls += 1;
+      return originalRedo();
+    };
+  });
   await page.getByRole("button", { name: "確定", exact: true }).click();
-  await expect(page.locator(".model-history-entry")).toHaveCount(5);
+  await expect.poll(() => page.evaluate(() => window.__pathloomCompositeCommitProbe.started)).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.features.length)).toBe(5);
   await expect.poll(() => page.evaluate(() =>
     window.PathloomModel.store.document.features.slice(-2).map((feature) => feature.operation.id),
   )).toEqual(["shape.extrude", "solid.union"]);
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.features.length)).toBe(5);
+  await expect.poll(() => page.evaluate(() => ({
+    undo: window.__pathloomCompositeCommitProbe.undoCalls,
+    redo: window.__pathloomCompositeCommitProbe.redoCalls,
+  }))).toEqual({ undo: 0, redo: 0 });
+  await page.evaluate(() => window.__pathloomCompositeCommitProbe.release());
+  await expect.poll(() => page.evaluate(() => ({
+    undo: window.__pathloomCompositeCommitProbe.undoCalls,
+    redo: window.__pathloomCompositeCommitProbe.redoCalls,
+  }))).toEqual({ undo: 1, redo: 1 });
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.features.length)).toBe(5);
   await page.keyboard.press("Control+z");
   await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.features.length)).toBe(3);
   await page.keyboard.press("Control+Shift+z");

@@ -353,3 +353,11 @@ A/T/R62行は維持し、[UI受入対応](cad-ui-review-additions.md)へ46項目
 JSは複合Undo、消費前tipの表示と正本不変、推論snap。browserは実mouse/key操作、生成drop、
 exact delta、Boolean/複数対象、配列、取消、履歴、表示、寸法入力を実OCCTで照合する。
 成否/旧失敗/最終CI/mergeは開発ログ/PR44/ボードへ区別して記録し、実機を昇格しない。
+
+## 2026-10-31 — 指示019 複合commit中のUndo/Redo
+
+PR #44マージ後mainで再現した自動Extrude＋Unionの競合に対し、commit中のbutton/keyboard
+Undo/Redoを完了後へ入力順でキューする。遅延Union回帰は、commit中にUndo/Redoが未実行、解放後に
+各1回実行、通常の1単位Undoで5→3、Redoで3→5を確認する。対象は修正後1成功、repeat10は10成功。
+最終ローカルはNode24/Node20各212成功、native87成功/任意2skip、browser81成功。
+既存A/T/R 62行の状態、CAD演算/schema/binding、実機#37の未実施状態は変更しない。
