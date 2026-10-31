@@ -1863,3 +1863,18 @@ GeomFillの`No such curve`/filling style不適合を修正した。browser対象
 未設定で2件が実行前失敗、設定後はNetwork/Patchのhidden save click待ちで2件timeoutし、既存fixtureと
 同じDOM clickへ修正後2件成功。全browser最終runに再実行機構はなく、skip/xfail化、assertion・
 timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動closeは公開後に別記録する。
+
+## 2026-10-31 — Issue #17 general surface editing start
+
+- Instruction 015 was enabled and claimed from latest main
+  `77e9e50a5cd55647cdbf045ff1a596717bd6ff94` (tree
+  `8cf405e2730a7745eb2370402772f23393b637fe`). Post-merge main checks
+  `41175647882` attempt 1 were already confirmed successful by instruction 014.
+- The Issue body, roadmap, workspace specification §22.4/§22.6, master plan, and
+  command-status ledger were reconciled. The resulting F01–F11 and D08/D09
+  low-level operation choices, public contracts, provenance/save requirements,
+  and fixture matrix are recorded in `docs/cad-surface-editing-plan.md`.
+- This is an implementation-start record only. No surface-editing completion,
+  local full-suite result, CI result, Ready/merge, or Issue closure is claimed.
+  Issue #18 onward, real-Mac Issue #37, Draft PR #43, and layout changes remain
+  outside this branch.
