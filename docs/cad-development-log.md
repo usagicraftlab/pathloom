@@ -1894,3 +1894,8 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
 - 初回native対象実行はunittest module path誤りでimport前失敗し、正しいdiscover
   invocationへ直した。選択Untrimは初回84 mm²のままというfixture失敗を検出し、
   serialized topologyでも幾何端点signatureで選択edgeを同定する修正後に7件成功した。
+- 最初のPR CI `41187097638` attempt 1はJS215/native101+2skip/Rust22が成功した一方、
+  browserは82成功・3失敗だった。新規2件はfixtureが簡略subshape refを渡したため
+  D09/F08のselectorがmissingとなり、既存B08はv2表示名へ余分なsuffixを付けた回帰で
+  `Explode Faces` button待ちtimeoutとなった。subshape refを保存契約どおり完全化し、
+  v1/v2共通UI labelへ修正した。失敗runを成功へ置換せず、次runで再検証する。

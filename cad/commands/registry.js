@@ -711,7 +711,7 @@ add(
 );
 add(
   "F01",
-  "Join Surfaces v2",
+  "Join Surfaces",
   "surface.join",
   {},
   [input("objects", ["surface", "shell"], 2, null)],
@@ -719,7 +719,7 @@ add(
 );
 add(
   "F02",
-  "Explode Faces v2",
+  "Explode Faces",
   "surface.explode",
   { keepOriginal: false },
   [input("object", ["surface", "shell", "solid"])],
@@ -743,7 +743,7 @@ add("F03.split", "Split Surface", "surface.split", { mode: "split" }, [
   input("targets", ["surface"], 1, null),
   input("cutters", ["curve", "surface", "shell", "solid"], 1, null),
 ], { resultPolicy: "replace" });
-add("F04", "Untrim Surface v2", "surface.untrim", { mode: "all", domain: [-20, 20, -20, 20] }, [
+add("F04", "Untrim Surface", "surface.untrim", { mode: "all", domain: [-20, 20, -20, 20] }, [
   input("surface", ["surface"]),
 ], { version: 2, resultPolicy: "replace" });
 add("F04.boundary", "Untrim Selected Boundary", "surface.untrim", { mode: "selected", domain: [-20, 20, -20, 20] }, [
@@ -753,7 +753,7 @@ add("F04.boundary", "Untrim Selected Boundary", "surface.untrim", { mode: "selec
 add("F05", "Extend Surface", "surface.extend", { side: "uEnd", parameterDelta: 1 }, [
   input("surface", ["surface"]),
 ], { resultPolicy: "replace" });
-add("F06", "Offset Surface v2", "surface.offset", { distanceMm: 1, directionMode: "normal", bothSides: false, solidify: false }, [
+add("F06", "Offset Surface", "surface.offset", { distanceMm: 1, directionMode: "normal", bothSides: false, solidify: false }, [
   input("surface", ["surface", "shell"]),
 ], { version: 2 });
 const surfacePairInputs = () => [
@@ -768,7 +768,7 @@ add("F08", "Blend Surface", "surface.blend", { continuity: "G1", fitToleranceMm:
 add("F09", "Match Surface", "surface.match", { continuity: "G1", fitToleranceMm: 0.01 }, surfacePairInputs(), { resultPolicy: "replace" });
 add("F10", "Rebuild Surface", "surface.rebuild", { uDegree: 3, vDegree: 3, maxSegments: 16, acceptApproximation: false }, [input("surface", ["surface"])], { resultPolicy: "replace" });
 add("F10.poles", "Edit Surface Poles", "surface.editPoles", { uIndex: 1, vIndex: 1, position: [0, 0, 0] }, [input("surface", ["surface"])], { resultPolicy: "replace" });
-add("F11", "Reverse Normal v2", "surface.reverse", {}, [input("object", ["surface", "shell", "solid"])], { version: 2, resultPolicy: "replace" });
+add("F11", "Reverse Normal", "surface.reverse", {}, [input("object", ["surface", "shell", "solid"])], { version: 2, resultPolicy: "replace" });
 add("F11.boundaries", "Show Surface Boundaries", "shape.boundaries", { mode: "open" }, [input("object", ["surface", "shell", "solid"])]);
 add("D08", "Move Face", "shape.moveFace", { mode: "detach", operation: "add", translation: [0, 0, 1] }, [
   input("body", ["solid", "shell"]),

@@ -24,7 +24,15 @@ function topology(entity, kind, predicate) {
   const item = entity.displayCache.topology.find((candidate) =>
     candidate.kind === kind && predicate(candidate));
   if (!item) throw new Error(`Missing ${kind} topology`);
-  return { entityId: entity.id, topologyId: item.topologyId, orientation: "forward" };
+  return {
+    entityId: entity.id,
+    kind: item.kind,
+    semanticPath: item.semanticPath,
+    topologyId: item.topologyId,
+    recordedResultHash: entity.resultHash,
+    recordedAssetHash: entity.geometry.assetHash,
+    fingerprint: item.fingerprint,
+  };
 }
 
 async function roundTrip(page) {
