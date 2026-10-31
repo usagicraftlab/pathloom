@@ -1782,3 +1782,52 @@ cursor zoom、旧選択/lock/hide/生成/maintenance全件を含む。構文確�
 idle/edit/plane-hover、直接操作寸法/gizmo、配列drag画面を目視した。検証環境の日本語font欠落による
 文字表示は実Macの評価へ代替しない。local Rustと実Mac/Tauri/OS dialogは未実施のまま。
 最終sourceのCI全run/jobとmergeは公開後にPR44とボードへ別記録し、ここでは成功を先取りしない。
+
+### 2026-10-31 09:53 JST — マージ後mainの新規失敗、要判断
+
+source2330cc17805c5d787a3276f127e10bb0f18e0bbeのpush41150300256/PR41150305530は
+各attempt1・全3job成功。全6job生ログで各JS212/native87+任意USD2skip/Rust22/browser81を確認した。
+browser step/jobはpush5分47秒/6分32秒、PR9分26秒/10分19秒で15分内、CI再実行なし。
+PR44は09:39:39 JSTにmerge commit912702f48c71581aa3f5de3530709539aa469ed2でmainへマージした。
+local2d2842b/source/CI merge93a1ad3/実mergeはtree d9bdf2e38ce2b36b8eb36c12e0228da89e21c6aa一致。
+対応Issueがないため自動close対象なし。09:40の完了記録はこの時点の履歴として保持する。
+
+その後のmain checks41151365106 attempt1はfailure。JS212成功、native89件87成功/任意2skip、
+Rust22成功、browser80成功1失敗（7.7分、retryなし）。job timeoutではなくassertion failure。
+cad-ui-review.spec.mjs:142の自動Extrude＋UnionのUndo/Redoで、Redo後feature数5期待に対し4だった。
+artifact13023557423のSHA256は2449a56681919aaf00a32cce545ceefbe4b7d3543c382d0b68b3b0ae31952250。
+取得bytesの一致を確認し、traceでUnion running339799.683ms、Undo339821.997ms、Redo339897.081ms、
+最終history Box/Rectangle/Planar Region/Extrude（Unionなし）を確認した。
+
+store.addはdirty featureを公開後にrecompute/transaction記録を待ち、UIの合成は後でsquashLastする。
+Undo/Redo key handlerはcommitBusyを確認しない。合成中入力競合は原因候補だが安全な修正は未検証。
+既存の間欠失敗やfixtureだけの問題と分類して除外せず、018を要判断へ更新した。
+@Museへ「合成完了までUndo/Redo要求を保留、確定完了を待つfixture/遅延Union回帰」の案と、
+既マージPR44の後続修正指示/PRの扱いを確認。既存PR優先・重複PR自作禁止を保持する。
+新規Issue/PR、CI再実行、追加製品実装、push/再merge/rollbackは未実施。
+この追記は記録だけのローカル未commit差分で、公開済みhead/treeを変更しない。
+014〜017予約、実機#37とPR43未着手。source成功・local81成功をmainの失敗へ転用しない。
+
+### 2026-10-31 10:24 JST — 指示019 自動Extrude複合commitのUndo/Redo競合修正
+
+ボード10:13の指示019を未着手から取得し、指示014は予約へ戻した。原因は製品側だった。
+`store.add()`がUnion featureをdocumentへ公開してからrecompute/transaction記録を終えるまでの間も、
+workspaceのbutton/keyboard Undo/Redoが即時にtransactionsへ入れたため、Extrude/Unionの2 transactionを
+`squashLast(2)`する前に履歴stackが崩れた。既決の「複合は1単位」仕様は変更していない。
+
+workspaceにcommit中のhistory action queueを追加し、button/keyboardのUndo/Redoを確定完了後に入力順で
+実行する。button Undoのsession/preview取消も実行時まで遅らせる。commitの成功/失敗にかかわらずfinallyで
+queueをflushし、保留中/実行済みをstatus表示する。transactions本体、CAD演算、schema/bindingは変更しない。
+
+browser回帰はUnion featureが追加された直後のrecomputeだけを明示gateで停止し、その間のCtrl+Z/
+Ctrl+Shift+Zが実行されずqueueされること、解放後に各1回実行され最終5 featureへ戻ること、さらに通常の
+Undoで3、Redoで5へ戻ることを確認する。初回は停止中DOMが再描画前の4件だったため1失敗
+（`019-target.json`、expected0/unexpected1、9.083秒）。製品修正の失敗ではなく観測点の問題と確認し、
+正本documentの5件を直接待つよう直した。修正後対象1件は1成功（4.905秒）、同条件repeat10は10成功
+（45.197秒）。assertion/timeout/retry/許容差を緩めず、skip/xfail化なし。
+
+最終ローカルはNode24.22.1 `npm test`212成功、Node20.20.2全JS212成功、native89件中87成功・
+任意NVIDIA USD2skip（5.396秒）、browser全81件81成功（失敗/skip/retry/flaky0、errors[]、
+318.776秒）。local Rustはcargo不在で未実行。実Mac/Tauri/OS dialog/Issue #37も未実施。
+A/T/R 62行の状態は変更せず、今回の回帰証拠だけを検証台帳へ追記する。公開・CI・PR・merge結果は
+後続で区別して記録し、上記ローカル成功から推測しない。

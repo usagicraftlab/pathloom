@@ -240,6 +240,7 @@ export function initModelWorkspace(api) {
     lastPoint = null,
     activeInputKey = null,
     commitBusy = false,
+    pendingHistoryActions = [],
     previewTimer = null,
     previewBusy = false,
     previewAgain = false,
@@ -2475,6 +2476,31 @@ export function initModelWorkspace(api) {
       if (session && sessionReady(session) && !invalidFields.size) preview();
     }, 180);
   }
+  function performHistoryAction(action, { clearSession = false, renderAfter = true } = {}) {
+    if (clearSession) {
+      session = null;
+      view.clearPreview();
+    }
+    store.transactions[action]();
+    if (renderAfter) render();
+  }
+  function requestHistoryAction(action, options = {}) {
+    if (commitBusy) {
+      pendingHistoryActions.push({ action, clearSession: !!options.clearSession });
+      setStatus("形状の確定後にUndo/Redoを実行します。");
+      render();
+      return;
+    }
+    performHistoryAction(action, options);
+  }
+  function flushPendingHistoryActions() {
+    const actions = pendingHistoryActions.splice(0);
+    for (const pending of actions)
+      performHistoryAction(pending.action, { ...pending, renderAfter: false });
+    if (actions.length)
+      setStatus("形状の確定後に保留していたUndo/Redoを実行しました。");
+    render();
+  }
   async function commit() {
     if (!session || commitBusy) return;
     clearTimeout(previewTimer);
@@ -2586,7 +2612,7 @@ export function initModelWorkspace(api) {
       report(error);
     } finally {
       commitBusy = false;
-      render();
+      flushPendingHistoryActions();
     }
   }
   async function loadCommands() {
@@ -2775,16 +2801,8 @@ export function initModelWorkspace(api) {
   $("modelPreview").onclick = preview;
   $("modelCommit").onclick = commit;
   $("modelCancel").onclick = cancel;
-  $("modelUndo").onclick = () => {
-    session = null;
-    view.clearPreview();
-    store.transactions.undo();
-    render();
-  };
-  $("modelRedo").onclick = () => {
-    store.transactions.redo();
-    render();
-  };
+  $("modelUndo").onclick = () => requestHistoryAction("undo", { clearSession: true });
+  $("modelRedo").onclick = () => requestHistoryAction("redo");
   $("modelRetry").onclick = () => {
     for (const f of store.document.features)
       if (["failed", "blocked", "cancelled"].includes(f.status))
@@ -3525,8 +3543,7 @@ export function initModelWorkspace(api) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         event.stopImmediatePropagation();
-        event.shiftKey ? store.transactions.redo() : store.transactions.undo();
-        render();
+        requestHistoryAction(event.shiftKey ? "redo" : "undo");
       } else if (!event.ctrlKey && !event.metaKey && ["h", "i"].includes(event.key.toLowerCase())) {
         event.preventDefault(); event.stopImmediatePropagation();
         visibilityShortcut(event.key.toLowerCase(), event.shiftKey && event.key.toLowerCase() === "h");
