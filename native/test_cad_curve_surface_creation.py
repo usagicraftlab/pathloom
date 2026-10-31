@@ -341,7 +341,17 @@ class CurveSurfaceCreationTests(unittest.TestCase):
         line = self.line([0, 0, 0], [10, 0, 0])
         cases = [
             ("curve.helix", dict(axis=dict(origin=[0, 0, 0], direction=[0, 0, 0]), radiusMm=1, pitchMm=1, turns=1), {}),
+            ("curve.spiral", dict(plane=XY, center=[0, 0, 0], startRadiusMm=-1, endRadiusMm=5, turns=2, clockwise=False, fitToleranceMm=.001), {}),
+            ("curve.extractBoundary", dict(mode="all"), {}),
+            ("curve.project", dict(direction=[0, 0, -1]), {}),
+            ("shape.intersect", {}, {}),
+            ("surface.edges", dict(boundaryReversed=[]), {}),
+            ("shape.revolve", dict(axis=dict(origin=[0, 0, 0], direction=[0, 0, 1]), startAngleRad=0, sweepAngleRad=math.pi, cap=False), {}),
+            ("surface.sweep1", dict(frameMode="corrected-frame", sectionReversed=[], sectionSeamParameters=[], cap=False), {}),
+            ("surface.sweep2", dict(cap=False, sectionReversed=[], sectionStations=None, sampleCount=9, sectionSampleCount=9, fitToleranceMm=.01), {}),
+            ("surface.loft", dict(cap=False, closed=False, style="smooth", sectionReversed=[], sectionSeamParameters=[]), {}),
             ("surface.network", dict(intersectionToleranceMm=0.001, fitToleranceMm=0.01), dict(uCurves=[self.ref(line)], vCurves=[self.ref(line)])),
+            ("surface.patch", dict(points=None, sampleCountU=9, sampleCountV=9, fitToleranceMm=.01, smoothness=1, weight=1), {}),
             ("shape.contour", dict(origin=[0, 0, 0], normal=[0, 0, 1], spacingMm=0, startOffsetMm=0, endOffsetMm=1), dict(objects=[self.ref(self.plane())])),
         ]
         for operation, parameters, inputs in cases:

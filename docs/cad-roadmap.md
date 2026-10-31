@@ -89,6 +89,9 @@ M01の残りとM02以降のGUI/OS実利用は未実施。インストールし�
   詳細は`cad-sweep-publication-plan.md`。実MacはIssue #37として別に保持する。
 - 一般Modified/Generatedの由来、複数出力、再選択、保存・再開を演算ごとに検証する。
 - 65 IDすべての必要モードと正常/失敗fixtureを既存台帳で閉じる。高度機能を未実装のまま隠して全体完成としない。
+- Issue #19では正規65 IDを固定した`cad-65-command-fixtures.json`を証拠索引とし、
+  command-statusのModes/Known limitsを正本として、正常/失敗fixtureの空欄・ID欠落・
+  registry欠落・証拠ファイル欠落を自動監査する。未対応モードは未完了表示のまま閉じる。
 
 ## Phase 4：拡張・性能・配布
 

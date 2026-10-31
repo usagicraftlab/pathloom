@@ -1966,3 +1966,39 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   `7398beef4b30c21fc0ccd0b51d3f0a34eba0e864`をGitHub Git Data APIでbranchへ反映した。
 - Draft PR #48は作成済みだが、この記録を含む最終文書commitのpush/PR CIを確認するまで
   Ready、merge、Issue自動closeは行わない。指示017、Issue #37、Draft PR #43は未着手。
+
+## 2026-10-31 — 指示017 / Issue #19 65 ID fixture台帳の開始
+
+- 最新main `e6926ce08767f72dd75b771f3675a2dcbd19297b`から
+  `feat/19-cad-fixture-ledger`を作成した。PR #48のmerge commit、Issue #18 close、
+  post-merge main checks `41198890516` attempt 1成功を開始時に再確認した。
+- Issue #19へ正規65 ID、必要/採用/未対応モード、正常/失敗fixture、残制約、
+  欠落の自動監査を具体化した。未対応モードの新規製品実装、Issue #37、Draft PR #43、
+  Phase 4は対象外とし、未完了を隠さない。
+- `cad-65-command-fixtures.json`とJS監査2件を追加し、対象実行は2成功。
+  C01〜C10/S01/S02/S05を実OCPの正常/typed failureへ通すnative fixtureを追加した。
+  最初の対象nativeコマンドは`.pathloom-runtime/python/bin/python`不在でtest開始前に
+  exit 127となった。`npm run cad:setup`は成功し、同じ対象native 1件は再実行で成功した。
+  この環境準備失敗を製品test失敗や最終成功へ置換しない。
+- 最終ローカルNode24.22.1とNode20.20.2の全JSは各218成功。native全105件は
+  103成功・任意NVIDIA USD 2skip。対象nativeはbaseline 1成功、Phase 3曲面7成功、
+  一般面編集7成功、領域/立体14成功。local Rustはcargo不在で未実行。
+- local browser全85件はChromium実行体がないため、全件がtest body実行前のlaunchで失敗した。
+  `npx playwright install chromium`も5回とも0 MiB/truncated zipで失敗し、成功へ置換しない。
+  GitHub CIでbrowser全件が成立するまでReady、merge、Issue自動closeを行わない。
+  実Mac/Tauri/OS dialog/Issue #37も未実施。PR/CIは現時点で未実施。
+
+### 指示017 製品実装headのPR CI（最終文書commit前）
+
+- 同一tree `a9d49d6ead2bbc9e00ca0f5d582f2fe0d7416b9c`をGitHub Git Data APIで
+  `feat/19-cad-fixture-ledger`へ反映し、Draft PR #49を作成した。直接`git push`は
+  認証情報不在で失敗したため、成功へ置換しない。
+- PR CI `41213068913` attempt 1はNode20.20.2 JS 218成功、native全105件中103成功・
+  任意NVIDIA USD 2skip、macOS Rust 22成功だった。browserは既存
+  `P3 command reorder requires edit mode and object drag creates a ready generation binding`が
+  `C04`と`C02`の順序assertで1件失敗し、84成功・1失敗となった。
+- 失敗jobだけを1回再実行したattempt 2はNode20.20.2 JS 218成功・browser 85成功
+  （失敗/skip/retry/flaky 0）。全job生ログを照合し、attempt 1の失敗をattempt 2成功で
+  置換しない。local browser未実行、local Rust未実行もCI成功へ置換しない。
+- この記録を含む最終文書commitのCIを確認するまで、PRはDraftのままReady、merge、
+  Issue自動closeを行わない。Issue #37、Draft PR #43、Phase 4には着手しない。

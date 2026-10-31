@@ -65,7 +65,10 @@ Python/OCPは.appに同梱されていない。JSONL・cacheの上限はOCCTプ�
 
 ## 5. 機能の棚卸し
 
-コードの列挙結果は**65機能ID中42 IDを登録、別に`shape.transform`系4件（Move / Rotate / Scale / Mirror）を登録**。
+以下は2026-10-26 Phase 0時点の列挙結果で、当時は**65機能ID中42 IDを登録、別に`shape.transform`系4件（Move / Rotate / Scale / Mirror）を登録**していた。
+Issue #19開始時の再列挙では、後続Issue #12〜#18の実装を含む最新registryに正規65 IDが
+重複なく全件存在することを`tests/cad-fixture-ledger.test.mjs`で確認する。登録済みであることと、
+各モード・UI・実機まで完成していることは同一視しない。
 ネイティブ演算一覧は45件で、登録済みコマンドが参照する43演算はすべて含まれていた。
 残る`surface.split`と`surface.extract`は低水準演算のみで、専用のコマンド/UI経路はない。
 この件数は完成数・テスト済み演算数ではない。
