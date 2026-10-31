@@ -710,6 +710,79 @@ add(
   [input("surface", ["surface", "shell"])],
 );
 add(
+  "F01",
+  "Join Surfaces v2",
+  "surface.join",
+  {},
+  [input("objects", ["surface", "shell"], 2, null)],
+  { version: 2, resultPolicy: "replace" },
+);
+add(
+  "F02",
+  "Explode Faces v2",
+  "surface.explode",
+  { keepOriginal: false },
+  [input("object", ["surface", "shell", "solid"])],
+  { version: 2, resultPolicy: "replace" },
+);
+add(
+  "F02.extract",
+  "Extract Face",
+  "surface.extract",
+  { keepOriginal: true },
+  [
+    input("object", ["surface", "shell", "solid"]),
+    { ...input("faces", ["face"], 1, null), kind: "subshape" },
+  ],
+);
+add("F03", "Trim Surface", "surface.trim", { mode: "trim", keepPoint: [0, 0, 0] }, [
+  input("surface", ["surface"]),
+  input("cutters", ["curve", "surface", "shell", "solid"], 1, null),
+], { resultPolicy: "replace" });
+add("F03.split", "Split Surface", "surface.split", { mode: "split" }, [
+  input("targets", ["surface"], 1, null),
+  input("cutters", ["curve", "surface", "shell", "solid"], 1, null),
+], { resultPolicy: "replace" });
+add("F04", "Untrim Surface v2", "surface.untrim", { mode: "all", domain: [-20, 20, -20, 20] }, [
+  input("surface", ["surface"]),
+], { version: 2, resultPolicy: "replace" });
+add("F04.boundary", "Untrim Selected Boundary", "surface.untrim", { mode: "selected", domain: [-20, 20, -20, 20] }, [
+  input("surface", ["surface"]),
+  { ...input("boundaries", ["edge"], 1, null), kind: "subshape" },
+], { resultPolicy: "replace" });
+add("F05", "Extend Surface", "surface.extend", { side: "uEnd", parameterDelta: 1 }, [
+  input("surface", ["surface"]),
+], { resultPolicy: "replace" });
+add("F06", "Offset Surface v2", "surface.offset", { distanceMm: 1, directionMode: "normal", bothSides: false, solidify: false }, [
+  input("surface", ["surface", "shell"]),
+], { version: 2 });
+const surfacePairInputs = () => [
+  input("first", ["surface"]),
+  { ...input("firstEdge", ["edge"]), kind: "subshape" },
+  input("second", ["surface"]),
+  { ...input("secondEdge", ["edge"]), kind: "subshape" },
+];
+add("F07", "Fillet Surfaces", "surface.fillet", { radiusMm: 1, trim: false, join: false }, surfacePairInputs());
+add("F07.chamfer", "Chamfer Surfaces", "surface.chamfer", { distanceMm: 1, trim: false, join: false }, surfacePairInputs());
+add("F08", "Blend Surface", "surface.blend", { continuity: "G1", fitToleranceMm: 0.01 }, surfacePairInputs());
+add("F09", "Match Surface", "surface.match", { continuity: "G1", fitToleranceMm: 0.01 }, surfacePairInputs(), { resultPolicy: "replace" });
+add("F10", "Rebuild Surface", "surface.rebuild", { uDegree: 3, vDegree: 3, maxSegments: 16, acceptApproximation: false }, [input("surface", ["surface"])], { resultPolicy: "replace" });
+add("F10.poles", "Edit Surface Poles", "surface.editPoles", { uIndex: 1, vIndex: 1, position: [0, 0, 0] }, [input("surface", ["surface"])], { resultPolicy: "replace" });
+add("F11", "Reverse Normal v2", "surface.reverse", {}, [input("object", ["surface", "shell", "solid"])], { version: 2, resultPolicy: "replace" });
+add("F11.boundaries", "Show Surface Boundaries", "shape.boundaries", { mode: "open" }, [input("object", ["surface", "shell", "solid"])]);
+add("D08", "Move Face", "shape.moveFace", { mode: "detach", operation: "add", translation: [0, 0, 1] }, [
+  input("body", ["solid", "shell"]),
+  { ...input("face", ["face"]), kind: "subshape" },
+], { resultPolicy: "replace" });
+add("D09", "Split Face", "shape.splitFace", { mode: "split" }, [
+  { ...input("face", ["face"]), kind: "subshape" },
+  input("cutters", ["curve", "surface", "shell", "solid"], 1, null),
+], { resultPolicy: "replace" });
+add("D09.extract", "Extract Face from Body", "surface.extract", { keepOriginal: true }, [
+  input("object", ["surface", "shell", "solid"]),
+  { ...input("faces", ["face"], 1, null), kind: "subshape" },
+]);
+add(
   "D04",
   "Split Body",
   "solid.split",

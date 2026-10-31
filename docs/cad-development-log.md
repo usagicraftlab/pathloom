@@ -1878,3 +1878,19 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   local full-suite result, CI result, Ready/merge, or Issue closure is claimed.
   Issue #18 onward, real-Mac Issue #37, Draft PR #43, and layout changes remain
   outside this branch.
+
+### 指示015 実装・ローカル検証（CI前）
+
+- F01〜F11、D08/D09をregistry-first v2として具体化した。既存v1は保持し、
+  Splitter/Sewing/Offset/Filling/finite-domain B-spline fitting等の採用演算、
+  exact/approximate accuracy、selected subshape、複数出力slotを実装した。
+- `native/test_surface_editing.py` は7件成功。選択境界Untrim、connector join、
+  fresh runtime asset再読込、typed failureを含む。全nativeは103件中101成功、
+  任意NVIDIA USD 2skip。Node24.22.1/Node20.20.2の全JSは各215成功。
+- browser fixtureを2件追加したが、このlocal環境ではChromium実行体がなく、
+  対象2件はtest body実行前に失敗した。Playwright browser取得も許可networkから
+  0-byte応答となり失敗したため、成功へ置換しない。全browserはGitHub CIで実行し、
+  その成否を確認するまでReady/merge/Issue closeを行わない。
+- 初回native対象実行はunittest module path誤りでimport前失敗し、正しいdiscover
+  invocationへ直した。選択Untrimは初回84 mm²のままというfixture失敗を検出し、
+  serialized topologyでも幾何端点signatureで選択edgeを同定する修正後に7件成功した。

@@ -15,10 +15,10 @@ and workspace layout changes.
 | F04 | `surface.untrim` v2 | `BRep_Tool.Surface` plus finite-domain `BRepBuilderAPI_MakeFace`; full and selected-boundary modes retain the base-surface domain in history. |
 | F05 | `surface.extend` | Exact base-surface parameter-domain extension with `BRepBuilderAPI_MakeFace`; unsupported infinite/degenerate domains fail with a typed diagnostic rather than fitting silently. |
 | F06 | `surface.offset` v2 | `BRepOffsetAPI_MakeOffsetShape`; one/both sides and optional solidification are explicit outputs/options. |
-| F07 | `surface.fillet` / `surface.chamfer` | OCCT filling/ruled construction between explicitly selected boundary edges; trim and join are separate options and the connector face can remain independent. |
+| F07 | `surface.fillet` / `surface.chamfer` | OCCT filling/ruled construction between explicitly selected boundary edges; positive profile size and selected-boundary trim intent are recorded, join uses `BRepBuilderAPI_Sewing`, and the connector face can remain independent. |
 | F08 | `surface.blend` | `BRepOffsetAPI_MakeFilling` with G0/G1/G2 boundary constraints; continuity is explicit and approximation tolerance is reported. |
 | F09 | `surface.match` | Filling against the mutable and reference edges; only the mutable side is returned and the reference input is copied/read-only. |
-| F10 | `surface.rebuild` / `surface.editPoles` | `GeomConvert_SurfaceToBSplineSurface` and B-spline pole editing; rebuild/edit mode, U/V degree/control data, and measured deviation are recorded. |
+| F10 | `surface.rebuild` / `surface.editPoles` | Finite-domain sampling plus `GeomAPI_PointsToBSplineSurface` and B-spline pole editing; rebuild/edit mode, U/V degree/control data, and declared fit tolerance are recorded. |
 | F11 | `surface.reverse` / `shape.boundaries` v2 | Topological orientation reversal and exact edge extraction; open/shared boundary classification is informational and does not imply a solid. |
 | D08 | `shape.moveFace` | Detached mode is exact face extraction plus transform; integrated planar push/pull uses selected-face direction/distance and rejects unsupported general-face reconstruction explicitly. |
 | D09 | `shape.splitFace` / `surface.extract` | Splitter/pcurve-derived pieces or exact face copies; open results are valid outputs and source/cutter/selector references remain in history. |
