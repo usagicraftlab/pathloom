@@ -1899,3 +1899,9 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   D09/F08のselectorがmissingとなり、既存B08はv2表示名へ余分なsuffixを付けた回帰で
   `Explode Faces` button待ちtimeoutとなった。subshape refを保存契約どおり完全化し、
   v1/v2共通UI labelへ修正した。失敗runを成功へ置換せず、次runで再検証する。
+- 2回目PR CI `41188011686` attempt 1はnative101+2skip/Rust22が成功し、browserは
+  83成功・2失敗だった。前runの既存B08と新規D09、さらに新規2件目は成功した。
+  新規1件目はasyncな`PathloomModel.snapshot()`をawaitせず`entities`を参照した
+  fixture不備で失敗したためawaitを追加する。もう1件は既存P1-05 basic drawingの
+  history countが期待3に対して2となった単発失敗であり、新規fixture失敗と混同せず
+  次の通常push CIで再確認する。この時点でCI再実行、Ready、mergeは行っていない。

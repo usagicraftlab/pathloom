@@ -73,7 +73,8 @@ test("Issue17 surface edits preserve exact assets through Undo/Redo and v2 Save/
   await page.keyboard.press("Control+Shift+z");
   await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.features.length)).toBe(featureCount);
 
-  const beforeHashes = await page.evaluate(() => window.PathloomModel.snapshot().entities.map((entity) => entity.geometry.assetHash));
+  const beforeHashes = await page.evaluate(async () =>
+    (await window.PathloomModel.snapshot()).entities.map((entity) => entity.geometry.assetHash));
   const after = await roundTrip(page);
   expect(after.entities.map((entity) => entity.geometry.assetHash)).toEqual(beforeHashes);
   expect(after.features.at(-1).command.id).toBe("F06");
