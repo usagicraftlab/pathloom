@@ -1987,3 +1987,18 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   `npx playwright install chromium`も5回とも0 MiB/truncated zipで失敗し、成功へ置換しない。
   GitHub CIでbrowser全件が成立するまでReady、merge、Issue自動closeを行わない。
   実Mac/Tauri/OS dialog/Issue #37も未実施。PR/CIは現時点で未実施。
+
+### 指示017 製品実装headのPR CI（最終文書commit前）
+
+- 同一tree `a9d49d6ead2bbc9e00ca0f5d582f2fe0d7416b9c`をGitHub Git Data APIで
+  `feat/19-cad-fixture-ledger`へ反映し、Draft PR #49を作成した。直接`git push`は
+  認証情報不在で失敗したため、成功へ置換しない。
+- PR CI `41213068913` attempt 1はNode20.20.2 JS 218成功、native全105件中103成功・
+  任意NVIDIA USD 2skip、macOS Rust 22成功だった。browserは既存
+  `P3 command reorder requires edit mode and object drag creates a ready generation binding`が
+  `C04`と`C02`の順序assertで1件失敗し、84成功・1失敗となった。
+- 失敗jobだけを1回再実行したattempt 2はNode20.20.2 JS 218成功・browser 85成功
+  （失敗/skip/retry/flaky 0）。全job生ログを照合し、attempt 1の失敗をattempt 2成功で
+  置換しない。local browser未実行、local Rust未実行もCI成功へ置換しない。
+- この記録を含む最終文書commitのCIを確認するまで、PRはDraftのままReady、merge、
+  Issue自動closeを行わない。Issue #37、Draft PR #43、Phase 4には着手しない。
