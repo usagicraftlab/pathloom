@@ -95,3 +95,23 @@ class RegionSolidTests(unittest.TestCase):
         self.assertTrue(self.out('solid.shell',p,inp)['summary']['closure']['enclosesVolume'])
         r=self.failed('solid.shell',{**p,'thicknessMm':100},inp,'CAD_SHELL_FAILED');self.assertEqual(r['diagnostics'][0]['details']['thicknessMm'],100)
         self.assertTrue(self.out('solid.shell',{**p,'directionMode':'outward'},inp)['summary']['closure']['enclosesVolume'])
+    def test_issue19_all_region_solid_commands_have_typed_failure(self):
+        ax=dict(origin=[0,0,0],direction=[0,0,1])
+        cases=[
+            ('surface.planarRegion',{},{}),
+            ('solid.box',dict(mode='dimensions',plane=XY,anchorMode='corner',anchor=[0,0,0],widthMm=0,depthMm=10,heightMm=10,points=[]),{}),
+            ('solid.ellipsoid',dict(plane=XY,center=[0,0,0],radiiMm=[1,0,1]),{}),
+            ('shape.cylinder',dict(axis=ax,radiusMm=0,heightMm=10,cap=True),{}),
+            ('shape.cone',dict(axis=ax,bottomRadiusMm=2,topRadiusMm=2,heightMm=10,cap=True),{}),
+            ('solid.torus',dict(axis=ax,majorRadiusMm=2,minorRadiusMm=3),{}),
+            ('shape.pipe',dict(radiusMm=2,frameMode='corrected-frame',transitionMode='roundCorner',cap=False),{}),
+            ('shape.extrude',dict(direction=[0,0,1],distanceMm=10,bothSides=False,cap=True),{}),
+            ('shape.cap',{},{}),
+            ('solid.union',{},{}),
+            ('solid.intersection',{},{}),
+            ('solid.fillet',dict(radiusMm=2,chainPolicy='selected'),{}),
+            ('solid.chamfer',dict(distance1Mm=1,distance2Mm=None),{}),
+            ('solid.shell',dict(thicknessMm=1,directionMode='inward'),{}),
+        ]
+        for operation,parameters,inputs in cases:
+            with self.subTest(operation=operation):self.failed(operation,parameters,inputs)

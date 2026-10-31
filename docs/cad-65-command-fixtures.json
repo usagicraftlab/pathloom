@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Issue #19 acceptance evidence for the canonical 65 CAD command IDs. Required/adopted/unsupported modes and remaining limitations stay authoritative in cad-command-status.md.",
+  "canonicalIds": [
+    "C01", "C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09", "C10", "C11", "C12",
+    "E01", "E02", "E03", "E04", "E05", "E06", "E07", "E08", "E09", "E10", "E11", "E12", "E13", "E14",
+    "S01", "S02", "S03", "S04", "S05", "S06", "S07", "S08", "S09", "S10", "S11",
+    "F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11",
+    "B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08",
+    "D01", "D02", "D03", "D04", "D05", "D06", "D07", "D08", "D09"
+  ],
+  "evidenceSets": {
+    "issue19-baseline-creation": {
+      "normal": [{"path": "native/test_cad_operation_options.py", "test": "test_issue19_baseline_commands_have_normal_and_typed_failure_fixtures"}],
+      "failure": [{"path": "native/test_cad_operation_options.py", "test": "test_issue19_baseline_commands_have_normal_and_typed_failure_fixtures"}]
+    },
+    "phase3-curve-surface": {
+      "normal": [
+        {"path": "native/test_cad_curve_surface_creation.py", "test": "test_C11_C12_create_spatial_curves_with_recorded_accuracy"},
+        {"path": "native/test_cad_curve_surface_creation.py", "test": "test_E12_boundary_modes_copy_exact_edges_and_validate_selection"},
+        {"path": "native/test_cad_curve_surface_creation.py", "test": "test_E13_project_and_pull_return_exact_reselectable_edges"},
+        {"path": "native/test_cad_curve_surface_creation.py", "test": "test_E14_intersect_section_and_contour_preserve_all_outputs"},
+        {"path": "native/test_cad_curve_surface_creation.py", "test": "test_S04_S06_S07_S09_modes_and_point_patch"},
+        {"path": "native/test_cad_curve_surface_creation.py", "test": "test_S08_S10_S11_create_surfaces_and_reopen_the_same_brep"}
+      ],
+      "failure": [{"path": "native/test_cad_curve_surface_creation.py", "test": "test_failures_are_typed_and_publish_no_partial_output"}]
+    },
+    "curve-editing": {
+      "normal": [
+        {"path": "native/test_curve_editing_modes.py", "test": "test_E01_join_groups_and_branch"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E02_explode_preserves_all_exact_edges"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E03_trim_click_retains_both_intervals"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E04_split_explicit_edge_and_all_intervals"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E05_reach_target_and_explicit_candidate"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E06_offset_zero_and_nonplanar_rejection"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E07_fillet_all_three_outputs"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E07_chamfer_explicit_retained_sides"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E08_blend_G1_G2_endpoint_derivatives"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E09_rebuild_degree_count_measured_deviation_confirmation"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E10_reverse_and_seam_applicability"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E11_move_insert_remove_poles_and_invalid_index"}
+      ],
+      "failure": [
+        {"path": "native/test_curve_editing_modes.py", "test": "test_E01_join_groups_and_branch"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E02_explode_preserves_all_exact_edges"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E03_trim_click_retains_both_intervals"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E04_split_explicit_edge_and_all_intervals"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E05_reach_target_and_explicit_candidate"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E06_offset_zero_and_nonplanar_rejection"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E07_fillet_all_three_outputs"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E07_chamfer_explicit_retained_sides"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E08_blend_G1_G2_endpoint_derivatives"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E09_rebuild_degree_count_measured_deviation_confirmation"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E10_reverse_and_seam_applicability"}, {"path": "native/test_curve_editing_modes.py", "test": "test_E11_move_insert_remove_poles_and_invalid_index"}
+      ]
+    },
+    "regions-solids": {
+      "normal": [
+        {"path": "native/test_regions_solids.py", "test": "test_S03_holes_multiple_regions_nested_island"}, {"path": "native/test_regions_solids.py", "test": "test_B01_two_corners_three_points"}, {"path": "native/test_regions_solids.py", "test": "test_B02_exact_ellipsoid"}, {"path": "native/test_regions_solids.py", "test": "test_B03_B04_B05_open_closed_primitives"}, {"path": "native/test_regions_solids.py", "test": "test_B06_pipe_open_closed_and_corner"}, {"path": "native/test_regions_solids.py", "test": "test_B07_face_extrude_retains_hole_and_open_result"}, {"path": "native/test_regions_solids.py", "test": "test_B08_cap_pipe_and_independent_solids"}, {"path": "native/test_regions_solids.py", "test": "test_B08_assemble_faces_and_preserve_open_surface"}, {"path": "native/test_regions_solids.py", "test": "test_D01_D03_multiple_noncontact_empty_contact"}, {"path": "native/test_regions_solids.py", "test": "test_D05_explicit_tangent_chain_and_legacy_preserved"}, {"path": "native/test_regions_solids.py", "test": "test_D06_two_distances_and_adjacent_face"}, {"path": "native/test_regions_solids.py", "test": "test_D07_shell_failure_details_and_direction"}
+      ],
+      "failure": [{"path": "native/test_regions_solids.py", "test": "test_issue19_all_region_solid_commands_have_typed_failure"}]
+    },
+    "difference": {
+      "normal": [{"path": "native/test_cad_difference.py", "test": "test_AUD002_multiple_targets_keep_both_remainders"}, {"path": "native/test_cad_difference.py", "test": "test_every_remainder_survives_export_and_new_runtime_import"}],
+      "failure": [{"path": "native/test_cad_difference.py", "test": "test_unsupported_parameters_roles_and_types_fail_without_publishing"}]
+    },
+    "split": {
+      "normal": [{"path": "native/test_cad_split.py", "test": "test_same_split_preserves_exact_slots_after_fresh_import"}, {"path": "native/test_cad_split.py", "test": "test_surface_split_uses_the_same_exact_source_contract"}],
+      "failure": [{"path": "native/test_cad_split.py", "test": "test_ambiguous_source_fails_atomically_without_leaking_handles"}]
+    },
+    "surface-editing": {
+      "normal": [{"path": "native/test_surface_editing.py", "test": "test_trim_split_extend_and_boundaries"}, {"path": "native/test_surface_editing.py", "test": "test_extract_reverse_offset_and_solidify"}, {"path": "native/test_surface_editing.py", "test": "test_selected_untrim_removes_only_the_chosen_inner_boundary"}, {"path": "native/test_surface_editing.py", "test": "test_blend_match_fillet_and_chamfer_are_explicit_connectors"}, {"path": "native/test_surface_editing.py", "test": "test_rebuild_edit_poles_and_typed_failure"}, {"path": "native/test_surface_editing.py", "test": "test_move_face_detach_and_integrated_push_pull"}],
+      "failure": [{"path": "native/test_surface_editing.py", "test": "test_typed_failures_do_not_silently_choose_geometry"}]
+    }
+  },
+  "commands": {
+    "C01": "issue19-baseline-creation", "C02": "issue19-baseline-creation", "C03": "issue19-baseline-creation", "C04": "issue19-baseline-creation", "C05": "issue19-baseline-creation", "C06": "issue19-baseline-creation", "C07": "issue19-baseline-creation", "C08": "issue19-baseline-creation", "C09": "issue19-baseline-creation", "C10": "issue19-baseline-creation",
+    "C11": "phase3-curve-surface", "C12": "phase3-curve-surface",
+    "E01": "curve-editing", "E02": "curve-editing", "E03": "curve-editing", "E04": "curve-editing", "E05": "curve-editing", "E06": "curve-editing", "E07": "curve-editing", "E08": "curve-editing", "E09": "curve-editing", "E10": "curve-editing", "E11": "curve-editing",
+    "E12": "phase3-curve-surface", "E13": "phase3-curve-surface", "E14": "phase3-curve-surface",
+    "S01": "issue19-baseline-creation", "S02": "issue19-baseline-creation", "S03": "regions-solids", "S04": "phase3-curve-surface", "S05": "issue19-baseline-creation", "S06": "phase3-curve-surface", "S07": "phase3-curve-surface", "S08": "phase3-curve-surface", "S09": "phase3-curve-surface", "S10": "phase3-curve-surface", "S11": "phase3-curve-surface",
+    "F01": "surface-editing", "F02": "surface-editing", "F03": "surface-editing", "F04": "surface-editing", "F05": "surface-editing", "F06": "surface-editing", "F07": "surface-editing", "F08": "surface-editing", "F09": "surface-editing", "F10": "surface-editing", "F11": "surface-editing",
+    "B01": "regions-solids", "B02": "regions-solids", "B03": "regions-solids", "B04": "regions-solids", "B05": "regions-solids", "B06": "regions-solids", "B07": "regions-solids", "B08": "regions-solids",
+    "D01": "regions-solids", "D02": "difference", "D03": "regions-solids", "D04": "split", "D05": "regions-solids", "D06": "regions-solids", "D07": "regions-solids", "D08": "surface-editing", "D09": "surface-editing"
+  }
+}

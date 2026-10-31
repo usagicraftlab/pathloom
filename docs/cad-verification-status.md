@@ -380,3 +380,15 @@ probeの個別成功、公開registry、実OCP正常/typed failure、近似分�
 fresh runtime正本再読込、Undo/Redo、v2 Save/Openを追加証拠とする。Sweep2はrail/section偏差、
 Networkは交点gap、Patch/Blend/Match/Rebuildは各境界・sample偏差を別項目で記録する。
 実Mac GUI/Tauri/OS dialog/Issue #37は未実施のまま、自動fixtureで合格へ変更しない。
+
+## 2026-10-31 — 指示017 / Issue #19 65 ID fixture台帳
+
+既存A/T/R 62行の状態は保持する。`cad-65-command-fixtures.json`は正規65 IDを
+C01〜C12/E01〜E14/S01〜S11/F01〜F11/B01〜B08/D01〜D09の固定順で列挙し、
+各IDを正常/失敗fixtureの具体的なファイル・test名へ結ぶ。
+`tests/cad-fixture-ledger.test.mjs`は65件・順序・重複なし、最新public registry、
+Modes/Diagnostics/Fixture/Known limitsの非空、証拠setとファイルの存在を検査する。
+基本作成C01〜C10/S01/S02/S05には、同一実OCP test内で正常形状とtyped failure、
+失敗時の出力なし/cache不変を明示的に追加する。C11/C12のbrowser pendingは
+PR #46〜#48の全件85成功証拠へ更新する。これは証拠の追跡閉鎖であり、未対応モード、
+一般参照修復、実Mac GUI/Tauri/OS dialog/Issue #37を合格へ昇格しない。

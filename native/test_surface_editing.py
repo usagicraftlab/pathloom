@@ -151,6 +151,21 @@ class SurfaceEditingTests(unittest.TestCase):
 
     def test_typed_failures_do_not_silently_choose_geometry(self):
         face = self.plane(); cutter = self.cutter()
+        missing = [
+            ("surface.join", {}, {}),
+            ("surface.explode", {"keepOriginal": False}, {}),
+            ("surface.untrim", {"mode": "all", "domain": [-20, 20, -20, 20]}, {}),
+            ("surface.fillet", {"radiusMm": 1, "trim": False, "join": False}, {}),
+            ("surface.blend", {"continuity": "G1", "fitToleranceMm": .01}, {}),
+            ("surface.match", {"continuity": "G1", "fitToleranceMm": .01}, {}),
+            ("surface.rebuild", {"uDegree": 3, "vDegree": 3, "maxSegments": 16, "acceptApproximation": False}, {}),
+            ("surface.reverse", {}, {}),
+            ("shape.moveFace", {"mode": "detach", "operation": "add", "translation": [0, 0, 1]}, {}),
+            ("shape.splitFace", {"mode": "split"}, {}),
+        ]
+        for operation, parameters, inputs in missing:
+            with self.subTest(operation=operation):
+                self.run_op(operation, parameters, inputs, expect="failed")
         self.run_op("surface.trim", dict(mode="trim", keepPoint=[5, 5, 0]),
             dict(surface=[self.ref(face)], cutters=[self.ref(cutter)]), expect="failed")
         self.run_op("surface.extend", dict(side="invalid", parameterDelta=1),
