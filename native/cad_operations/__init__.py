@@ -52,6 +52,23 @@ def wire(s):
     for e in subshapes(s,TopAbs_EDGE):m.Add(e)
     if not m.IsDone():raise CadError('CAD_JOIN_GAP','曲線を連続するwireにできません。',('showBoundaries','editTolerance','editGeometry'))
     return m.Wire()
+def oriented_wire(s,reverse=False,seam=None):
+    """Copy a section, optionally rotate one closed edge's seam and reverse it."""
+    copied=BRepBuilderAPI_Copy(s).Shape();result=wire(copied)
+    if seam is not None:
+        from OCP.BRepAdaptor import BRepAdaptor_Curve
+        from OCP.BRep import BRep_Tool
+        edges=subshapes(result,TopAbs_EDGE)
+        if len(edges)!=1 or not edges[0].Closed():raise CadError('CAD_INPUT_TYPE','seam指定は単一の閉曲線だけに使用できます。')
+        edge=edges[0];ad=BRepAdaptor_Curve(edge);first,last=ad.FirstParameter(),ad.LastParameter();seam=finite(seam)
+        if seam<first or seam>=last:raise CadError('CAD_INPUT_DEGENERATE',f'seam parameterは[{first}, {last})内です。')
+        if abs(seam-first)>1e-12:
+            curve=BRep_Tool.Curve_s(edge,0.,0.);builder=BRepBuilderAPI_MakeWire()
+            builder.Add(BRepBuilderAPI_MakeEdge(curve,seam,last).Edge());builder.Add(BRepBuilderAPI_MakeEdge(curve,first,seam).Edge())
+            if not builder.IsDone():raise CadError('CAD_KERNEL_FAILED','閉曲線のseamを移動できません。')
+            result=builder.Wire()
+    if reverse:result.Reverse()
+    return result
 def poly(points,closed=False):
     a=[vec(x) for x in points]
     if len(a)<2:raise CadError('CAD_INPUT_MISSING','2点以上を指定してください。')
@@ -82,6 +99,9 @@ def evaluate(op,p,inputs,tol,selectors=None):
     from . import curve_editing
     if op in curve_editing.OPERATIONS:
         return curve_editing.evaluate(op,p,inputs,tol,selectors)
+    from . import curve_surface_creation
+    if op in curve_surface_creation.OPERATIONS:
+        return curve_surface_creation.evaluate(op,p,inputs,tol,selectors)
     boolean_fields={'closed','periodic','cap','bothSides','rounding','solidify','tangentChain','reverse','preserveBoundary'}
     for key in boolean_fields & p.keys():
         if not isinstance(p[key],bool):raise CadError('CAD_INPUT_TYPE',f'{key} はtrue/falseで指定してください。')
@@ -234,21 +254,24 @@ def evaluate(op,p,inputs,tol,selectors=None):
             result=BRepBuilderAPI_MakeFace(Geom_BezierSurface(arr),tol['kernelLinearMm']).Face()
         else:raise CadError('CAD_INPUT_MISSING','3点または4点を順番に指定してください。')
     elif op=='surface.edges':
-        from OCP.GeomFill import GeomFill_BSplineCurves,GeomFill_CoonsStyle
-        from OCP.GeomConvert import GeomConvert
-        from OCP.BRep import BRep_Tool
-        curves=inputs.get('curves',[])
+        curves=inputs.get('curves',[]);reversed_curves=p.get('boundaryReversed') or [False]*len(curves)
+        if len(reversed_curves)!=len(curves) or any(not isinstance(v,bool) for v in reversed_curves):raise CadError('CAD_INPUT_TYPE','境界向きは境界数と同じtrue/false配列です。')
+        curves=[oriented_wire(curve,reversed_curves[index]) for index,curve in enumerate(curves)]
         if len(curves)==2:
             from OCP.BRepFill import BRepFill
             result=BRepFill.Face_s(TopoDS.Edge_s(subshapes(curves[0],TopAbs_EDGE)[0]),TopoDS.Edge_s(subshapes(curves[1],TopAbs_EDGE)[0]))
         else:
-            bs=[]
+            from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeFilling
+            from OCP.GeomAbs import GeomAbs_C0
+            if len(curves) not in (3,4):raise CadError('CAD_INPUT_MISSING','2〜4本の境界が必要です。')
+            filling=BRepOffsetAPI_MakeFilling(Tol3d=tol['fitLinearMm'])
             for curve in curves:
                 edges=subshapes(curve,TopAbs_EDGE)
-                if len(edges)!=1:raise CadError('CAD_INPUT_TYPE','Coons境界は単一edgeを順番に指定してください。')
-                bs.append(GeomConvert.CurveToBSplineCurve_s(BRep_Tool.Curve_s(edges[0],0.,0.)))
-            if len(bs) not in (3,4):raise CadError('CAD_INPUT_MISSING','2〜4本の境界が必要です。')
-            surface=GeomFill_BSplineCurves(*bs,GeomFill_CoonsStyle).Surface();result=BRepBuilderAPI_MakeFace(surface,tol['kernelLinearMm']).Face()
+                if len(edges)!=1:raise CadError('CAD_INPUT_TYPE','Filling境界は単一edgeを順番に指定してください。')
+                filling.Add(edges[0],GeomAbs_C0,True)
+            filling.Build()
+            if not filling.IsDone():raise CadError('CAD_KERNEL_FAILED','境界の順序・向きから面を構成できません。',('reselectReference','editParameters'))
+            result=filling.Shape();semantic['accuracy']=dict(fitToleranceMm=tol['fitLinearMm'],boundaryCount=len(curves))
     elif op=='surface.offset':
         from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffsetShape
         if p['solidify'] or p['bothSides']:raise CadError('CAD_SCHEMA_UNSUPPORTED','現在の面offsetは片側・厚み付けなしです。')
@@ -307,7 +330,11 @@ def evaluate(op,p,inputs,tol,selectors=None):
         semantic['builder']=builder;semantic['sourceCopier']=copier
     elif op=='shape.revolve':
         s=input_one(inputs,'profile');axis=p['axis'];ax=gp_Ax1(point(axis['origin']),direction(axis['direction']));a=finite(p['startAngleRad']);sweep=finite(p['sweepAngleRad'])
-        if p['cap'] and s.ShapeType()!=TopAbs_FACE:s=BRepBuilderAPI_MakeFace(wire(s)).Face()
+        if abs(sweep)<1e-12 or abs(sweep)>2*math.pi+1e-10:raise CadError('CAD_INPUT_DEGENERATE','回転角は0以外で1周以内です。')
+        if p['cap'] and s.ShapeType()!=TopAbs_FACE:
+            profile=wire(s)
+            if not profile.Closed():raise CadError('CAD_PROFILE_OPEN','Capには閉じた平面断面が必要です。',('chooseOpenResult','editParameters'))
+            s=BRepBuilderAPI_MakeFace(profile).Face()
         if a:t=gp_Trsf();t.SetRotation(ax,a);s=BRepBuilderAPI_Transform(s,t,True).Shape()
         result=BRepPrimAPI_MakeRevol(s,ax,sweep,True).Shape()
     elif op in ('solid.sphere','shape.cylinder','shape.cone','solid.torus'):
@@ -373,9 +400,32 @@ def evaluate(op,p,inputs,tol,selectors=None):
             if op=='curve.reverse' and not subshapes(result,TopAbs_EDGE):raise CadError('CAD_INPUT_TYPE','曲線を選択してください。')
             result.Reverse()
         else:
-            s=input_one(inputs,'object');k=TopAbs_EDGE if op.startswith('curve.') else TopAbs_FACE
+            if op=='curve.extractBoundary':
+                objects=inputs.get('object',[])
+                if len(objects)!=1:raise CadError('CAD_INPUT_MISSING','object: 形状を1つ選択してください。',('selectInput',))
+                s=objects[0]
+            else:s=input_one(inputs,'object')
+            k=TopAbs_EDGE if op.startswith('curve.') else TopAbs_FACE
             shapes=subshapes(s,k)
             if not shapes:raise CadError('CAD_INPUT_TYPE','分解できるedge/faceがありません。')
+            if op=='curve.extractBoundary':
+                mode=p.get('mode','all')
+                if mode not in ('all','selected','outer','open'):raise CadError('CAD_INPUT_TYPE','edge抽出方式はall/selected/outer/openです。')
+                if mode=='selected':
+                    chosen=selectors.get('edges',[])
+                    if not chosen:raise CadError('CAD_INPUT_MISSING','抽出するedgeを選択してください。',('selectInput',))
+                    if any(not any(edge.IsSame(candidate) for candidate in shapes) for edge in chosen):raise CadError('CAD_INPUT_TYPE','選択edgeが対象形状に属していません。')
+                    shapes=chosen
+                elif mode=='outer':
+                    from OCP.BRepTools import BRepTools
+                    outer=[]
+                    for face in subshapes(s,TopAbs_FACE):
+                        for edge in subshapes(BRepTools.OuterWire_s(face),TopAbs_EDGE):
+                            if not any(edge.IsSame(candidate) for candidate in outer):outer.append(edge)
+                    shapes=outer
+                elif mode=='open':
+                    faces=subshapes(s,TopAbs_FACE);shapes=[edge for edge in shapes if sum(any(edge.IsSame(candidate) for candidate in subshapes(face,TopAbs_EDGE)) for face in faces)==1]
+                if not shapes:raise CadError('CAD_EMPTY_RESULT','指定方式に該当するedgeはありません。',('editParameters','reselectReference'))
             if op.endswith('extract'):
                 chosen=selectors.get('faces',[])
                 if not chosen:raise CadError('CAD_INPUT_MISSING','取り出す面を選んでください。',('selectInput',))
@@ -385,26 +435,33 @@ def evaluate(op,p,inputs,tol,selectors=None):
         from OCP.BRepOffsetAPI import BRepOffsetAPI_ThruSections
         sections=inputs.get('sections',[])
         if len(sections)<2:raise CadError('CAD_INPUT_MISSING','Loftには2つ以上の断面が必要です。',('selectInput',))
-        if p['closed']:raise CadError('CAD_SCHEMA_UNSUPPORTED','閉じるLoftは未実装です。')
         if p['style'] not in ('smooth','ruled'):raise CadError('CAD_INPUT_TYPE','Loft方式はsmooth/ruledです。')
         b=BRepOffsetAPI_ThruSections(p['cap'],p['style']=='ruled',tol['fitLinearMm'])
         reversed_sections=p.get('sectionReversed') or [False]*len(sections)
         if len(reversed_sections)!=len(sections) or any(not isinstance(v,bool) for v in reversed_sections):raise CadError('CAD_INPUT_TYPE','Loftの向きは断面数と同じtrue/false配列です。')
-        for i,s in enumerate(sections):
-            w=wire(BRepBuilderAPI_Copy(s).Shape())
-            if reversed_sections[i]:w.Reverse()
-            b.AddWire(w)
+        seams=p.get('sectionSeamParameters') or [None]*len(sections)
+        if len(seams)!=len(sections):raise CadError('CAD_INPUT_TYPE','Loftのseamは断面数と同じ配列です。')
+        loft_wires=[oriented_wire(s,reversed_sections[i],seams[i]) for i,s in enumerate(sections)]
+        for section_wire in loft_wires:b.AddWire(section_wire)
+        if p['closed']:b.AddWire(wire(BRepBuilderAPI_Copy(loft_wires[0]).Shape()))
         b.Build()
         if not b.IsDone():raise CadError('CAD_KERNEL_FAILED','断面間にLoftを構成できません。')
         result=b.Shape()
     elif op=='surface.sweep1' or op=='shape.pipe':
         from OCP.BRepOffsetAPI import BRepOffsetAPI_MakePipeShell
         rail=input_one(inputs,'rail');b=BRepOffsetAPI_MakePipeShell(wire(rail));mode=p['frameMode']
-        if mode not in ('corrected-frame','frenet'):raise CadError('CAD_SCHEMA_UNSUPPORTED','未実装の掃引フレームです。')
-        b.SetMode(mode=='frenet');sections=inputs.get('sections',[])
+        if mode not in ('corrected-frame','frenet','fixed'):raise CadError('CAD_INPUT_TYPE','掃引フレームはcorrected-frame/frenet/fixedです。')
+        if mode=='fixed':
+            fixed=p.get('fixedFrame')
+            if not isinstance(fixed,dict):raise CadError('CAD_INPUT_MISSING','fixed frameの原点・方向・基準方向を指定してください。')
+            b.SetMode(gp_Ax2(point(fixed['origin']),direction(fixed['direction']),direction(fixed['referenceDirection'])))
+        else:b.SetMode(mode=='frenet')
+        sections=inputs.get('sections',[])
         if not sections and op=='surface.sweep1':raise CadError('CAD_INPUT_MISSING','掃引する断面を選択してください。')
         if op=='shape.pipe':raise CadError('CAD_SCHEMA_UNSUPPORTED','Pipeの自動断面作成は未実装です。')
-        for s in sections:b.Add(wire(BRepBuilderAPI_Copy(s).Shape()),False,False)
+        reversed_sections=p.get('sectionReversed') or [False]*len(sections);seams=p.get('sectionSeamParameters') or [None]*len(sections)
+        if len(reversed_sections)!=len(sections) or any(not isinstance(v,bool) for v in reversed_sections) or len(seams)!=len(sections):raise CadError('CAD_INPUT_TYPE','Sweep1の向き/seamは断面数と同じ配列です。')
+        for index,s in enumerate(sections):b.Add(oriented_wire(s,reversed_sections[index],seams[index]),False,False)
         b.Build()
         if p['cap'] and not b.MakeSolid():raise CadError('CAD_PROFILE_OPEN','掃引の蓋を構成できません。')
         result=b.Shape()
@@ -488,6 +545,9 @@ def evaluate(op,p,inputs,tol,selectors=None):
 
 OPERATIONS={'curve.join','curve.split','curve.offset','surface.corners','surface.edges','surface.offset','surface.untrim','solid.split','surface.split','shape.section','point.create','curve.line','curve.polyline','curve.rectangle','curve.polygon','curve.circle','curve.arc','curve.ellipse','curve.nurbs','curve.interpolate','shape.extrude','shape.revolve','solid.box','solid.sphere','shape.cylinder','shape.cone','solid.torus','solid.union','solid.difference','solid.intersection','surface.plane','surface.planarRegion','surface.join','surface.explode','curve.explode','surface.reverse','curve.reverse','surface.extract','curve.extractBoundary','surface.loft','surface.sweep1','solid.fillet','solid.chamfer','solid.shell','shape.transform'}
 OPERATIONS.update({'curve.trim','curve.extend','curve.fillet','curve.chamfer','curve.blend','curve.rebuild','curve.seam','curve.editPoles'})
+
+from .curve_surface_creation import OPERATIONS as CURVE_SURFACE_CREATION_OPERATIONS
+OPERATIONS |= CURVE_SURFACE_CREATION_OPERATIONS
 
 from .regions_solids import OPERATIONS as REGION_SOLID_OPERATIONS
 OPERATIONS |= REGION_SOLID_OPERATIONS

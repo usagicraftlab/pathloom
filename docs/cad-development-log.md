@@ -1831,3 +1831,35 @@ Undoで3、Redoで5へ戻ることを確認する。初回は停止中DOMが再�
 318.776秒）。local Rustはcargo不在で未実行。実Mac/Tauri/OS dialog/Issue #37も未実施。
 A/T/R 62行の状態は変更せず、今回の回帰証拠だけを検証台帳へ追記する。公開・CI・PR・merge結果は
 後続で区別して記録し、上記ローカル成功から推測しない。
+
+## 2026-10-31 14:34 JST — 指示014 / Issue #16 実装開始と対象fixture
+
+ボード014を未着手から作業中へrequiredRevisionId付きで取得した。開始前にmain checks
+41156200829 attempt2の全3job success（JS212/browser81、native87+任意USD2skip、Rust22）を確認。
+Issue #16をC11/C12、E12〜E14、S04/S06〜S11の明示入力・正常/失敗・複数出力・accuracy・
+Undo/Redo/v2/fresh runtimeまで具体化した。015〜017、#37、PR #43へは着手していない。
+
+`curve.helix`/`curve.spiral`、境界抽出4mode、方向Project/法線Pull、Intersect/Contour、
+2 rail fitted Sweep2、NetworkSrf、Patchをnativeへ追加し、新commandをregistry/sessionへ登録した。
+既存Section/SurfaceFromEdges/Revolve/Sweep1/Loftはv1を保持する。Sweep2のOCP auxiliary-spine
+probeは不適合組合せでnative process終了を再現したため、そのAPIを成功扱いせず、両railを境界制約に
+したfitとaccuracy記録へ置換した。これはSweep1の見かけ置換ではない。
+
+対象native5件は5成功、JS2件は2成功。Project/Pull、Intersect/Contour/Section、Sweep2/Network/Patch、
+typed failure、fresh runtime再読込を実OCPで確認した。実装途中のhelix期待式1失敗とunsafe Sweep2の
+segmentation faultを成功へ置換せず、この履歴に保持する。全Node/native/browser、CI、PR、mergeは
+この時点で未実行。local Rustと実Mac/Tauri/OS dialog/Issue #37も未実施。
+
+### 指示014 最終ローカル検証
+
+最終製品codeでNode24.22.1 `npm test`214成功、Node20.20.2全JS214成功、native96件中
+94成功・任意NVIDIA USD2skip（6.810秒）を確認した。browser全83件は83成功、
+失敗/skip/retry0、workers1、個別timeout45秒、5.5分。local Rustはcargo不在で未実行。
+
+途中結果は成功へ置換しない。helix fixtureの期待式誤りは1失敗後に式を修正した。
+OCP auxiliary-spine Sweep2 probeはnative segmentation faultを起こしたため採用せず、両railを
+境界制約にする明示的なfitへ変更した。Networkは`NearestPoints`のbinding引数不一致、S04は
+GeomFillの`No such curve`/filling style不適合を修正した。browser対象の初回はChromium実行体
+未設定で2件が実行前失敗、設定後はNetwork/Patchのhidden save click待ちで2件timeoutし、既存fixtureと
+同じDOM clickへ修正後2件成功。全browser最終runに再実行機構はなく、skip/xfail化、assertion・
+timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動closeは公開後に別記録する。

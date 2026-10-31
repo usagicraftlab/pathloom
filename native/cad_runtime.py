@@ -119,11 +119,19 @@ class Runtime:
             loft=run('surface.loft',dict(cap=False,closed=False,style='smooth',sectionReversed=[False,False]),dict(sections=[ref(a),ref(b)]))
             assert not loft['summary']['closure']['enclosesVolume'] and abs(loft['summary']['areaMm2']-200)<1e-6
             results.append(dict(operation='surface.loft open',status='verified',fixture='20x10',areaMm2=loft['summary']['areaMm2']))
+            rail1=run('curve.line',dict(start=[0,0,0],end=[0,0,10]));rail2=run('curve.line',dict(start=[5,0,0],end=[5,0,10]));section=run('curve.line',dict(start=[0,0,0],end=[5,0,0]))
+            sweep2=run('surface.sweep2',dict(cap=False,sectionReversed=[False],sectionStations=[0],sampleCount=9,sectionSampleCount=9,fitToleranceMm=.01),dict(rails=[ref(rail1),ref(rail2)],sections=[ref(section)]))
+            assert abs(sweep2['summary']['areaMm2']-50)<1e-5
+            results.append(dict(operation='surface.sweep2',status='verified',fixture='two parallel rails',areaMm2=sweep2['summary']['areaMm2']))
+            u0=run('curve.line',dict(start=[0,0,0],end=[10,0,0]));u1=run('curve.line',dict(start=[0,10,0],end=[10,10,0]));v0=run('curve.line',dict(start=[0,0,0],end=[0,10,0]));v1=run('curve.line',dict(start=[10,0,0],end=[10,10,0]))
+            network=run('surface.network',dict(intersectionToleranceMm=.01,fitToleranceMm=.01),dict(uCurves=[ref(u0),ref(u1)],vCurves=[ref(v0),ref(v1)]))
+            assert abs(network['summary']['areaMm2']-100)<1e-5
+            results.append(dict(operation='surface.network',status='verified',fixture='2x2 planar network',areaMm2=network['summary']['areaMm2']))
         except Exception as e:results.append(dict(operation='startup probe',status='failed',details=str(e)))
         finally:
             for key in list(self.cache):
                 if key not in owned:self.cache.pop(key,None)
-        results.extend(dict(operation=op,status='not-implemented') for op in ['surface.sweep2','surface.network','surface.blend','surface.match'])
+        results.extend(dict(operation=op,status='not-implemented') for op in ['surface.blend','surface.match'])
         self.probes=results;return dict(probes=results)
     def handle(self,msg):
         type=msg.get('type')
