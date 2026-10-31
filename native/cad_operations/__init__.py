@@ -102,6 +102,9 @@ def evaluate(op,p,inputs,tol,selectors=None):
     from . import curve_surface_creation
     if op in curve_surface_creation.OPERATIONS:
         return curve_surface_creation.evaluate(op,p,inputs,tol,selectors)
+    from . import surface_editing
+    if op in surface_editing.OPERATIONS:
+        return surface_editing.evaluate(op,p,inputs,tol,selectors)
     boolean_fields={'closed','periodic','cap','bothSides','rounding','solidify','tangentChain','reverse','preserveBoundary'}
     for key in boolean_fields & p.keys():
         if not isinstance(p[key],bool):raise CadError('CAD_INPUT_TYPE',f'{key} はtrue/falseで指定してください。')
@@ -273,21 +276,58 @@ def evaluate(op,p,inputs,tol,selectors=None):
             if not filling.IsDone():raise CadError('CAD_KERNEL_FAILED','境界の順序・向きから面を構成できません。',('reselectReference','editParameters'))
             result=filling.Shape();semantic['accuracy']=dict(fitToleranceMm=tol['fitLinearMm'],boundaryCount=len(curves))
     elif op=='surface.offset':
-        from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffsetShape
-        if p['solidify'] or p['bothSides']:raise CadError('CAD_SCHEMA_UNSUPPORTED','現在の面offsetは片側・厚み付けなしです。')
+        from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffsetShape,BRepOffsetAPI_MakeThickSolid
         s=input_one(inputs,'surface');distance=finite(p['distanceMm']);mode=p.get('directionMode','normal')
         if mode not in ('normal','reverse'):raise CadError('CAD_INPUT_TYPE','法線方向はnormal/reverseです。')
         if mode=='reverse':distance=-distance
         if distance==0:result=s
+        elif p['solidify']:
+            b=BRepOffsetAPI_MakeThickSolid();b.MakeThickSolidBySimple(s,distance)
+            if not b.IsDone():raise CadError('CAD_KERNEL_FAILED','指定距離で面を厚み付けできません。')
+            result=b.Shape()
+            from OCP.BRepGProp import BRepGProp
+            from OCP.GProp import GProp_GProps
+            props=GProp_GProps();BRepGProp.VolumeProperties_s(result,props,1e-10)
+            if props.Mass()<0:result.Reverse()
+        elif p['bothSides']:
+            outputs=[]
+            for slot,value in [('normal',distance),('reverse',-distance)]:
+                b=BRepOffsetAPI_MakeOffsetShape();b.PerformByJoin(BRepBuilderAPI_Copy(s).Shape(),value,tol['kernelLinearMm'])
+                if not b.IsDone():raise CadError('CAD_KERNEL_FAILED',f'{slot}側の面offsetが成立しません。')
+                outputs.append((slot,b.Shape(),{}))
+            return outputs
         else:
             b=BRepOffsetAPI_MakeOffsetShape();b.PerformByJoin(s,distance,tol['kernelLinearMm']);result=b.Shape()
     elif op=='surface.untrim':
         from OCP.BRep import BRep_Tool
         s=input_one(inputs,'surface');faces=subshapes(s,TopAbs_FACE)
         if len(faces)!=1:raise CadError('CAD_INPUT_TYPE','基底面を復元するfaceを1つ指定してください。')
-        u0,u1,v0,v1=[finite(v) for v in p['domain']]
-        if u0>=u1 or v0>=v1:raise CadError('CAD_INPUT_DEGENERATE','基底面の有限parameter範囲を指定してください。')
-        result=BRepBuilderAPI_MakeFace(BRep_Tool.Surface_s(faces[0]),u0,u1,v0,v1,tol['kernelLinearMm']).Face()
+        mode=p.get('mode','all')
+        if mode=='selected':
+            from OCP.BRepTools import BRepTools
+            from OCP.BRepAdaptor import BRepAdaptor_Curve
+            face=faces[0];selected=selectors.get('boundaries',[])
+            if not selected:raise CadError('CAD_INPUT_MISSING','除去するtrim境界を選択してください。',('reselectReference',))
+            def edge_signature(edge):
+                curve=BRepAdaptor_Curve(edge);first=curve.Value(curve.FirstParameter());last=curve.Value(curve.LastParameter())
+                ends=sorted(((round(first.X(),9),round(first.Y(),9),round(first.Z(),9)),(round(last.X(),9),round(last.Y(),9),round(last.Z(),9))))
+                return tuple(ends)
+            selected_signatures={edge_signature(edge) for edge in selected}
+            def is_selected(edge):return edge.IsSame(selected[0]) or edge_signature(edge) in selected_signatures
+            outer=BRepTools.OuterWire_s(face);outer_edges=subshapes(outer,TopAbs_EDGE)
+            if any(is_selected(edge) for edge in outer_edges):raise CadError('CAD_SCHEMA_UNSUPPORTED','外周の選択解除には有限domainを指定する全Untrimを使用してください。',('editParameters',))
+            builder=BRepBuilderAPI_MakeFace(BRep_Tool.Surface_s(face),outer)
+            for boundary in subshapes(face,TopAbs_WIRE):
+                if boundary.IsSame(outer):continue
+                edges=subshapes(boundary,TopAbs_EDGE)
+                if not any(is_selected(edge) for edge in edges):builder.Add(boundary)
+            if not builder.IsDone():raise CadError('CAD_KERNEL_FAILED','選択したtrim境界を除去できません。')
+            result=builder.Face()
+        elif mode!='all':raise CadError('CAD_INPUT_TYPE','Untrim modeはall/selectedです。')
+        else:
+            u0,u1,v0,v1=[finite(v) for v in p['domain']]
+            if u0>=u1 or v0>=v1:raise CadError('CAD_INPUT_DEGENERATE','基底面の有限parameter範囲を指定してください。')
+            result=BRepBuilderAPI_MakeFace(BRep_Tool.Surface_s(faces[0]),u0,u1,v0,v1,tol['kernelLinearMm']).Face()
     elif op in ('solid.split','surface.split'):
         from OCP.BRepAlgoAPI import BRepAlgoAPI_Splitter
         from OCP.TopTools import TopTools_ListOfShape
@@ -551,3 +591,6 @@ OPERATIONS |= CURVE_SURFACE_CREATION_OPERATIONS
 
 from .regions_solids import OPERATIONS as REGION_SOLID_OPERATIONS
 OPERATIONS |= REGION_SOLID_OPERATIONS
+
+from .surface_editing import OPERATIONS as SURFACE_EDITING_OPERATIONS
+OPERATIONS |= SURFACE_EDITING_OPERATIONS

@@ -1863,3 +1863,59 @@ GeomFillの`No such curve`/filling style不適合を修正した。browser対象
 未設定で2件が実行前失敗、設定後はNetwork/Patchのhidden save click待ちで2件timeoutし、既存fixtureと
 同じDOM clickへ修正後2件成功。全browser最終runに再実行機構はなく、skip/xfail化、assertion・
 timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動closeは公開後に別記録する。
+
+## 2026-10-31 — Issue #17 general surface editing start
+
+- Instruction 015 was enabled and claimed from latest main
+  `77e9e50a5cd55647cdbf045ff1a596717bd6ff94` (tree
+  `8cf405e2730a7745eb2370402772f23393b637fe`). Post-merge main checks
+  `41175647882` attempt 1 were already confirmed successful by instruction 014.
+- The Issue body, roadmap, workspace specification §22.4/§22.6, master plan, and
+  command-status ledger were reconciled. The resulting F01–F11 and D08/D09
+  low-level operation choices, public contracts, provenance/save requirements,
+  and fixture matrix are recorded in `docs/cad-surface-editing-plan.md`.
+- This is an implementation-start record only. No surface-editing completion,
+  local full-suite result, CI result, Ready/merge, or Issue closure is claimed.
+  Issue #18 onward, real-Mac Issue #37, Draft PR #43, and layout changes remain
+  outside this branch.
+
+### 指示015 実装・ローカル検証（CI前）
+
+- F01〜F11、D08/D09をregistry-first v2として具体化した。既存v1は保持し、
+  Splitter/Sewing/Offset/Filling/finite-domain B-spline fitting等の採用演算、
+  exact/approximate accuracy、selected subshape、複数出力slotを実装した。
+- `native/test_surface_editing.py` は7件成功。選択境界Untrim、connector join、
+  fresh runtime asset再読込、typed failureを含む。全nativeは103件中101成功、
+  任意NVIDIA USD 2skip。Node24.22.1/Node20.20.2の全JSは各215成功。
+- browser fixtureを2件追加したが、このlocal環境ではChromium実行体がなく、
+  対象2件はtest body実行前に失敗した。Playwright browser取得も許可networkから
+  0-byte応答となり失敗したため、成功へ置換しない。全browserはGitHub CIで実行し、
+  その成否を確認するまでReady/merge/Issue closeを行わない。
+- 初回native対象実行はunittest module path誤りでimport前失敗し、正しいdiscover
+  invocationへ直した。選択Untrimは初回84 mm²のままというfixture失敗を検出し、
+  serialized topologyでも幾何端点signatureで選択edgeを同定する修正後に7件成功した。
+- 最初のPR CI `41187097638` attempt 1はJS215/native101+2skip/Rust22が成功した一方、
+  browserは82成功・3失敗だった。新規2件はfixtureが簡略subshape refを渡したため
+  D09/F08のselectorがmissingとなり、既存B08はv2表示名へ余分なsuffixを付けた回帰で
+  `Explode Faces` button待ちtimeoutとなった。subshape refを保存契約どおり完全化し、
+  v1/v2共通UI labelへ修正した。失敗runを成功へ置換せず、次runで再検証する。
+- 2回目PR CI `41188011686` attempt 1はnative101+2skip/Rust22が成功し、browserは
+  83成功・2失敗だった。前runの既存B08と新規D09、さらに新規2件目は成功した。
+  新規1件目はasyncな`PathloomModel.snapshot()`をawaitせず`entities`を参照した
+  fixture不備で失敗したためawaitを追加する。もう1件は既存P1-05 basic drawingの
+  history countが期待3に対して2となった単発失敗であり、新規fixture失敗と混同せず
+  次の通常push CIで再確認する。この時点でCI再実行、Ready、mergeは行っていない。
+
+### 指示015 最終PR CI（Ready前）
+
+- fixture修正head `9ad5b53d599b73d11051c06b1f2667d364b9137b` のPR CI
+  `41188879708` attempt 1は全3job成功した。生ログでNode20.20.2 JS 215成功、
+  native 103件中101成功・任意NVIDIA USD 2skip、macOS Rust 22成功、
+  browser 85成功（失敗/skip/retry/flaky 0）を確認した。前runで失敗した新規保存fixture、
+  既存P1-05、既存B08はいずれもこの全件runで成功した。CI再実行は行っていない。
+- ローカルの正しい通常コマンドによる最終Node24.22.1 `npm test`は215成功。
+  その直前にNode test runner非対応の`--runInBand`を付けた確認コマンドがtest開始前に
+  失敗しており、製品test失敗や成功へ置換しない。ローカルbrowserはChromium取得不能、
+  local Rustはcargo不在のため未実行のままである。実Mac/Tauri/OS dialog/#37も未実施。
+- command-status ledgerのF01〜F11/D08/D09はPR CI browser 85成功へ更新した。
+  PR Ready、merge、Issue自動closeはまだ実施しておらず、最終文書commitのCI後に別記録する。

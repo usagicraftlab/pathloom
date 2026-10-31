@@ -81,7 +81,9 @@ M01の残りとM02以降のGUI/OS実利用は未実施。インストールし�
 - Issue #16でC11/C12、E12〜E14、S04/S06〜S11をregistry-firstで実装する。
   正常/失敗、複数出力、近似accuracy、fresh runtime再読込、Undo/Redo/v2を照合し、
   実Mac/Tauri/OS dialogはIssue #37と区別する。
-- F01〜F11、D08/D09の一般面編集を、低水準演算の有無から改めて設計する。
+- F01〜F11、D08/D09の一般面編集はIssue #17で低水準演算を具体化し、
+  registry-first v2、typed subshape input、exact/fit accuracy、保存fixtureを実装した。
+  実Mac/Tauri/OS dialogはIssue #37として未実施のまま区別する。
 - Sweep2/Network/Patch/Blend/Match/Rebuildは採用OCP APIを実行検証してから公開する。
   近似は偏差を測り、exactnessと許容差を記録する。
 - 一般Modified/Generatedの由来、複数出力、再選択、保存・再開を演算ごとに検証する。

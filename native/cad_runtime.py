@@ -131,7 +131,6 @@ class Runtime:
         finally:
             for key in list(self.cache):
                 if key not in owned:self.cache.pop(key,None)
-        results.extend(dict(operation=op,status='not-implemented') for op in ['surface.blend','surface.match'])
         self.probes=results;return dict(probes=results)
     def handle(self,msg):
         type=msg.get('type')
@@ -191,8 +190,8 @@ class Runtime:
                         else:inputs[key].append(entry['shape']);originals.setdefault(key,[]).append(entry)
                 tol={**TOLERANCES,**req['tolerances']}
                 if any(not isinstance(v,(int,float)) or not math.isfinite(v) or v<=0 for v in tol.values()):raise CadError('CAD_INPUT_DEGENERATE','許容差は有限の正数です。')
-                if op=='curve.rebuild' and req.get('intent')!='preview' and req['parameters'].get('acceptApproximation') is not True:
-                    raise CadError('CAD_APPROXIMATION_REQUIRES_CONFIRMATION','プレビューの計測偏差を確認し、近似曲線としての確定を明示してください。')
+                if op in ('curve.rebuild','surface.rebuild') and req.get('intent')!='preview' and req['parameters'].get('acceptApproximation') is not True:
+                    raise CadError('CAD_APPROXIMATION_REQUIRES_CONFIRMATION','プレビューの計測偏差を確認し、近似形状としての確定を明示してください。')
                 output=evaluate(op,req['parameters'],inputs,tol,selectors);published=[];warnings=[]
                 for slot,s,sem in output:
                     if op=='curve.rectangle' and not req['parameters'].get('rounding',False):sem['vertices']=['corner/00','corner/10','corner/11','corner/01']
@@ -218,7 +217,12 @@ class Runtime:
                         # Only exact source/asset equality permits continuation.
                         # Never use traversal order or geometric proximity.
                         if any(o['slotKey']==slot for o in published):raise CadError('CAD_REFERENCE_AMBIGUOUS','分割結果の由来が重複しています。対象を分けて実行してください。',('reselectReference',))
-                    if op in ('curve.explode','curve.extractBoundary','surface.explode','surface.extract','surface.planarRegion','shape.cap','solid.assemble') or op=='curve.join' and len(output)>1:
+                    if op=='shape.splitFace':
+                        source=req['inputs']['face'][0];selector=source.get('selector') or {}
+                        source_key=source.get('sourceKey') or source['geometryHash']+'/'+selector.get('topologyId','face')
+                        pub['sourceKey']=source_key;slot=op+'/'+source_key+'/'+pub['geometryHash']
+                        if any(o['slotKey']==slot for o in published):raise CadError('CAD_REFERENCE_AMBIGUOUS','同一face分割結果の由来が重複しています。',('reselectReference',))
+                    if op in ('curve.explode','curve.extractBoundary','surface.explode','surface.extract','surface.planarRegion','shape.boundaries','shape.cap','solid.assemble') or op=='curve.join' and len(output)>1:
                         slot=op+'/'+pub['geometryHash']
                         if any(o['slotKey']==slot for o in published):raise CadError('CAD_REFERENCE_AMBIGUOUS','同一正本の複数出力の由来を一意に識別できません。対象を分けてください。')
                     pub['slotKey']=slot;published.append(pub)
