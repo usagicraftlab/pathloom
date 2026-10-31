@@ -341,3 +341,15 @@ Tauri/OS dialogはこのUI証拠で合格へ変更しない。
 JSON登録UIの削除後も、shared commandファイルとproject内定義の読込・遅延読込・
 shared file不在時の復元を検証する。修復操作はoutliner context menu、回復保留は
 独立メッセージ、Libraryはdialogで確認する。詳細と旧失敗runは開発ログ・PR #44に保持する。
+
+追加レビュー7〜10は同じA/T/R 62行を昇格させず、UI fixtureへview cube、Tab、command edit/
+pin、inline rename、色タグ、thumbnail、および既存Extrude＋Unionの自動合成と1単位Undo/Redoを
+追加する。native/schema/bindingは不変。ローカル実Mac GUI/Tauri/OS dialogは引き続き
+Issue #37で未実施とし、自動browser成功で置換しない。
+
+2026-10-31追記：上記の後、08:35明示許可で軸Scaleのnative変換/axisFactorsだけを追加した。
+A/T/R62行は維持し、[UI受入対応](cad-ui-review-additions.md)へ46項目の検証入口を対応づけた。
+追加nativeはpivot/軸倍率の体積とbbox、fresh runtime asset再読込、v1互換、invalid値失敗。
+JSは複合Undo、消費前tipの表示と正本不変、推論snap。browserは実mouse/key操作、生成drop、
+exact delta、Boolean/複数対象、配列、取消、履歴、表示、寸法入力を実OCCTで照合する。
+成否/旧失敗/最終CI/mergeは開発ログ/PR44/ボードへ区別して記録し、実機を昇格しない。

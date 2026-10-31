@@ -217,3 +217,7 @@ Library/生成/削除だけを提供する。XY/XZ/YZ参照平面を3D中心へ�
 このUI整理で昇格しない。実Mac/OS操作はIssue #37の未実施範囲のまま保持する。
 第12弾の有限基準面hover/tooltipも反映。既存faceの直接選択、生成参照の明示修復、
 回復保留の再確認とLibraryを、新UIでも到達できる入口へ接続する。
+
+2026-10-31追記：追加46項目の操作/互換/取消は[UI受入対応](cad-ui-review-additions.md)へ対応づける。
+65機能行の既存状態は保持。08:35の例外許可によりtransform.scale v2の軸倍率だけnativeへ追加し、
+v1定義/他演算/保存schema/bindingは保持する。scrubは表示、配列/Booleanは既存feature合成で扱う。

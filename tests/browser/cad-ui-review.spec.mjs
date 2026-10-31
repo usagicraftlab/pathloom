@@ -34,6 +34,7 @@ test("P3 UI review: icon workspace keeps editing in the contextual right panel",
   await expect(page.getByRole("menuitem", { name: "履歴を削除", exact: true })).toBeVisible();
   await page.getByRole("menuitem", { name: "操作を抑制", exact: true }).click();
   await expect(history).toHaveAttribute("aria-label", /suppressed/);
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.displayState().ghostEntityIds.length)).toBe(1);
 
   await history.click({ button: "right" });
   await page.getByRole("menuitem", { name: "操作の抑制を解除", exact: true }).click();
@@ -54,31 +55,9 @@ test("P3 UI review: icon workspace keeps editing in the contextual right panel",
 });
 
 test("P3 reference planes highlight under the mouse and select the drawing plane directly", async ({ page }, info) => {
-  await page.evaluate(async () => {
-    const THREE = await import("/vendor/three/three.module.js");
-    for (const Camera of [THREE.OrthographicCamera, THREE.PerspectiveCamera]) {
-      const update = Camera.prototype.updateProjectionMatrix;
-      Camera.prototype.updateProjectionMatrix = function (...args) {
-        const result = update.apply(this, args);
-        window.__planeCamera = this;
-        return result;
-      };
-    }
-    const cube = document.querySelector(".view-cube");
-    cube.dataset.view = "top";
-    cube.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    delete cube.dataset.view;
-  });
-  await expect.poll(() => page.evaluate(() => window.Pathloom.viewState().axis)).toBe("top");
+  await page.getByRole("button", { name: "top view", exact: true }).click();
   await page.getByRole("button", { name: "Rectangle", exact: true }).click();
-  const project = (point) => page.evaluate(async (point) => {
-    const THREE = await import("/vendor/three/three.module.js");
-    const camera = window.__planeCamera;
-    camera.updateMatrixWorld(true);
-    const p = new THREE.Vector3(...point).project(camera);
-    const box = document.querySelector("#threeCanvas").getBoundingClientRect();
-    return { x: box.left + (p.x + 1) * box.width / 2, y: box.top + (1 - p.y) * box.height / 2 };
-  }, point);
+  const project = (point) => page.evaluate((point) => window.PathloomModel.projectPoint(point), point);
   const first = await project([10, 10, 0]);
   await page.mouse.move(first.x, first.y);
   await expect(page.locator(".model-plane-tooltip")).toBeVisible();
@@ -92,4 +71,73 @@ test("P3 reference planes highlight under the mouse and select the drawing plane
   await page.mouse.click(second.x, second.y);
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toContainText("valid");
+});
+
+test("P3 review additions expose view, panel, command and outliner controls", async ({ page }) => {
+  await expect(page.getByRole("button", { name: "top view", exact: true })).toBeVisible();
+  await page.evaluate(() => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })));
+  await expect(page.locator("body")).toHaveClass(/model-panels-hidden/);
+  await page.evaluate(() => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })));
+  await expect(page.locator("body")).not.toHaveClass(/model-panels-hidden/);
+
+  const rectangle = page.getByRole("button", { name: "Rectangle", exact: true }).first();
+  await page.getByRole("button", { name: "配置編集", exact: true }).click();
+  await expect(page.getByRole("button", { name: "配置編集", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await rectangle.click({ button: "right" });
+  await expect(page.getByRole("region", { name: "ピン留めしたコマンド" })).toBeVisible();
+  await page.getByRole("button", { name: "配置編集", exact: true }).click();
+
+  await rectangle.click();
+  await page.getByRole("textbox", { name: "基準点 XYZ", exact: true }).fill("[0,0,0]");
+  await page.getByRole("button", { name: "確定", exact: true }).click();
+  const outliner = page.locator("#modelOutliner .model-outline-select").first();
+  await outliner.dblclick();
+  const rename = page.getByRole("textbox", { name: "アウトライナー形状名" });
+  await rename.fill("レビュー形状");
+  await rename.press("Enter");
+  await expect(page.locator("#modelOutliner")).toContainText("レビュー形状");
+  const color = page.getByLabel("レビュー形状の色タグ");
+  await color.fill("#cc5500");
+  await expect(color).toHaveValue("#cc5500");
+  await page.getByRole("button", { name: "サムネイル表示切替" }).click();
+  await expect(page.locator(".model-outline-thumbnail")).toHaveCount(0);
+});
+
+test("P3 automatic extrusion composes existing boolean commands as one Undo unit", async ({ page }) => {
+  const ids = await page.evaluate(async () => {
+    const { commandById } = await import("/cad/commands/registry.js");
+    const { createCommandSession } = await import("/cad/commands/session.js");
+    const store = window.PathloomModel.store;
+    const add = async (id, parameters = {}, selection = []) => {
+      const command = commandById(id);
+      const session = createCommandSession(command, { selection });
+      Object.assign(session.parameters, parameters);
+      if (!await store.add(session)) throw new Error(JSON.stringify(session.diagnostics));
+      const feature = store.document.features.at(-1);
+      return store.getEntity(feature.outputSlots[0].entityId);
+    };
+    await add("B01", { anchor: [0, 0, 0], widthMm: 10, depthMm: 10, heightMm: 10 });
+    const rectangle = await add("C04", { anchorMode: "corner", anchor: [2, 2, 0], widthMm: 4, heightMm: 4 });
+    const region = await add("S03", {}, [{ entityId: rectangle.id, entityKind: rectangle.kind }]);
+    return { region: region.id };
+  });
+  await page.getByRole("button", { name: "Extrude Surface", exact: true }).click();
+  await page.getByLabel("CAD input profile", { exact: true }).selectOption(
+    await page.getByLabel("CAD input profile", { exact: true }).locator("option").evaluateAll(
+      (options, entityId) => options.find((option) => {
+        try { return JSON.parse(option.value).entityId === entityId; } catch { return false; }
+      }).value,
+      ids.region,
+    ),
+  );
+  await page.locator('[data-parameter="distanceMm"]').fill("5");
+  await page.getByRole("button", { name: "確定", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(5);
+  await expect.poll(() => page.evaluate(() =>
+    window.PathloomModel.store.document.features.slice(-2).map((feature) => feature.operation.id),
+  )).toEqual(["shape.extrude", "solid.union"]);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.features.length)).toBe(3);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.features.length)).toBe(5);
 });

@@ -1697,3 +1697,88 @@ idle/edit/plane-hoverの画面を目視し、CSSのhidden上書きによる禁�
 Node24.22.1/Node20.20.2各208成功、native85成功/任意USD2skipは上記と同じsourceで実測済み。
 ローカルRustは未実行。実Mac/実Tauri/OS dialogはIssue #37の未実施範囲のまま。
 最終headのpush/PR CIは公開後に全job生ログまで別に照合し、結果とmergeはPR/ボードへ記録する。
+
+## 2026-10-31 JST — 指示018 追加レビュー7〜10と自動Extrude方針の反映
+
+- ボード20:44〜20:58の追加レビューと20:53の自動Extrude回答を読み、状態を`作業中`へ戻した。
+  native演算、command schema、generation bindingは変更していない。
+- view cube、hover展開、Esc一回終了、配列preview/copy、command pin/reorder、outliner inline rename/
+  reorder/thumbnail/color、Mirror face/基準面選択、生成drag、adaptive face/edge選択とcontext command、
+  L→R包含/R→L接触矩形選択、Move中心snap、Tab panel toggle、選択寸法、履歴display-only scrub、
+  数値drag/wheel、15度Rotate、Ctrl-drag copy、対称Extrude toggleを追加した。
+- 閉じるPolylineは既存Planar Regionを後置し、自動Extrudeは交差する既存solidが1件のときだけ
+  距離の符号により既存Union/Differenceを後置する。履歴featureは両方保持し、transactionだけを
+  `squashLast`で1 Undo/Redo単位にする。複数交差は通常Extrudeを保持し、黙って対象を選ばない。
+- `squashLast`のJS回帰と、実OCCT browserでExtrude＋Unionのfeature列・Undo/Redoを検証した。
+  UI対象4件は成功。全JS/native/browserの最終集計、CI、Ready/mergeは後続記録で区別する。
+
+### 2026-10-31 08:20 JST — 作業確認と追加第11〜13弾の範囲判断
+
+- 上記追加操作の一覧はローカル試作の着手範囲であり、全項目の完成・合格ではない。
+  Node24.22.1 `npm test`209成功、Node20.20.2全JS209成功、native87件中85成功・任意USD2skip。
+  UI対象3件と自動Extrude＋Union/1単位Undo/Redo対象1件は成功した。自動合成の切取・複数候補・
+  正確な交差判定、配列/dragの中断、履歴stageの過去出力表示などの境界検証は未完了。
+- browser全65件の実行は開始したが、最初のRectangle fixtureで折りたたまれた分類内の
+  Rectangle buttonを待つ45秒timeoutを記録した。その後の最終集計は取得できず、現在の実行
+  processも参照不能のため、全件成功とはしない。準備中のbrowser起動失敗・WebGL runtime不足・
+  fixture失敗の履歴も、この最終集計の代替にはしない。retry/timeout/assertionの緩和は行わない。
+- ボード21:00/21:07/21:08の追加11項目を新たに確認した。Escでdrag前へ復元、folder grouping、
+  suppression表示、前回作業の確認付き再開、H/Shift+H、常時原点/XYZ軸、Enter次field、isolate、
+  pivot picking、角/軸Scale handles、shortcut helpは残件で、実装・検証済みとは扱わない。
+- 軸Scaleの既存経路を確認した。registry `transform.scale`は`center`と単一`factor`、native
+  `shape.transform`は`gp_Trsf.SetScale(center, factor)`だけを受ける。Move/Rotate/Mirrorと等方Scaleの
+  合成では1軸だけの伸縮は構成できず、一般形状の正確なB-repへ適用するにはnative演算とparameterの
+  拡張が必要になる。018のnative/schema機構変更禁止と衝突するため、許可範囲の回答が必要。
+- PR #44の公開headは`f27a5293eba4f506203231471757f22c25e8afea`のまま。今回の10 tracked file差分は
+  未commit/未push、追加差分のCIは未実施。公開headの旧63件成功は今回へ転用しない。
+  Draft/open・未Ready/未マージ、対応Issueなし。014〜017予約、Issue #37/PR #43は未着手を保持。
+
+### 2026-10-31 08:35回答後 — 追加46項目の実装と境界検証
+
+- ユーザー方針Aに従い、軸別Scaleだけnative変換/axisFactorsを追加。新規command v2に分け、
+  v1のcenter/factor定義・等方変換とdocument/asset schema/binding機構を保持する。
+  正のXYZ倍率とpivot、正確な体積/bbox、fresh runtime export/import、v1、不正値失敗をnativeで照合。
+- 追加の46項目をcad-ui-review-additions.mdへ対応づけた。推論snapは裏側遮蔽を確認し、
+  500線分超でも交点を一括省略しない。scrubは消費前tipの表示だけで正本/binding不変。
+  exact deltaは既存Differenceから増加緑/除去赤を表示。Move 5mmで各500mm³を実測した。
+- 自動Extrudeは既存Intersectionで1対象を確認しUnion/Differenceを既存役割で後置、
+  1 Undo/Redo単位にまとめた。切取1000→920mm³、複数対象は通常Extrude400mm³と理由を保持。
+  複数対象の扱いをボード@Museへ実測報告。配列は独立Move、個数/spacingと形状drag、全コピー1 Undo。
+- H/Shift+H/Iの実表示、folder、suppressed ghost、3D寸法inline入力、Enter次欄、確認付き既存回復、
+  origin XYZ、pivot、Scale handles、shortcut、生成drop、色/thumbnail/pin/順序設定を接続した。
+  既存SVG view cubeを右上へ移して再利用し、追加の重複cubeは除いた。
+- 旧成功の63件は旧公開headの証拠。今回のローカル失敗/修正履歴は次のとおり保持する。
+
+| 証拠（work内JSON） | 実測 | 分類・対応 |
+| --- | --- | --- |
+| 018-target-resume → 018-auto-fix | 3成功1失敗 → 1成功 | Intersectionのarguments/toolsを既存役割へ明示 |
+| 018-direct-initial → 018-direct-second | 4成功3失敗 → 7成功 | 新fixtureのbbox1e-7余白、cube遮蔽、複数対象理由の上書き |
+| 018-direct-extra | 3成功 | 矩形選択、部分選択/context、生成drop |
+| 018-pivot-delta / 018-cube-pivot | 各2成功1失敗 | pivotの期待点/裏側snap、既存cube再利用で再照合 |
+| 018-pivot-visible / 018-plane-recheck | 3成功1失敗 / 1失敗 | 点作図中の量handleが次点クリックを拾った。点作図から除外 |
+| 018-additions-final-target | 16成功、43.675秒 | 上記修正後のdirect/review対象 |
+| 018-boundaries-final / 018-boundaries-2 | 各3成功1失敗 | 投影寸法とgizmo干渉、配列dragと矩形選択の競合を修正 |
+| 018-final-direct（14件予定） | 最終集計未取得 | 7件目まで開始を観測、process参照不能。完走/合格とはしない |
+| 018-browser-full-final | 78成功2失敗、319.030秒 | 部分選択時の全体handle、curve edge再クリックで誤Fillet開始 |
+| 018-final-boundary-target | 4成功1失敗 | 上記後者が残存。curveにはsolid Filletを開始しない |
+| 018-selection-fix | 2成功、13.0秒 | 元の2選択fixtureをassertion変更なしで再照合 |
+| 018-edge-drag → 018-edge-drag-fix | 1失敗 → 1成功、4.5秒 | 実dragでform未構築を修正。Fillet7/Shift-Chamfer6を実測 |
+
+native対象4件の初回3成功1errorはfixtureのexport/import message名を修正して4成功。
+全件実行での数値assertion、個別45秒timeout、retries0、workers1は緩和せず、skip/xfail化なし。
+新fixtureのbboxは既存kernel境界余白1e-7を含む値を1e-6契約内で検証し、既存toleranceは不変。
+最終codeのNode24.22.1/Node20.20.2は各212成功/失敗skip0、native89件中87成功/任意USD2skip。
+local Rustはcargo不在で未実行。実Mac/Tauri/OS dialog/Issue37も未実施。追加最終browser/CI/mergeは
+後続結果で区別し、旧結果から推測しない。途中のボード09:12時刻記載は09:04の誤記として追記訂正済み。
+
+### 指示018 追加分の最終ローカル結果
+
+最終製品codeを固定して、Node24.22.1 `npm test`212成功、Node20.20.2全JS212成功、
+native89件中87成功/任意NVIDIA USD2skip（5.676秒）を実行した。
+`npm run test:browser`全81件は81成功、失敗/skip/retry/flaky0、errors[]、318.137秒（約5分18秒）。
+個別timeout45秒、workers1、retries0は維持。旧80件の2失敗を成功へ置換せず、別の全件runとして記録する。
+Scale v2のsnapshot/Open復元、実edge dragのFillet/Shift-Chamfer、配列の形状drag/個数/間隔/取消、
+cursor zoom、旧選択/lock/hide/生成/maintenance全件を含む。構文確認とdiff checkも成功。
+idle/edit/plane-hover、直接操作寸法/gizmo、配列drag画面を目視した。検証環境の日本語font欠落による
+文字表示は実Macの評価へ代替しない。local Rustと実Mac/Tauri/OS dialogは未実施のまま。
+最終sourceのCI全run/jobとmergeは公開後にPR44とボードへ別記録し、ここでは成功を先取りしない。

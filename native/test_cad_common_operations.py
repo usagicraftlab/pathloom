@@ -95,6 +95,30 @@ class CommonTransformTests(unittest.TestCase):
                 {"CAD_INPUT_DEGENERATE", "CAD_INPUT_NONFINITE"},
             )
 
+    def test_axis_scale_keeps_pivot_and_exact_volume_without_changing_other_axes(self):
+        result = self.transform(dict(mode="scale", center=[5, 10, 15], factor=1,
+                                     axisFactors=[2, 1, 1]))["outputs"][0]
+        summary = result["summary"]
+        self.assertTrue(summary["valid"])
+        self.assertAlmostEqual(summary["volumeMm3"], 12000, places=5)
+        for got, want in zip(summary["bbox"]["min"], [-5, 0, 0]):
+            self.assertAlmostEqual(got, want, places=6)
+        for got, want in zip(summary["bbox"]["max"], [15, 20, 30]):
+            self.assertAlmostEqual(got, want, places=6)
+        exported = self.runtime.handle(dict(type="export", handles=[result["handle"]]))
+        fresh = Runtime()
+        asset = next(iter(exported["assets"].values()))
+        restored = fresh.handle(dict(type="import", hash=result["geometryHash"], asset=asset))
+        self.assertAlmostEqual(restored["summary"]["volumeMm3"], 12000, places=5)
+
+    def test_invalid_axis_scale_fails_and_scalar_v1_still_works(self):
+        for factors in ([0, 1, 1], [-1, 1, 1], [1, 1], [True, 1, 1]):
+            result = self.transform(dict(mode="scale", center=[0, 0, 0], factor=1,
+                                         axisFactors=factors), "failed")
+            self.assertEqual(result["outputs"], [])
+        scalar = self.transform(dict(mode="scale", center=[0, 0, 0], factor=2))
+        self.assertAlmostEqual(scalar["outputs"][0]["summary"]["volumeMm3"], 48000, places=5)
+
 
 if __name__ == "__main__":
     unittest.main()
