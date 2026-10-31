@@ -88,12 +88,16 @@ test("Issue17 connectors record continuity and face operations retain typed prov
   const pair = { first: [first.outputIds[0]], firstEdge: [firstEdge], second: [second.outputIds[0]], secondEdge: [secondEdge] };
   const blend = await add(page, "F08", { continuity: "G1", fitToleranceMm: 0.01 }, pair);
   expect(blend.outputs[0].accuracy.achievedContinuity).toBe("G1");
+  expect(blend.outputs[0].accuracy.maxBoundaryDeviationMm).toBeGreaterThanOrEqual(0);
+  expect(blend.outputs[0].accuracy.fitToleranceMm).toBe(0.01);
   const match = await add(page, "F09", { continuity: "G0", fitToleranceMm: 0.01 }, pair);
   expect(match.outputs[0].accuracy.referenceUnchanged).toBe(true);
+  expect(match.outputs[0].accuracy.exactness).toBe("approximate");
   const rebuilt = await add(page, "F10", { uDegree: 3, vDegree: 3, maxSegments: 8, acceptApproximation: true }, {
     surface: [first.outputIds[0]],
   });
-  expect(rebuilt.outputs[0].accuracy.classification).toBe("adaptive-sampled");
+  expect(rebuilt.outputs[0].accuracy.classification).toBe("sampled-corresponding-parameter");
+  expect(rebuilt.outputs[0].accuracy.maxDeviationMm).toBeLessThanOrEqual(0.01);
   const boundaries = await add(page, "F11.boundaries", { mode: "open" }, { object: [first.outputIds[0]] });
   expect(boundaries.outputs).toHaveLength(4);
   const snapshot = await roundTrip(page);

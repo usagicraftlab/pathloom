@@ -122,11 +122,29 @@ class Runtime:
             rail1=run('curve.line',dict(start=[0,0,0],end=[0,0,10]));rail2=run('curve.line',dict(start=[5,0,0],end=[5,0,10]));section=run('curve.line',dict(start=[0,0,0],end=[5,0,0]))
             sweep2=run('surface.sweep2',dict(cap=False,sectionReversed=[False],sectionStations=[0],sampleCount=9,sectionSampleCount=9,fitToleranceMm=.01),dict(rails=[ref(rail1),ref(rail2)],sections=[ref(section)]))
             assert abs(sweep2['summary']['areaMm2']-50)<1e-5
-            results.append(dict(operation='surface.sweep2',status='verified',fixture='two parallel rails',areaMm2=sweep2['summary']['areaMm2']))
+            results.append(dict(operation='surface.sweep2',status='verified',fixture='two parallel rails',areaMm2=sweep2['summary']['areaMm2'],accuracy=sweep2['summary']['accuracy']))
             u0=run('curve.line',dict(start=[0,0,0],end=[10,0,0]));u1=run('curve.line',dict(start=[0,10,0],end=[10,10,0]));v0=run('curve.line',dict(start=[0,0,0],end=[0,10,0]));v1=run('curve.line',dict(start=[10,0,0],end=[10,10,0]))
             network=run('surface.network',dict(intersectionToleranceMm=.01,fitToleranceMm=.01),dict(uCurves=[ref(u0),ref(u1)],vCurves=[ref(v0),ref(v1)]))
             assert abs(network['summary']['areaMm2']-100)<1e-5
-            results.append(dict(operation='surface.network',status='verified',fixture='2x2 planar network',areaMm2=network['summary']['areaMm2']))
+            results.append(dict(operation='surface.network',status='verified',fixture='2x2 planar network',areaMm2=network['summary']['areaMm2'],accuracy=network['summary']['accuracy']))
+            patch=run('surface.patch',dict(sampleCount=9,fitToleranceMm=.01,smoothness=1,weight=1),dict(boundaries=[ref(u0),ref(u1)]))
+            assert abs(patch['summary']['areaMm2']-100)<1e-5
+            results.append(dict(operation='surface.patch',status='verified',fixture='two planar boundaries',areaMm2=patch['summary']['areaMm2'],accuracy=patch['summary']['accuracy']))
+            first=run('surface.plane',dict(plane=XY,anchorMode='corner',anchor=[0,0,0],widthMm=10,heightMm=10))
+            second=run('surface.plane',dict(plane=XY,anchorMode='corner',anchor=[20,0,0],widthMm=10,heightMm=10))
+            def edge_at(output,x):
+                entry=next(item for item in output['summary']['topology'] if item['kind']=='edge' and abs(item['fingerprint']['centroid'][0]-x)<1e-7)
+                return ref(output,dict(kind='edge',topologyId=entry['topologyId'],orientation='forward'))
+            pair=dict(first=[ref(first)],firstEdge=[edge_at(first,10)],second=[ref(second)],secondEdge=[edge_at(second,20)])
+            blend=run('surface.blend',dict(continuity='G1',fitToleranceMm=.01),pair)
+            assert blend['summary']['accuracy']['achievedContinuity']=='G1'
+            results.append(dict(operation='surface.blend',status='verified',fixture='parallel planar boundaries G1',accuracy=blend['summary']['accuracy']))
+            match=run('surface.match',dict(continuity='G0',fitToleranceMm=.01),pair)
+            assert match['summary']['accuracy']['referenceUnchanged']
+            results.append(dict(operation='surface.match',status='verified',fixture='mutable/reference planar boundaries G0',accuracy=match['summary']['accuracy']))
+            rebuilt=run('surface.rebuild',dict(uDegree=3,vDegree=3,maxSegments=8,fitToleranceMm=.01,acceptApproximation=True),dict(surface=[ref(first)]))
+            assert rebuilt['summary']['accuracy']['maxDeviationMm']<=.01
+            results.append(dict(operation='surface.rebuild',status='verified',fixture='finite planar face',accuracy=rebuilt['summary']['accuracy']))
         except Exception as e:results.append(dict(operation='startup probe',status='failed',details=str(e)))
         finally:
             for key in list(self.cache):

@@ -1919,3 +1919,37 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   local Rustはcargo不在のため未実行のままである。実Mac/Tauri/OS dialog/#37も未実施。
 - command-status ledgerのF01〜F11/D08/D09はPR CI browser 85成功へ更新した。
   PR Ready、merge、Issue自動closeはまだ実施しておらず、最終文書commitのCI後に別記録する。
+
+## 2026-10-31 — 指示016 / Issue #18 Sweep系の検証・公開開始
+
+- ボードを未着手から作業中へ競合制御付きで取得した。開始時に指示015のmerge commit
+  `241eae0bfd6422fbcaf284cc4a247194639837e2`と、post-merge main checks
+  `41190392140` attempt 1のcompleted/successを確認した。
+- Issue #18をS08/S10/S11/F08/F09/F10の6演算へ具体化した。採用OCP API、公開registry、
+  正常/typed failure、近似分類、要求許容差と実測偏差、fresh runtime、Undo/Redo、v2
+  Save/Openを受入範囲とし、`cad-sweep-publication-plan.md`へ測定契約を記録した。
+- 実装ではSweep2の全fit/rail/section偏差、Networkの交点gap/fit偏差、Patchの要求/effective
+  許容差/偏差、Blend/Matchの境界偏差と連続性、Rebuildの対応parameter sample実測偏差を
+  個別にaccuracyへ保存する。startup probeも6演算を個別に実OCP実行する。
+- 最初の`python3 -m unittest native/test_cad_runtime.py`はmodule検索pathが合わず、test開始前に
+  `ModuleNotFoundError: cad_runtime`で失敗した。正しいdiscover invocationへ直した対象12件は
+  12成功。製品/fixture失敗へ置換せず、この履歴を保持する。
+- 現時点で全Node/native/browser、CI、PR、merge、Issue自動closeは未実施。local Rust、
+  実Mac/Tauri/OS dialog/Issue #37も未実施。指示017、Draft PR #43、UIレイアウトには着手しない。
+
+### 指示016 実装・ローカル検証（CI前）
+
+- startup probeは従来の基本3件にS08/S10/S11/F08/F09/F10を加え、全9項目を実OCPで
+  `verified`とした。6演算の実測値は`cad-sweep-publication-plan.md`へ記録した。
+  F08/F09はnative fixtureでG0/G1/G2を全て実行し、要求/達成連続性、境界偏差、
+  G1/G2 error、参照側不変を照合した。F10は非平面有限面を再fitし、要求許容差を
+  偏差へ代入せず、対応parameter sampleの距離を実測する。
+- 最終ローカルNode24.22.1 `npm test`は216成功、Node20.20.2全JSも216成功。
+  native全103件は101成功・任意NVIDIA USD 2skip。対象native 7+7+12件とJS4件も成功。
+  local Rustはcargo不在で未実行。実Mac/Tauri/OS dialog/Issue #37も未実施。
+- local browser用Chromiumの取得を実行したが、Playwright CDN応答が各回0 MiBで、
+  zip central directoryを読めず5回失敗後exit 1となった。browser test bodyは未実行で、
+  成功へ置換しない。追加browser fixtureを含む全件はGitHub CIで確認するまで
+  Ready/merge/Issue closeを行わない。
+- `npm ci`は成功。依存symlinkは検証専用ignored領域だけに作成し、製品依存は変更していない。
+  PR、CI、merge、Issue自動closeはこの時点で未実施。

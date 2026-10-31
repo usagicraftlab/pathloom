@@ -124,6 +124,11 @@ def _max_surface_deviation(face, points):
     return maximum
 
 
+def _max_point_deviation(face, points):
+    """Measure source-point distance from the fitted face with the real kernel."""
+    return _max_surface_deviation(face, [points])
+
+
 def _section_outputs(first, second, prefix):
     builder = BRepAlgoAPI_Section(first, second, False)
     builder.Approximation(True)
@@ -337,10 +342,18 @@ def evaluate(op, p, inputs, tol, selectors):
         tolerance = positive(p.get("fitToleranceMm", tol["fitLinearMm"]))
         face = _fitted_surface(grid, tolerance)
         maximum = _max_surface_deviation(face, grid)
+        rail_deviation = _max_point_deviation(face, left + right)
+        section_deviation = _max_point_deviation(
+            face, [source for profile in profiles for source in profile]
+        )
         return [("result", face, {
             "accuracy": {
+                "exactness": "approximate",
+                "method": "sampled-two-rail-transfinite-bspline-fit",
                 "fitToleranceMm": tolerance,
                 "maxDeviationMm": maximum,
+                "maxRailDeviationMm": rail_deviation,
+                "maxSectionDeviationMm": section_deviation,
                 "railSampleCount": rows,
                 "sectionSampleCount": columns,
                 "sectionCount": len(sections),
@@ -382,10 +395,19 @@ def evaluate(op, p, inputs, tol, selectors):
         conditions = p.get("boundaryConditions", {"uStart": "position", "uEnd": "position", "vStart": "position", "vEnd": "position"})
         if not isinstance(conditions, dict) or any(value not in ("position", "free") for value in conditions.values()):
             raise CadError("CAD_INPUT_TYPE", "NetworkSrfの境界条件はposition/freeです。")
+        intersection_tolerance = positive(p.get("intersectionToleranceMm", tol["joinLinearMm"]))
         tolerance = positive(p.get("fitToleranceMm", tol["fitLinearMm"]))
         face = _fitted_surface(grid, tolerance)
         maximum = _max_surface_deviation(face, grid)
-        return [("result", face, {"accuracy": {"fitToleranceMm": tolerance, "maxIntersectionGapMm": max_gap, "maxDeviationMm": maximum, "boundaryConditions": conditions}})]
+        return [("result", face, {"accuracy": {
+            "exactness": "approximate",
+            "method": "intersection-grid-bspline-fit",
+            "fitToleranceMm": tolerance,
+            "intersectionToleranceMm": intersection_tolerance,
+            "maxIntersectionGapMm": max_gap,
+            "maxDeviationMm": maximum,
+            "boundaryConditions": conditions,
+        }})]
 
     if op == "surface.patch":
         boundaries = inputs.get("boundaries", [])
@@ -434,6 +456,16 @@ def evaluate(op, p, inputs, tol, selectors):
         effective_tolerance = tolerance / max(1, smoothness * weight)
         face = _fitted_surface(grid, effective_tolerance, smoothness)
         maximum = _max_surface_deviation(face, grid)
-        return [("result", face, {"accuracy": {"fitToleranceMm": tolerance, "effectiveFitToleranceMm": effective_tolerance, "maxDeviationMm": maximum, "sampleCountU": count_u, "sampleCountV": count_v, "smoothness": smoothness, "weight": weight}})]
+        return [("result", face, {"accuracy": {
+            "exactness": "approximate",
+            "method": "sampled-boundary-or-point-grid-bspline-fit",
+            "fitToleranceMm": tolerance,
+            "effectiveFitToleranceMm": effective_tolerance,
+            "maxDeviationMm": maximum,
+            "sampleCountU": count_u,
+            "sampleCountV": count_v,
+            "smoothness": smoothness,
+            "weight": weight,
+        }})]
 
     raise CadError("CAD_SCHEMA_UNSUPPORTED", f"演算 {op} は未実装です。")

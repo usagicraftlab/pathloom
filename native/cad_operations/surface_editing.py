@@ -81,7 +81,7 @@ def _closest_face(faces, xyz):
     return scored[0][1]
 
 
-def _fill(first_face, first_edge, second_face, second_edge, continuity, tol):
+def _fill(first_face, first_edge, second_face, second_edge, continuity, tol, fit_tolerance):
     order = {"G0": GeomAbs_C0, "G1": GeomAbs_G1, "G2": GeomAbs_G2}.get(continuity)
     if order is None:
         raise CadError("CAD_INPUT_TYPE", "連続性はG0/G1/G2です。")
@@ -119,12 +119,14 @@ def _fill(first_face, first_edge, second_face, second_edge, continuity, tol):
     else:
         achieved = continuity
     accuracy = {
+        "exactness": "approximate",
         "classification": "adaptive-occt-fitting",
-        "fitToleranceMm": tol["fitLinearMm"],
+        "fitToleranceMm": fit_tolerance,
         "continuity": continuity,
         "achievedContinuity": achieved,
         "g0ErrorMm": filling.G0Error(),
     }
+    accuracy["maxBoundaryDeviationMm"] = accuracy["g0ErrorMm"]
     if continuity in ("G1", "G2"): accuracy["g1Error"] = filling.G1Error()
     if continuity == "G2": accuracy["g2Error"] = filling.G2Error()
     if continuity in ("G1", "G2") and accuracy["g1Error"] > 1e-3:
@@ -174,7 +176,8 @@ def evaluate(op, p, inputs, tol, selectors):
         elif op == "surface.chamfer":
             profile_size = positive(p.get("distanceMm")); continuity = "G0"
         else: profile_size = None; continuity = p.get("continuity", "G1")
-        result, accuracy = _fill(first, first_edge, second, second_edge, continuity, tol)
+        fit_tolerance = positive(p.get("fitToleranceMm", tol["fitLinearMm"]))
+        result, accuracy = _fill(first, first_edge, second, second_edge, continuity, tol, fit_tolerance)
         accuracy["construction"] = "selected-boundary-connector"
         if profile_size is not None:
             accuracy["profileSizeMm"] = profile_size
@@ -198,8 +201,12 @@ def evaluate(op, p, inputs, tol, selectors):
         from OCP.TColgp import TColgp_Array2OfPnt
         face = _face(input_one(inputs, "surface")); surface, bounds = _surface_and_bounds(face)
         copied = surface.Copy()
+        fit_tolerance = positive(p.get("fitToleranceMm", tol["fitLinearMm"]))
         approximation = None
-        if isinstance(copied, Geom_BSplineSurface): bspline = copied
+        sample_count = None
+        source_bounds = list(bounds)
+        if op == "surface.editPoles" and isinstance(copied, Geom_BSplineSurface):
+            bspline = copied
         else:
             max_degree_u = int(p.get("uDegree", 3)); max_degree_v = int(p.get("vDegree", 3))
             max_segments = int(p.get("maxSegments", 16))
@@ -214,7 +221,7 @@ def evaluate(op, p, inputs, tol, selectors):
                 for vi in range(sample_count):
                     v = bounds[2] + (bounds[3] - bounds[2]) * vi / (sample_count - 1)
                     points.SetValue(ui + 1, vi + 1, copied.Value(u, v))
-            approximation = GeomAPI_PointsToBSplineSurface(points, min(max_degree_u, max_degree_v), max(max_degree_u, max_degree_v), GeomAbs_C1, tol["fitLinearMm"])
+            approximation = GeomAPI_PointsToBSplineSurface(points, min(max_degree_u, max_degree_v), max(max_degree_u, max_degree_v), GeomAbs_C1, fit_tolerance)
             if not approximation.IsDone(): raise CadError("CAD_KERNEL_FAILED", "有限面をB-splineへ近似できません。")
             bspline = approximation.Surface()
         if op == "surface.editPoles":
@@ -227,7 +234,27 @@ def evaluate(op, p, inputs, tol, selectors):
         result_bounds = list(bspline.Bounds())
         made = BRepBuilderAPI_MakeFace(bspline, *result_bounds, tol["kernelLinearMm"])
         if not made.IsDone(): raise CadError("CAD_KERNEL_FAILED", "編集後のB-spline面を構成できません。")
-        accuracy = {"classification": "exact-bspline-edit" if approximation is None else "adaptive-sampled", "uDegree": bspline.UDegree(), "vDegree": bspline.VDegree(), "uPoles": bspline.NbUPoles(), "vPoles": bspline.NbVPoles(), "maxDeviationMm": 0 if approximation is None else tol["fitLinearMm"]}
+        measured = 0.0
+        if approximation is not None and op == "surface.rebuild":
+            for ui in range(sample_count):
+                source_u = source_bounds[0] + (source_bounds[1] - source_bounds[0]) * ui / (sample_count - 1)
+                target_u = result_bounds[0] + (result_bounds[1] - result_bounds[0]) * ui / (sample_count - 1)
+                for vi in range(sample_count):
+                    source_v = source_bounds[2] + (source_bounds[3] - source_bounds[2]) * vi / (sample_count - 1)
+                    target_v = result_bounds[2] + (result_bounds[3] - result_bounds[2]) * vi / (sample_count - 1)
+                    measured = max(measured, surface.Value(source_u, source_v).Distance(bspline.Value(target_u, target_v)))
+        accuracy = {
+            "exactness": "exact" if approximation is None else "approximate",
+            "classification": "exact-bspline-edit" if approximation is None else "sampled-corresponding-parameter",
+            "fitToleranceMm": fit_tolerance,
+            "sampleCountU": sample_count if sample_count is not None else 0,
+            "sampleCountV": sample_count if sample_count is not None else 0,
+            "uDegree": bspline.UDegree(),
+            "vDegree": bspline.VDegree(),
+            "uPoles": bspline.NbUPoles(),
+            "vPoles": bspline.NbVPoles(),
+            "maxDeviationMm": measured,
+        }
         return [("result", made.Face(), {"accuracy": accuracy})]
 
     if op == "shape.boundaries":

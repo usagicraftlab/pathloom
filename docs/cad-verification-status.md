@@ -372,3 +372,11 @@ browser全83件は83成功（5.5分、失敗/skip/retry0）。Node24/Node20.20.2
 native96件中94成功・任意NVIDIA USD2skip。CI/mergeの成否は開発ログへ別記し、
 ローカル成功から先取りしない。
 実Mac GUI/Tauri/OS dialog/Issue #37は未実施のまま、自動fixtureで合格へ変更しない。
+
+## 2026-10-31 — 指示016 / Issue #18 Sweep系の検証・公開
+
+既存A/T/R 62行の状態は保持する。S08/S10/S11/F08/F09/F10について、runtime startup
+probeの個別成功、公開registry、実OCP正常/typed failure、近似分類、要求許容差と実測偏差、
+fresh runtime正本再読込、Undo/Redo、v2 Save/Openを追加証拠とする。Sweep2はrail/section偏差、
+Networkは交点gap、Patch/Blend/Match/Rebuildは各境界・sample偏差を別項目で記録する。
+実Mac GUI/Tauri/OS dialog/Issue #37は未実施のまま、自動fixtureで合格へ変更しない。
