@@ -69,7 +69,7 @@ class CadRuntimeTests(unittest.TestCase):
         b=self.run_op('solid.box',dict(plane=XY,anchorMode='corner',anchor=[0,0,0],widthMm=20,depthMm=20,heightMm=20))[0];faces=[t for t in b['summary']['topology'] if t['kind']=='face' and abs(t['fingerprint']['centroid'][2]-20)<1e-6];self.assertEqual(len(faces),1)
         o=self.run_op('solid.shell',dict(thicknessMm=1,directionMode='inward'),dict(body=[self.ref(b)],removedFaces=[self.ref(b,dict(kind='face',topologyId=faces[0]['topologyId'],orientation='forward'))]))[0];self.assertAlmostEqual(o['summary']['volumeMm3'],8000-18*18*19,places=5)
     def test_startup_probe_executes_real_operations_without_leaking_handles(self):
-        result=self.r.handle(dict(type='probe'));self.assertEqual(len([p for p in result['probes'] if p['status']=='verified']),3);self.assertTrue(any(p['operation']=='surface.sweep2' and p['status']=='not-implemented' for p in result['probes']));self.assertFalse(self.r.cache)
+        result=self.r.handle(dict(type='probe'));self.assertEqual(len([p for p in result['probes'] if p['status']=='verified']),5);self.assertTrue(any(p['operation']=='surface.sweep2' and p['status']=='verified' for p in result['probes']));self.assertTrue(any(p['operation']=='surface.network' and p['status']=='verified' for p in result['probes']));self.assertFalse(self.r.cache)
     def test_jsonl_persists_handles(self):
         p=subprocess.Popen([sys.executable,'native/cad_runtime.py'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         try:

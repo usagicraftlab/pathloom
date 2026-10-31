@@ -361,3 +361,14 @@ Undo/Redoを完了後へ入力順でキューする。遅延Union回帰は、com
 各1回実行、通常の1単位Undoで5→3、Redoで3→5を確認する。対象は修正後1成功、repeat10は10成功。
 最終ローカルはNode24/Node20各212成功、native87成功/任意2skip、browser81成功。
 既存A/T/R 62行の状態、CAD演算/schema/binding、実機#37の未実施状態は変更しない。
+
+## 2026-10-31 — 指示014 / Issue #16 曲線・面作成
+
+既存A/T/R 62行の状態は保持する。追加fixtureはC11/C12の近似曲線とaccuracy、E13の方向投影/
+法線Pull、E14のIntersect/Section/Contour全出力、S08の2 rail境界面、S10のU/V交点gap、
+S11のPatch面、正常/typed failure、exact assetのfresh runtime再読込を実OCPで確認する。
+JSは新commandのregistry/session明示slot、入力順、既存v1 command不変を確認する。
+browser全83件は83成功（5.5分、失敗/skip/retry0）。Node24/Node20.20.2は各214成功、
+native96件中94成功・任意NVIDIA USD2skip。CI/mergeの成否は開発ログへ別記し、
+ローカル成功から先取りしない。
+実Mac GUI/Tauri/OS dialog/Issue #37は未実施のまま、自動fixtureで合格へ変更しない。

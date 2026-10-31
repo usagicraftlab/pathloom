@@ -78,7 +78,9 @@ M01の残りとM02以降のGUI/OS実利用は未実施。インストールし�
 
 ## Phase 3：面と高度な編集
 
-- C11/C12、E12〜E14の不足、S04/S06〜S11を含む曲線・面作成の残りを完了する。
+- Issue #16でC11/C12、E12〜E14、S04/S06〜S11をregistry-firstで実装する。
+  正常/失敗、複数出力、近似accuracy、fresh runtime再読込、Undo/Redo/v2を照合し、
+  実Mac/Tauri/OS dialogはIssue #37と区別する。
 - F01〜F11、D08/D09の一般面編集を、低水準演算の有無から改めて設計する。
 - Sweep2/Network/Patch/Blend/Match/Rebuildは採用OCP APIを実行検証してから公開する。
   近似は偏差を測り、exactnessと許容差を記録する。

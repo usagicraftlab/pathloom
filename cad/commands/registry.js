@@ -237,15 +237,79 @@ add("C10", "Interpolate Curve", "curve.interpolate", {
   startTangent: null,
   endTangent: null,
 });
+add("C11", "Helix", "curve.helix", {
+  axis: {
+    origin: [0, 0, 0],
+    direction: [0, 0, 1],
+    referenceDirection: [1, 0, 0],
+  },
+  radiusMm: 10,
+  pitchMm: 5,
+  turns: 3,
+  clockwise: false,
+  fitToleranceMm: 0.001,
+});
+add("C12", "Spiral", "curve.spiral", {
+  plane: xy(),
+  center: [0, 0, 0],
+  startRadiusMm: 2,
+  endRadiusMm: 20,
+  turns: 3,
+  clockwise: false,
+  fitToleranceMm: 0.001,
+});
 add("E02", "Explode Curve", "curve.explode", {}, [input("object", ["curve"])], {
   resultPolicy: "replace",
 });
 add("E10", "Reverse Curve", "curve.reverse", {}, [input("object", ["curve"])], {
   resultPolicy: "replace",
 });
-add("E12", "Extract Edges", "curve.extractBoundary", {}, [
+add("E12", "Extract Edges", "curve.extractBoundary", { mode: "all" }, [
   input("object", ["surface", "shell", "solid"]),
 ]);
+add(
+  "E13",
+  "Project Curve",
+  "curve.project",
+  { direction: [0, 0, -1] },
+  [
+    input("curve", ["curve"]),
+    input("targets", ["surface", "shell", "solid"], 1, null),
+  ],
+);
+add(
+  "E13.pull",
+  "Pull Curve",
+  "curve.pull",
+  { maxDistanceMm: 1000 },
+  [
+    input("curve", ["curve"]),
+    input("targets", ["surface", "shell", "solid"], 1, null),
+  ],
+);
+add(
+  "E14.intersect",
+  "Intersect Shapes",
+  "shape.intersect",
+  {},
+  [
+    input("first", ["curve", "surface", "shell", "solid"], 1, null),
+    input("second", ["curve", "surface", "shell", "solid"], 1, null),
+  ],
+);
+add(
+  "E14.contour",
+  "Contour",
+  "shape.contour",
+  {
+    origin: [0, 0, 0],
+    normal: [0, 0, 1],
+    spacingMm: 5,
+    startOffsetMm: 0,
+    endOffsetMm: 20,
+  },
+  [input("objects", ["surface", "shell", "solid"], 1, null)],
+);
 add("S01", "Plane", "surface.plane", {
   plane: xy(),
   anchorMode: "center",
@@ -281,16 +345,94 @@ add(
   "S07",
   "Sweep One Rail",
   "surface.sweep1",
-  { frameMode: "corrected-frame", cap: false },
+  {
+    frameMode: "corrected-frame",
+    fixedFrame: {
+      origin: [0, 0, 0],
+      direction: [0, 0, 1],
+      referenceDirection: [1, 0, 0],
+    },
+    sectionReversed: [],
+    sectionSeamParameters: [],
+    cap: false,
+  },
   [input("rail", ["curve"]), input("sections", ["curve"], 1, null)],
+);
+add(
+  "S08",
+  "Sweep Two Rails",
+  "surface.sweep2",
+  {
+    cap: false,
+    sectionReversed: [],
+    sectionStations: null,
+    sampleCount: 33,
+    sectionSampleCount: 17,
+    fitToleranceMm: 0.01,
+  },
+  [
+    input("rails", ["curve"], 2, 2),
+    input("sections", ["curve"], 1, null),
+  ],
 );
 add(
   "S09",
   "Loft",
   "surface.loft",
-  { cap: false, closed: false, style: "smooth", sectionReversed: [] },
+  {
+    cap: false,
+    closed: false,
+    style: "smooth",
+    sectionReversed: [],
+    sectionSeamParameters: [],
+  },
   [input("sections", ["curve"], 2, null)],
 );
+add(
+  "S10",
+  "Network Surface",
+  "surface.network",
+  {
+    intersectionToleranceMm: 0.01,
+    fitToleranceMm: 0.01,
+    boundaryConditions: {
+      uStart: "position",
+      uEnd: "position",
+      vStart: "position",
+      vEnd: "position",
+    },
+  },
+  [
+    input("uCurves", ["curve"], 2, null),
+    input("vCurves", ["curve"], 2, null),
+  ],
+);
+add(
+  "S11",
+  "Patch Surface",
+  "surface.patch",
+  {
+    points: null,
+    sampleCountU: 9,
+    sampleCountV: 9,
+    fitToleranceMm: 0.01,
+    smoothness: 1,
+    weight: 1,
+  },
+  [input("boundaries", ["curve"], 2, 4)],
+);
+add("S11.points", "Patch from Points", "surface.patch", {
+  points: [
+    [[0, 0, 0], [10, 0, 0], [20, 0, 0]],
+    [[0, 10, 0], [10, 10, 3], [20, 10, 0]],
+    [[0, 20, 0], [10, 20, 0], [20, 20, 0]],
+  ],
+  sampleCountU: 9,
+  sampleCountV: 9,
+  fitToleranceMm: 0.01,
+  smoothness: 1,
+  weight: 1,
+});
 add(
   "F01",
   "Join Surfaces",
@@ -513,6 +655,16 @@ add("E14", "Section", "shape.section", { plane: xy() }, [
 add("E01", "Join Curves", "curve.join", {allowMultipleGroups:true},
   [input("objects",["curve"],2,null)],{version:2,resultPolicy:"replace"});
 const curveEdge = () => ({...input("edge",["edge"],0,1),kind:"subshape",prompt:"対象edge（複合曲線では明示選択）"});
+add("E12.selected", "Extract Selected Edges", "curve.extractBoundary", {mode:"selected"}, [
+  input("object",["surface","shell","solid"]),
+  {...input("edges",["edge"],1,null),kind:"subshape",prompt:"抽出するedgeを選択"},
+]);
+add("E12.outer", "Extract Outer Boundary", "curve.extractBoundary", {mode:"outer"}, [
+  input("object",["surface","shell","solid"]),
+]);
+add("E12.open", "Extract Open Boundary", "curve.extractBoundary", {mode:"open"}, [
+  input("object",["surface","shell","solid"]),
+]);
 add("E04", "Split Curve", "curve.split", {splitParameters:[]},
   [input("object",["curve"]),curveEdge(),input("cutters",["curve"],0,null)],{version:2,resultPolicy:"replace"});
 add("E03", "Trim Curve", "curve.trim", {splitParameters:[],removePoint:null,removeParameter:0.5},
@@ -539,7 +691,7 @@ add("S02", "Corner Surface", "surface.corners", {
     [0, 20, 0],
   ],
 });
-add("S04", "Edge Surface", "surface.edges", {}, [
+add("S04", "Edge Surface", "surface.edges", { boundaryReversed: [] }, [
   input("curves", ["curve"], 2, 4),
 ]);
 add(
@@ -611,7 +763,14 @@ export function adaptCommand(command, parameters, inputValues = {}) {
     });
     delete p.points;
   }
-  if (command.baseOperation.id === "surface.loft" && !p.sectionReversed?.length)
-    p.sectionReversed = [];
+  const count = (key) => inputValues[key]?.length || 0;
+  if (command.baseOperation.id === "surface.edges" && !p.boundaryReversed?.length)
+    p.boundaryReversed = Array(count("curves")).fill(false);
+  if (["surface.sweep1", "surface.sweep2", "surface.loft"].includes(command.baseOperation.id)) {
+    const sections = count("sections");
+    if (!p.sectionReversed?.length) p.sectionReversed = Array(sections).fill(false);
+    if (Object.hasOwn(p, "sectionSeamParameters") && !p.sectionSeamParameters?.length)
+      p.sectionSeamParameters = Array(sections).fill(null);
+  }
   return p;
 }
