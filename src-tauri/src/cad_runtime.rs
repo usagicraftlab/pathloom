@@ -12,6 +12,40 @@ use std::{
 };
 use tauri::{Emitter, Manager};
 const MAX_LINE: usize = 256 * 1024 * 1024;
+const CAD_RUNTIME_SOURCES: &[(&str, &str)] = &[
+    (
+        "cad_runtime.py",
+        include_str!("../../native/cad_runtime.py"),
+    ),
+    (
+        "cad_operations/__init__.py",
+        include_str!("../../native/cad_operations/__init__.py"),
+    ),
+    (
+        "cad_operations/regions_solids.py",
+        include_str!("../../native/cad_operations/regions_solids.py"),
+    ),
+    (
+        "cad_operations/curve_editing.py",
+        include_str!("../../native/cad_operations/curve_editing.py"),
+    ),
+    (
+        "cad_operations/curve_advanced.py",
+        include_str!("../../native/cad_operations/curve_advanced.py"),
+    ),
+    (
+        "cad_operations/curve_surface_creation.py",
+        include_str!("../../native/cad_operations/curve_surface_creation.py"),
+    ),
+    (
+        "cad_operations/surface_editing.py",
+        include_str!("../../native/cad_operations/surface_editing.py"),
+    ),
+    (
+        "occt_brep_bridge.py",
+        include_str!("../../native/occt_brep_bridge.py"),
+    ),
+];
 struct Session {
     child: Mutex<Child>,
     input: Arc<Mutex<ChildStdin>>,
@@ -128,32 +162,7 @@ impl CadRuntime {
             .map_err(|e| e.to_string())?
             .join("cad-runtime-v1");
         std::fs::create_dir_all(root.join("cad_operations")).map_err(|e| e.to_string())?;
-        for (file, content) in [
-            (
-                "cad_runtime.py",
-                include_str!("../../native/cad_runtime.py"),
-            ),
-            (
-                "cad_operations/__init__.py",
-                include_str!("../../native/cad_operations/__init__.py"),
-            ),
-            (
-                "cad_operations/regions_solids.py",
-                include_str!("../../native/cad_operations/regions_solids.py"),
-            ),
-            (
-                "cad_operations/curve_editing.py",
-                include_str!("../../native/cad_operations/curve_editing.py"),
-            ),
-            (
-                "cad_operations/curve_advanced.py",
-                include_str!("../../native/cad_operations/curve_advanced.py"),
-            ),
-            (
-                "occt_brep_bridge.py",
-                include_str!("../../native/occt_brep_bridge.py"),
-            ),
-        ] {
+        for &(file, content) in CAD_RUNTIME_SOURCES {
             let path = root.join(file);
             std::fs::write(path, content).map_err(|e| e.to_string())?;
         }
@@ -260,6 +269,66 @@ impl CadRuntime {
 impl Drop for CadRuntime {
     fn drop(&mut self) {
         self.stop()
+    }
+}
+
+#[cfg(test)]
+mod bundle_tests {
+    use super::CAD_RUNTIME_SOURCES;
+    use std::{collections::BTreeSet, fs, path::Path};
+
+    fn python_module_names(line: &str) -> Vec<&str> {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("from ") {
+            return rest.split_whitespace().next().into_iter().collect();
+        }
+        line.strip_prefix("import ")
+            .map(|rest| {
+                rest.split(',')
+                    .filter_map(|item| item.split_whitespace().next())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn desktop_bundle_contains_every_cad_runtime_python_dependency() {
+        let native = Path::new(env!("CARGO_MANIFEST_DIR")).join("../native");
+        let operations = native.join("cad_operations");
+        let bundled = CAD_RUNTIME_SOURCES
+            .iter()
+            .map(|(path, _)| (*path).to_owned())
+            .collect::<BTreeSet<_>>();
+        let mut required = BTreeSet::from(["cad_runtime.py".to_owned()]);
+
+        for entry in fs::read_dir(&operations).expect("read native/cad_operations") {
+            let entry = entry.expect("read cad_operations entry");
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if path.extension().and_then(|value| value.to_str()) == Some("py")
+                && !name.starts_with("test_")
+            {
+                required.insert(format!("cad_operations/{name}"));
+            }
+        }
+
+        let runtime = fs::read_to_string(native.join("cad_runtime.py"))
+            .expect("read native/cad_runtime.py");
+        for line in runtime.lines() {
+            for module in python_module_names(line) {
+                let root = module.split('.').next().expect("non-empty module");
+                if !root.starts_with("test_") && native.join(format!("{root}.py")).is_file() {
+                    required.insert(format!("{root}.py"));
+                }
+            }
+        }
+
+        let missing = required.difference(&bundled).cloned().collect::<Vec<_>>();
+        let stale = bundled.difference(&required).cloned().collect::<Vec<_>>();
+        assert!(
+            missing.is_empty() && stale.is_empty(),
+            "desktop CAD runtime bundle mismatch; missing={missing:?}, stale={stale:?}"
+        );
     }
 }
 #[tauri::command]
