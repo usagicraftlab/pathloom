@@ -2148,4 +2148,12 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   追加browser 2件はこの最終全件runでも両方成功した。local Rustはcargo不在で未実行である。
 - 直接`git push`はGitHub認証情報不在で失敗し、成功へ置換しない。Git Data APIで同一treeを
   `feat/22-recovery-migration`へ反映してDraft PR #53を作成した。最終headのCI生ログ確認、
-  Ready、merge、Issue #22自動close、post-merge main CIは未実施である。
+  Ready、merge、Issue #22自動close、post-merge main CIはこの時点では未実施である。
+- 最初の最終差分転送commit `7443bf4667d6138474ef731cb2154ca3e6fe0086`は、大きい2ファイルが
+  ツール出力上限で途中切断されたことを読戻しで検出した。このheadのpush `41321979710`とPR
+  `41321984024`はattempt 1 cancelledであり合格に使わない。全4 blob SHAをローカルと照合して
+  訂正した製品head `cd69f670c130668bfa38c1e3e1acd32f80308aa7`（tree
+  `2bad9fa3d652be220468762795404a46238e8672`）のpush `41322035431`とPR `41322039692`は
+  attempt 1で全3job成功した。両runの生ログはJS 233成功、native 105件中103成功・任意2skip、
+  macOS Rust 24成功、browser 89成功（retryなし）を示した。このCI証拠を追記する文書commitにも
+  同じ全CIを要求し、完了前に生ログを確認する。
