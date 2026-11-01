@@ -294,7 +294,19 @@ export function initModelWorkspace(api) {
   const thumbnailToggle = makeToolButton("▧", "アウトライナーのサムネイル表示");
   thumbnailToggle.id = "modelThumbnailToggle";
   thumbnailToggle.setAttribute("aria-label", "サムネイル表示切替");
-  commandBarTools.append(commandEditButton, commandDslButton, measureButton, arrayButton, thumbnailToggle);
+  // 補助機能はコマンドリボンではなくメニューバーにまとめる（指示026-13）。
+  const optionsMenu = document.createElement("details");
+  optionsMenu.className = "model-options-menu";
+  const optionsSummary = document.createElement("summary");
+  optionsSummary.textContent = "メニュー";
+  optionsSummary.setAttribute("aria-label", "CADメニュー");
+  const optionsItems = document.createElement("div");
+  optionsItems.className = "model-options-items";
+  optionsItems.append(thumbnailToggle, commandDslButton, commandEditButton);
+  optionsMenu.append(optionsSummary, optionsItems);
+  // 配列コピーは機能ごと不採用。旧ダイアログを起動する入口は置かない。
+  arrayButton.disabled = true;
+  commandBarTools.append(measureButton);
   const commandSearch = panel.querySelector("#modelCommandSearch").closest("label");
   const commandList = panel.querySelector("#modelCommands");
   const commandSession = panel.querySelector("#modelSession");
@@ -659,7 +671,7 @@ export function initModelWorkspace(api) {
   // expose Undo/Redo as command-bar controls in the reviewed layout.
   undoButton.hidden = true;
   redoButton.hidden = true;
-  commandBar.append(undoButton, redoButton, commandBarTools, commandList);
+  commandBar.append(undoButton, redoButton, commandBarTools, optionsMenu, commandList);
   panel.prepend(commandBar);
   const timeline = document.createElement("section");
   timeline.className = "model-timeline";
