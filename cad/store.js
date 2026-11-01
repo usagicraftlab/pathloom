@@ -19,6 +19,7 @@ import {
 import { createTransactions } from "./transactions.js";
 import { resolveSubshape } from "./references.js";
 import { diagnostic } from "./diagnostics.js";
+import { changeFeatureCommandVersion } from "./commands/dsl.js";
 import { validateEditableShape } from "../step-import.js";
 import {
   differenceOutputs,
@@ -346,6 +347,22 @@ export class CadStore {
     this.transactions.record(before, this.document, "寸法を変更");
     this.notify();
     return this.recompute();
+  }
+  changeCommandVersion(featureId, targetVersion) {
+    const before = checkpoint(this.document);
+    const change = changeFeatureCommandVersion(
+      this.document,
+      featureId,
+      targetVersion,
+    );
+    if (!change.changed) return Promise.resolve(change);
+    this.transactions.record(
+      before,
+      this.document,
+      change.direction === "upgrade" ? "コマンド版を更新" : "コマンド版を戻す",
+    );
+    this.notify();
+    return this.recompute().then(() => change);
   }
   repair(featureId, key, refs) {
     const before = checkpoint(this.document);

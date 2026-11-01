@@ -14,11 +14,20 @@ import {
   references,
 } from "./document.js";
 import {
+  allCommandDefinitions,
   findCommands,
   commandById,
   registerCommand,
   validateCommandDefinition,
 } from "./commands/registry.js";
+import {
+  commandDefinitionToDsl,
+  commandCatalogToDsl,
+  inspectCommandDsl,
+  resolveCommandConflict,
+  commandVersionOptions,
+  pinCommandDefinition,
+} from "./commands/dsl.js";
 import {
   createCommandSession,
   dispatchSession,
@@ -273,6 +282,8 @@ export function initModelWorkspace(api) {
   };
   const commandEditButton = makeToolButton("配置編集", "ピン留めとアイコン順を編集");
   commandEditButton.id = "modelCommandEdit";
+  const commandDslButton = makeToolButton("DSL", "コマンドDSL・版管理・AI編集");
+  commandDslButton.id = "modelCommandDsl";
   const measureButton = makeToolButton("↔", "2点の距離を測定");
   measureButton.id = "modelMeasure";
   measureButton.setAttribute("aria-label", "2点の距離を測定");
@@ -282,7 +293,7 @@ export function initModelWorkspace(api) {
   const thumbnailToggle = makeToolButton("▧", "アウトライナーのサムネイル表示");
   thumbnailToggle.id = "modelThumbnailToggle";
   thumbnailToggle.setAttribute("aria-label", "サムネイル表示切替");
-  commandBarTools.append(commandEditButton, measureButton, arrayButton, thumbnailToggle);
+  commandBarTools.append(commandEditButton, commandDslButton, measureButton, arrayButton, thumbnailToggle);
   const commandSearch = panel.querySelector("#modelCommandSearch").closest("label");
   const commandList = panel.querySelector("#modelCommands");
   const commandSession = panel.querySelector("#modelSession");
@@ -397,6 +408,219 @@ export function initModelWorkspace(api) {
   };
   document.addEventListener("pathloom:cad-help", () => showHelp(false));
   document.addEventListener("pathloom:about", () => showHelp(true));
+  const commandDslDialog = document.createElement("dialog");
+  commandDslDialog.className = "model-command-dsl-dialog";
+  commandDslDialog.setAttribute("aria-labelledby", "modelCommandDslTitle");
+  commandDslDialog.innerHTML = `<header><strong id="modelCommandDslTitle">コマンドDSL・版管理</strong><button type="button" data-command-dsl-close aria-label="閉じる">×</button></header>
+    <label>コマンド<select data-command-dsl-select></select></label>
+    <div class="model-command-dsl-version" hidden><span></span><select aria-label="切替先のコマンド版"></select><button type="button">版を切り替える</button></div>
+    <label>DSL<textarea data-command-dsl-source rows="18" spellcheck="false" aria-label="コマンドDSL"></textarea></label>
+    <p data-command-dsl-status role="status" aria-live="polite"></p>
+    <section data-command-dsl-conflict hidden><strong>名前の衝突を解決</strong><p></p><label>新しいcommand ID<input data-command-new-id></label><label>新しい表示名<input data-command-new-name></label><button type="button" data-command-rename>新名として登録</button><label>代わりのalias<input data-command-new-alias></label><button type="button" data-command-alias>別名を置換</button><button type="button" data-command-cancel>採用中止</button></section>
+    <details><summary>AIで新しい版を提案</summary><label>変更内容<textarea data-command-ai-request rows="3" maxlength="6000" placeholder="例：表示名と既定幅を変更。演算の意味は維持する"></textarea></label><button type="button" data-command-ai>既存AI接続で提案</button><small>ローカルCodex認証を使い、任意JavaScriptは許可しません。提案は適用前にDSLとして確認できます。</small></details>
+    <footer><button type="button" data-command-catalog>正規65件を表示</button><button type="button" data-command-apply class="primary">検証して文書へ固定</button><button type="button" data-command-dsl-close>閉じる</button></footer>`;
+  document.body.append(commandDslDialog);
+  const commandDslSelect = commandDslDialog.querySelector("[data-command-dsl-select]");
+  const commandDslSource = commandDslDialog.querySelector("[data-command-dsl-source]");
+  const commandDslStatus = commandDslDialog.querySelector("[data-command-dsl-status]");
+  const commandDslConflict = commandDslDialog.querySelector("[data-command-dsl-conflict]");
+  const commandVersionPanel = commandDslDialog.querySelector(".model-command-dsl-version");
+  let pendingCommandConflict = null;
+  let commandAiTicket = null;
+  function commandDslMessage(message, error = false) {
+    commandDslStatus.textContent = message;
+    commandDslStatus.dataset.error = String(error);
+  }
+  function fillCommandDslSelect(selectedKey = commandDslSelect.value) {
+    commandDslSelect.replaceChildren();
+    for (const command of findCommands().sort((a, b) => a.id.localeCompare(b.id))) {
+      const option = document.createElement("option");
+      option.value = `${command.id}@${command.version}`;
+      option.textContent = `${command.id}@${command.version} · ${command.displayName}`;
+      commandDslSelect.append(option);
+    }
+    if ([...commandDslSelect.options].some((option) => option.value === selectedKey))
+      commandDslSelect.value = selectedKey;
+  }
+  function selectedDslCommand() {
+    const [id, version] = commandDslSelect.value.split("@");
+    return commandById(id, Number(version));
+  }
+  function refreshCommandVersionPanel() {
+    const feature = selectedFeature && store.getFeature(selectedFeature);
+    const target = commandVersionPanel.querySelector("select");
+    target.replaceChildren();
+    if (!feature) {
+      commandVersionPanel.hidden = true;
+      return;
+    }
+    const versions = commandVersionOptions(feature.command.id);
+    commandVersionPanel.hidden = versions.length < 2;
+    commandVersionPanel.querySelector("span").textContent = `${feature.name}: 現在 ${feature.command.id}@${feature.command.version}`;
+    for (const definition of versions) {
+      const option = document.createElement("option");
+      option.value = String(definition.version);
+      option.textContent = `v${definition.version}${definition.version === feature.command.version ? "（現在）" : ""}`;
+      option.disabled = definition.version === feature.command.version;
+      target.append(option);
+    }
+    target.value = String(
+      versions.find((definition) => definition.version !== feature.command.version)?.version || feature.command.version,
+    );
+  }
+  function openCommandDsl() {
+    fillCommandDslSelect();
+    const command = selectedDslCommand();
+    if (command) commandDslSource.value = commandDefinitionToDsl(command);
+    commandDslConflict.hidden = true;
+    pendingCommandConflict = null;
+    refreshCommandVersionPanel();
+    commandDslMessage("DSLは現在の単一command registryから生成されています。");
+    commandDslDialog.showModal();
+  }
+  commandDslButton.addEventListener("click", openCommandDsl);
+  for (const button of commandDslDialog.querySelectorAll("[data-command-dsl-close]"))
+    button.addEventListener("click", () => commandDslDialog.close());
+  commandDslSelect.addEventListener("change", () => {
+    const command = selectedDslCommand();
+    if (command) commandDslSource.value = commandDefinitionToDsl(command);
+    commandDslConflict.hidden = true;
+    pendingCommandConflict = null;
+    commandDslMessage("版を含む定義を編集できます。既存版は上書きできません。");
+  });
+  commandDslDialog.querySelector("[data-command-catalog]").addEventListener("click", () => {
+    commandDslSource.value = commandCatalogToDsl();
+    commandDslConflict.hidden = true;
+    pendingCommandConflict = null;
+    commandDslMessage("正規65 IDをregistryからDSLへ変換しました。");
+  });
+  function showCommandConflict(definition, conflicts) {
+    pendingCommandConflict = definition;
+    commandDslConflict.hidden = false;
+    commandDslConflict.querySelector("p").textContent = conflicts
+      .map((conflict) => `${conflict.token} ↔ ${conflict.existingId}@${conflict.existingVersion}`)
+      .join("、");
+    commandDslConflict.querySelector("[data-command-new-id]").value = `${definition.id}.custom`;
+    commandDslConflict.querySelector("[data-command-new-name]").value = `${definition.displayName} Custom`;
+    commandDslConflict.querySelector("[data-command-new-alias]").value = `${definition.aliases[0] || definition.displayName}Custom`;
+    commandDslMessage("標準・既存commandは上書きしません。新名、別名の置換、採用中止から選んでください。", true);
+  }
+  commandDslDialog.querySelector("[data-command-apply]").addEventListener("click", () => {
+    try {
+      const { definitions, conflicts } = inspectCommandDsl(commandDslSource.value);
+      if (conflicts.length) return showCommandConflict(definitions[0], conflicts);
+      const registered = allCommandDefinitions();
+      for (const definition of definitions) {
+        const existing = commandById(definition.id, definition.version);
+        if (existing && canonical(existing) !== canonical(definition))
+          throw new Error(`${definition.id}@${definition.version}は固定済みです。変更は新しいversionにしてください。`);
+        const pinned = store.document.commandDefinitions.find(
+          (candidate) => candidate.id === definition.id && candidate.version === definition.version,
+        );
+        if (pinned && canonical(pinned) !== canonical(definition))
+          throw new Error(`${definition.id}@${definition.version}は文書に固定済みです。変更は新しいversionにしてください。`);
+        if (!registered.some((candidate) => candidate.baseOperation.id === definition.baseOperation.id))
+          throw new Error(`${definition.baseOperation.id}は未登録のnative operationです。`);
+      }
+      let added = 0, unchanged = 0;
+      for (const definition of definitions) {
+        const existing = commandById(definition.id, definition.version);
+        if (existing) {
+          unchanged++;
+          continue;
+        }
+        registerCommand(definition);
+        pinCommandDefinition(store.document, definition);
+        added++;
+      }
+      if (added) {
+        store.document.documentRevision++;
+        queueAutosave();
+        render({ keepProperties: true, keepHistory: true });
+      }
+      fillCommandDslSelect();
+      commandDslConflict.hidden = true;
+      pendingCommandConflict = null;
+      commandDslMessage(`${added}件を検証・登録して文書に版固定しました。変更なし${unchanged}件。`);
+    } catch (error) {
+      commandDslMessage(error.message || String(error), true);
+    }
+  });
+  commandDslDialog.querySelector("[data-command-rename]").addEventListener("click", () => {
+    try {
+      const resolved = resolveCommandConflict(pendingCommandConflict, {
+        action: "rename",
+        id: commandDslConflict.querySelector("[data-command-new-id]").value,
+        displayName: commandDslConflict.querySelector("[data-command-new-name]").value,
+      });
+      commandDslSource.value = commandDefinitionToDsl(resolved);
+      commandDslConflict.hidden = true;
+      pendingCommandConflict = null;
+      commandDslMessage("新名をDSLへ反映しました。内容を確認して適用してください。");
+    } catch (error) { commandDslMessage(error.message || String(error), true); }
+  });
+  commandDslDialog.querySelector("[data-command-alias]").addEventListener("click", () => {
+    try {
+      const resolved = resolveCommandConflict(pendingCommandConflict, {
+        action: "replace-alias",
+        alias: commandDslConflict.querySelector("[data-command-new-alias]").value,
+      });
+      commandDslSource.value = commandDefinitionToDsl(resolved);
+      commandDslConflict.hidden = true;
+      pendingCommandConflict = null;
+      commandDslMessage("衝突aliasを置換しました。内容を確認して適用してください。");
+    } catch (error) { commandDslMessage(error.message || String(error), true); }
+  });
+  commandDslDialog.querySelector("[data-command-cancel]").addEventListener("click", () => {
+    pendingCommandConflict = null;
+    commandDslConflict.hidden = true;
+    commandDslMessage("commandの採用を中止しました。文書とregistryは変更していません。");
+  });
+  commandVersionPanel.querySelector("button").addEventListener("click", async () => {
+    const feature = selectedFeature && store.getFeature(selectedFeature);
+    if (!feature) return commandDslMessage("履歴を選択してください。", true);
+    try {
+      const change = await store.changeCommandVersion(
+        feature.id,
+        Number(commandVersionPanel.querySelector("select").value),
+      );
+      commandDslMessage(
+        change.changed
+          ? `${feature.command.id}をv${change.previousVersion}からv${change.targetVersion}へ${change.direction === "upgrade" ? "upgrade" : "rollback"}しました。Undoで戻せます。`
+          : "選択した版は現在の版です。",
+      );
+      queueAutosave();
+      refreshCommandVersionPanel();
+      render();
+    } catch (error) { commandDslMessage(error.message || String(error), true); }
+  });
+  commandDslDialog.querySelector("[data-command-ai]").addEventListener("click", () => {
+    try {
+      const definitions = inspectCommandDsl(commandDslSource.value).definitions;
+      if (definitions.length !== 1) throw new Error("AI編集はcommand 1件ずつ行います。");
+      const request = commandDslDialog.querySelector("[data-command-ai-request]").value.trim();
+      if (!request) throw new Error("変更内容を入力してください。");
+      commandAiTicket = crypto.randomUUID();
+      document.dispatchEvent(new CustomEvent("pathloom:ai-command-submit", { detail: {
+        ticket: commandAiTicket,
+        request,
+        definition: definitions[0],
+        dsl: commandDslSource.value,
+      }}));
+      commandDslMessage("既存のローカルAI接続で新しい版を提案しています…");
+    } catch (error) { commandDslMessage(error.message || String(error), true); }
+  });
+  document.addEventListener("pathloom:ai-command-state", (event) => {
+    if (event.detail.ticket !== commandAiTicket) return;
+    if (event.detail.phase === "error") commandDslMessage(event.detail.error, true);
+    else if (event.detail.phase === "done") commandDslMessage("AI提案を検証しました。DSLを確認して適用してください。");
+    else commandDslMessage(event.detail.phase === "connecting" ? "ローカルAI接続を確認しています…" : "AIが新しいcommand版を提案しています…");
+  });
+  document.addEventListener("pathloom:ai-command-result", (event) => {
+    if (event.detail.ticket !== commandAiTicket) return;
+    commandDslSource.value = event.detail.dsl;
+    if (event.detail.conflicts?.length) showCommandConflict(event.detail.definition, event.detail.conflicts);
+  });
   helpDetails?.remove();
   commandDefinitionDetails?.remove();
   recentOperationsDetails?.remove();

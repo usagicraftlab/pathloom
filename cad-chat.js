@@ -3,6 +3,8 @@ import {createCadWorker} from './cad-worker-client.js';
 import {OPERATIONS,RECIPE_FORMAT,CODE_COMPONENT_FORMAT,COMPONENT_GROUPS,assertRecipeUpgrade,operationSpec,validateStepEdit,validateNewComponent,detachComponent} from './cad-pipeline.js';
 import {searchLibrary} from './cad-library.js';
 import {validateDefinition} from './cad-kernel.js';
+import {commandDefinitionToDsl,parseCommandDsl} from './cad/commands/dsl.js';
+import {findCommandTokenConflicts} from './cad/commands/registry.js';
 const $=id=>document.getElementById(id);
 export function selectDefaultModel(models){return models.find(m=>/mini|nano/i.test(m.model+' '+m.displayName))||models.find(m=>m.isDefault)||models[0]}
 export function formatUsage(limits){
@@ -14,6 +16,20 @@ export function relevantLibrary(library,request){
   const terms=request.toLowerCase().split(/\s+/).filter(Boolean);
   const score=entry=>terms.reduce((n,term)=>n+([entry.name||entry.definition?.name,entry.description,...(entry.tags||[])].join(' ').toLowerCase().includes(term)?1:0),0);
   return [...exact,...remaining.filter(entry=>!exact.some(item=>item.id===entry.id)).sort((a,b)=>score(b)-score(a))].slice(0,4).map(entry=>({id:entry.id,kind:entry.kind||'generator',name:entry.name||entry.definition?.name,description:entry.description,tags:entry.tags,revision:entry.revision||1,...(entry.kind==='operation'?{step:entry.step,inputs:entry.inputs,recipes:entry.recipes}:{definition:entry.definition})}));
+}
+export function commandAiContext(definition,request){
+  return {
+    request,
+    commandDsl:commandDefinitionToDsl(definition),
+    responseFormat:'Return exactly one edited command as commandDsl using PATHLOOM COMMAND DSL 1.',
+    rules:[
+      'Keep the command id and native baseOperation unchanged.',
+      'Create a new immutable version; never overwrite an existing version.',
+      'Use only registered data adapters. Never return JavaScript, eval, file, network or DOM access.',
+      'Preserve existing input and parameter meaning. C/E review decisions are fixed; do not invent unresolved S behavior.',
+      'Aliases must not silently replace a standard or existing command. The user resolves collisions in the UI.',
+    ],
+  };
 }
 export function initCadChat(api){
   let connected=false,busy=false,requestId=0,messages=[],loginTimer=null,loginPolls=0,activeTicket=null,computeCancel=null,connectionRequest=null;
@@ -90,8 +106,35 @@ export function initCadChat(api){
     }catch(error){if(ownId===requestId){state('error',{error:error.message||String(error)});say('assistant',error.message||String(error))}}
     finally{if(ownId===requestId){busy=false;$('cadAiModel').disabled=false}}
   }
+  async function submitCommand({ticket,request,definition,dsl}){
+    if(busy||!request?.trim())return;
+    activeTicket=ticket;busy=true;const ownId=++requestId;
+    emit('pathloom:ai-command-state',{ticket,phase:'connecting'});$('cadAiModel').disabled=true;
+    try{
+      if(!connected&&!await refresh())throw new Error($('cadAiStatus').textContent||'Codex account is not connected');
+      const current=parseCommandDsl(dsl||commandDefinitionToDsl(definition));
+      if(current.length!==1)throw new Error('AI編集はコマンド1件ずつ行います');
+      const model=$('cadAiModel').value;if(!model)throw new Error('No available AI model. Open AI settings and connect your Codex account.');
+      emit('pathloom:ai-command-state',{ticket,phase:'generating'});
+      const response=await invoke('codex_propose',{model,context:commandAiContext(current[0],request)});
+      if(ownId!==requestId)return;
+      const proposedDsl=typeof response?.commandDsl==='string'?response.commandDsl:typeof response?.dsl==='string'?response.dsl:response?.definition?.format==='pathloom-command'?commandDefinitionToDsl(response.definition):null;
+      if(!proposedDsl)throw new Error('AI returned no command DSL');
+      const proposed=parseCommandDsl(proposedDsl);
+      if(proposed.length!==1)throw new Error('AI returned more than one command');
+      if(proposed[0].id!==current[0].id||proposed[0].baseOperation.id!==current[0].baseOperation.id||proposed[0].baseOperation.version!==current[0].baseOperation.version)
+        throw new Error('AI changed the command identity or native operation');
+      if(proposed[0].version<=current[0].version)
+        throw new Error('AI command edits must create a new immutable version');
+      const conflicts=findCommandTokenConflicts(proposed[0]);
+      emit('pathloom:ai-command-result',{ticket,dsl:commandDefinitionToDsl(proposed[0]),definition:proposed[0],conflicts});
+      emit('pathloom:ai-command-state',{ticket,phase:'done'});
+    }catch(error){if(ownId===requestId)emit('pathloom:ai-command-state',{ticket,phase:'error',error:error.message||String(error)})}
+    finally{if(ownId===requestId){busy=false;$('cadAiModel').disabled=false}}
+  }
   function cancel(){if(!busy)return;requestId++;busy=false;computeCancel?.();try{Promise.resolve(invoke('codex_cancel')).catch(()=>{})}catch{}state('cancelled');$('cadAiModel').disabled=false}
   document.addEventListener('pathloom:ai-submit',event=>void submit(event.detail));
+  document.addEventListener('pathloom:ai-command-submit',event=>void submitCommand(event.detail));
   document.addEventListener('pathloom:ai-cancel',event=>{if(!event.detail?.ticket||event.detail.ticket===activeTicket)cancel()});
   function compose(options){if(busy)return;emit('pathloom:ai-compose',options)}
   return {newComponent:position=>compose({position}),editStep:id=>{const step=api.definition().steps.find(s=>s.id===id);if(step)compose({targetId:id,label:step.label||operationSpec(api.definition(),step).label})},refresh,discard(){},cancel,submit,snapshot:()=>messages.map(message=>({...message})),restore(input){cancel();messages=Array.isArray(input)?input.filter(m=>['user','assistant'].includes(m?.role)&&typeof m.text==='string').slice(-30).map(m=>({role:m.role,text:m.text.slice(0,12000)})):[]}};

@@ -15,7 +15,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | A01 | partial | 4 stages; shared camera + document preserved in browser; full keyboard/selection paths pending |
 | A02 | not-run | 未実装または未検証。合格としない。 |
 | A03 | passed | Issue #8: center(10,20),60×40 and constrained width80 retain center; two-corner input is distinct; three-mode browser Save/Undo. Scoped to this fixture |
-| A04 | partial | Work-order command JSON creates real rectangle, persists globally and inside v2; Issue #11 adds initial-library/registration ordering and shared-save failure coverage ([evidence](cad-phase1-regression-verification.md)); explicit command upgrade/rollback UI pending |
+| A04 | passed | Issue #20: single-registry DSL round-trips all canonical 65 IDs, pins a new immutable definition in v2, and exposes explicit history upgrade/rollback with both versions retained. Earlier work-order/global loading and Issue #11 ordering/failure coverage remain documented in [evidence](cad-phase1-regression-verification.md). Scoped browser fixture; real macOS remains #37 |
 | A05 | partial | T03/T05 plus Issue #8 real Worker width60→80, center/height retained, Undo/Redo and normal Save/reopen; all constraint types/drag pending |
 | A06 | partial | Issue #8 conflicting width20 produces no-convergence; previous exact asset hash/bbox survives, draft is retained through Undo/Redo/Save/reopen; broader conflict/recovery cases pending |
 | A07 | partial | native T10/T11 + sketch->extrude and semantic fillet browser paths; full chained generation numerical test pending |
@@ -36,7 +36,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | A22 | partial | legacy JS/Python/browser regression suite; Issue #14 keeps display-only STEP legacy-only and preserves editable importedShapes alongside cadDocument. Real GH/OS integration untested |
 | A23 | partial | Issue #4: document/feature/input/epoch guards through asset export; transport races17 pass, real OCCT width70→80 probe and existing browser21 pass. Actual macOS drag/load remains untested |
 | A24 | partial | Issue #6: exact Split rerun preserves binding ID; changed/count results block, v2 reopen retains candidates, explicit same-kind repair preserves binding ID. Full CAD-to-G-code chain remains #9 |
-| A25 | not-run | immutable command registry exists; explicit version upgrade/rollback UI pending |
+| A25 | passed | Issue #20: selected history can explicitly upgrade or roll back only across known versions of the same native operation; both definitions remain pinned and the change is an Undo transaction. Unit + real-kernel browser fixture |
 | A26 | partial | Issue #8/#15: real mouse/keyboard overlap picker and Shift selection retained; all four exact transforms reject ambiguous preselection and require one explicit object. Actual macOS/VoiceOver/all drag combinations pending |
 | A27 | partial | original UI/code, vendor notice retention, actual OCP/VTK wheel texts; full distribution/license audit unfinished |
 | T01 | passed | native test_T01_rectangle_center + browser center/width/save/Undo |
@@ -70,7 +70,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | R04 | partial | Rust Session real hard-kill test passes; full Tauri/macOS recovery not run |
 | R05 | partial | Corrupt asset prepare cannot replace current document (job test); real native hash/byte rejection; full OS dialog flow untested |
 | R06 | passed | Work-order user command project reopened in fresh page after global command definitions were removed; exact geometry restored. Issue #11 additionally holds initial library loading and rejects shared saves; project definition retained ([evidence](cad-phase1-regression-verification.md)). Real OS app-data/restart remains M05 |
-| R07 | partial | alias collision unit test; import collision UI pending |
+| R07 | passed | Issue #20: ID/display/alias collisions are detected without replacing the standard or existing definition; UI requires new name, replacement alias, or cancellation before mutation. Unit + browser fixture |
 | R08 | partial | Browser recovery restores real assets and history; failed feature + lastValid saved in v2; complete failed-draft restart matrix pending |
 | R09 | partial | existing representative JS fixtures + browser regressions; Issue #14 covers editable embedded STEP adapter and display-only legacy preservation without changing v1 meaning. Complete legacy asset matrix and real OS dialog pending |
 | R10 | partial | Issue #6/#15: per-source Split candidates, vanished part bindings, explicit repair UI, blocked v2 reopen, independent Library copies and exact placement Undo/Redo tested. Real Tauri/macOS interaction remains untested |

@@ -10,6 +10,13 @@ maps every ID to concrete test files/test names; `tests/cad-fixture-ledger.test.
 rejects missing/duplicate IDs, missing registry commands, empty evidence, and absent
 evidence files. This closes evidence traceability, not incomplete product modes.
 
+Issue #20 adds a registry-derived assertion across the same 65 IDs:
+`tests/command-dsl.test.mjs` converts every latest canonical definition to
+`PATHLOOM COMMAND DSL 1` and back with exact version/data equality, while
+`tests/browser/cad-command-dsl.spec.mjs` exercises catalog display, immutable
+version pinning, collision resolution, and explicit history upgrade/rollback.
+This does not change any row's geometry/mode status or decide unresolved S modes.
+
 2026-10-21 JST · specification v2.0 · branch `codex/cad-workspace`.
 
 **All 65 IDs remain in scope; this is an incomplete implementation.**

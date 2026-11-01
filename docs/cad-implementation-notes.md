@@ -95,7 +95,8 @@ not a substitute for that full build.
   and graphical glyph/drag editing. Current solver does not claim full §21.
 - Ordered input reordering, rectangle multi-mode UI, broader overlapping-pick coverage,
   selection boxes, remaining snap types and keyboard/VoiceOver coverage.
-- User-command DSL/AI editing/version upgrades, explicit command upgrades and alias collision UI; matching project definitions are already pinned.
+- Issue #20でregistry由来command DSL、AIによるimmutable新版提案、明示的な
+  upgrade/rollback、alias衝突解決UIを追加済み。演算ごとの未対応modeは別途残る。
 - Library migration/placement/external-reference choices and display-handle GC.
 - Complete generation branch isolation, project open/close draft protection and
   full-application recovery integration; real Mac performance and integration tests.
