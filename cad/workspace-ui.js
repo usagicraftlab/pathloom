@@ -832,7 +832,7 @@ export function initModelWorkspace(api) {
   }
   dimensions.addEventListener("dblclick", editDisplayedDimension);
   projectedDimensions.addEventListener("dblclick", editDisplayedDimension);
-  gizmo.addEventListener("pointerdown", async (event) => {
+  // 旧配列コピーのドラッグ処理を無効化するための非表示状態。\n  const arrayDialog = { open: false };\n  const arrayPreviewPromise = Promise.resolve();\n  gizmo.addEventListener("pointerdown", async (event) => {
     const handle = event.target.closest("button[data-gizmo]");
     if (!handle || session) return;
     const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
