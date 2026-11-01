@@ -30,7 +30,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           version: '0.13.1'
-      - run: uv pip sync --python python --require-hashes distribution/cad-runtime-requirements.lock
+      - run: uv pip sync --system --python python --require-hashes distribution/cad-runtime-requirements.lock
       - run: python -B scripts/verify-cad-runtime.py
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
@@ -55,7 +55,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
         with:
           version: '0.13.1'
-      - run: uv pip sync --python python --require-hashes distribution/cad-runtime-requirements.lock
+      - run: uv pip sync --system --python python --require-hashes distribution/cad-runtime-requirements.lock
       - run: python -B scripts/verify-cad-runtime.py
       - run: python -B -m unittest discover -s native -p 'test*.py'
 
