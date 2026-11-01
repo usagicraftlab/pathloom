@@ -12,6 +12,8 @@
     "mac:build": "tauri build --bundles app,dmg",
     "mac:dmg": "tauri build --bundles dmg",
     "cad:setup": "node scripts/setup-cad-runtime.mjs",
+    "cad:verify": "node scripts/verify-cad-runtime.mjs",
+    "distribution:verify": "node scripts/verify-distribution.mjs",
     "test:cad-native": ".pathloom-runtime/python/bin/python -B -m unittest discover -s native -p 'test*.py'",
     "code:build": "node scripts/build-code-runtime.mjs",
     "test:browser": "npm run desktop:prepare && playwright test"

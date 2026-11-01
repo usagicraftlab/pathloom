@@ -2196,3 +2196,39 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   全3job成功した。全6jobの生ログを照合し、各runでJS 237成功、native全105件中103成功・
   任意NVIDIA USD 2skip、macOS Rust 24成功、browser 89成功（retryなし）を確認した。
   このCI証拠を含む最終文書commitにも同じ全CIを要求し、その確認前はReady／mergeしない。
+
+## 2026-11-02 — 指示024 / Issue #24 配布
+
+- 最新main `41924e239f5299d37f3f5f5dd46843d214fed1ce`とpost-merge checks
+  `41335710265` attempt 1の全job successを確認し、同SHAから`feat/24-distribution`を作成した。
+  指示024だけを`作業中`へ変更・読戻し後、範囲をボードとIssue #24へ記録した。
+- Python/OCP/VTKは`.app`へ埋め込まず、Python 3.12の別置きruntimeを維持する。
+  `cadquery-ocp 7.8.1.1.post1`、OCP表示7.8.1.1、VTK 9.3.1と全13 Python packageを
+  wheel hash付きlockへ固定し、setupを`uv pip sync --require-hashes`へ変更した。版照合に加え、
+  実OCPで1×2×3 boxのvalidity／volume 6を確かめるstartup probeを追加した。
+- 配布frontendへ第三者表示、runtime/artifact manifest、Python lock、source/rebuild guideを含める。
+  既存vendor 19ファイルをSHA-256で照合し、occt-import-js 0.0.23 commit `c2148e54...`、
+  OCCT 7.6.1 commit `d2abb6d...`、Emscripten 3.1.69のsource取得・rebuild・pair置換手順と
+  OCCT追加例外本文を保持した。npm/Cargoの全推移版は既存lockfileを正本とする。
+- 実装中の対象確認ではruntime probe、distribution検査、新規unitが成功した。指定の全JS、
+  native、browser、local Rust、CIはまだ未実施であり、この中間結果を最終合格へ使わない。
+  実Mac GUI/Tauri/OS dialog、Finder launch、sign/notarize、Issue #37は対象外のまま未実施。
+- fresh setupの初回は、既存ignored runtimeに`bin/python3 -> python`だけが残り`bin/python`本体が
+  欠けた不完全environmentを検出したが、旧setupが既存directoryをclearできずexit 1となった。
+  この失敗を成功へ置換しない。setupを「期待するPython実体がなければ同じignored environmentだけを
+  `uv venv --clear`で再作成」へ修正した再実行は13 packageをlockどおり導入し、版照合と実B-rep
+  probeに成功した。続く独立`npm run cad:verify`も成功した。
+- ローカル全検証ではNode 24.22.1と厳密なNode 20.20.2の全JSが各239成功
+  （失敗／skip 0）、native全105件は103成功・任意NVIDIA USD 2skipだった。local Rustは
+  `cargo`不在で未実行。`npm run distribution:verify`、desktop配布物準備、新規distribution unit
+  2件、別置きruntime setup／独立probeも成功した。
+- browser全89件はretryなしで起動したが、Playwright Chromium実行体がないため全件がtest body前の
+  `browserType.launch`で失敗した。`npx playwright install chromium`も5回すべて0 MiBの応答を
+  ZIPとして展開できずexit 1となった。この環境準備失敗を製品test失敗または成功へ置換しない。
+  必須browser検証を実行できないため、PR作成・CI・Ready・merge・Issue #24自動closeは行わず、
+  指示024を要判断としてMuseへ報告する。残件は利用可能なChromiumでのbrowser全89件、全CI、
+  Draft PR作成、完了条件照合、Ready／merge／Issue自動closeである。
+- 05:40 JSTのMuse判断で、push／PR両CIのbrowser 89件を含む全3job successを全job生ログで
+  照合する条件により、CI browserをこの環境のローカルbrowser代替として進める許可を受けた。
+  指示024を`作業中`へ戻して再開する。ローカルbrowserはtest body未実行のまま成功扱いせず、
+  CI browserに未知の失敗が残る場合は要判断へ戻す。local Rust未実行も従来どおりCIと区別する。

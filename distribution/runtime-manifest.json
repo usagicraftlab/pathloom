@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "deployment": "separately-provisioned",
+  "python": {
+    "version": "3.12",
+    "environment": ".pathloom-runtime/python"
+  },
+  "packages": {
+    "cadquery-ocp": "7.8.1.1.post1",
+    "OCP": "7.8.1.1",
+    "vtk": "9.3.1"
+  },
+  "installer": {
+    "testedUv": "0.13.1",
+    "requirements": "distribution/cad-runtime-requirements.lock"
+  },
+  "discoveryOrder": [
+    "PATHLOOM_BREP_PYTHON",
+    ".pathloom-runtime/python/bin/python (Scripts/python.exe on Windows)",
+    "python3"
+  ],
+  "probe": "scripts/verify-cad-runtime.py"
+}

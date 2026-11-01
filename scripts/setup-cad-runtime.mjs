@@ -15,6 +15,8 @@ try{await access(uv)}catch{
   }
 }
 const env=path.join(runtime,'python'),python=path.join(env,process.platform==='win32'?'Scripts/python.exe':'bin/python');
-try{await access(python)}catch{execFileSync(uv,['venv','--python','3.12',env],{stdio:'inherit'})}
-execFileSync(uv,['pip','install','--python',python,'cadquery-ocp==7.8.1.1'],{stdio:'inherit'});
-console.log('Editable CAD runtime ready:',python);
+try{await access(python)}catch{execFileSync(uv,['venv','--clear','--python','3.12',env],{stdio:'inherit'})}
+const requirements=path.join(root,'distribution','cad-runtime-requirements.lock');
+execFileSync(uv,['pip','sync','--python',python,'--require-hashes',requirements],{stdio:'inherit'});
+execFileSync(python,['-B',path.join(root,'scripts','verify-cad-runtime.py')],{stdio:'inherit'});
+console.log('Verified CAD runtime ready:',python);

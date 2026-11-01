@@ -646,17 +646,20 @@ P1を完成と称して後続を黙って省略しない。途中で中断した
 | DXFパーサ | `vendor/dxf/LICENSE`にMIT | 上流と同梱版、変更の有無、表示保持 |
 | Clipper | `vendor/clipper/LICENSE.txt`にBoost Software License 1.0 | 実際のJS配布物のヘッダーも照合。追加条件や変更来歴を確認 |
 | QuickJS／quickjs-emscripten | `vendor/quickjs/LICENSE`とnpm lockにMIT。lock上の関連npm版は0.32.0 | JS／WASM／ランタイム各配布物のライセンス・著作権を保持 |
-| occt-import-js | `vendor/occt/LICENSE.occt-import-js.txt`にLGPL 2.1本文 | 実際のJS／WASM版、ソース、ビルド方法、変更、ライセンス適用範囲、配布時の条件を照合 |
-| OCCT | `vendor/occt/LICENSE.occt.txt`にLGPL 2.1本文。公式はLGPL 2.1＋追加例外を案内 | 同梱したリリースの例外本文・著作権・ソース入手方法・置換／再リンクの要件を確認。例外が全義務を消すとは扱わない |
-| OCP／cadquery-ocp | セットアップは`cadquery-ocp==7.8.1.1`。上流OCPはApache-2.0。該当版のPyPI配布は確認 | 上流ラッパーのライセンスだけで、同梱OCCT等をApache扱いしない。実際に使うwheel内のライセンスと全バイナリ依存を確認 |
+| occt-import-js | Issue #24で0.0.23／commit `c2148e54...`、JS/WASM SHA-256、source/rebuild/置換手順を固定 | LGPL 2.1本文とsource案内を配布物から落とさず、置換時はpairとhash/source commitを同時更新 |
+| OCCT | browser版は7.6.1／commit `d2abb6d...`、native版はOCP表示7.8.1.1。LGPL本文と採用commitの追加例外本文を保持 | 例外が全義務を消すとは扱わず、将来版変更時はsource／例外／artifactを再照合 |
+| OCP／cadquery-ocp | 7.8.1.1.post1とVTK 9.3.1を含むPython 3.12 transitive lockをhash固定。実wheelのOCP/VTK license保持 | 別置きprovisionを維持し、`.app`同梱へ変更する場合は配布形態を再監査 |
 | Tauri CLI | npm lockの2.12.2にApache-2.0 OR MIT | Rust runtime／プラグイン／推移依存は別途Cargo.lockと成果物で確認 |
 | esbuild | npm lockの0.28.2にMIT | ビルドツールとしての利用と成果物への同梱を区別し、必要な表示を保持 |
 | 新規拘束ソルバー | 未選定・未確認 | 導入前に正確な版、ライセンス、リンク／配布形態、ソース公開等の条件を評価。GPL等を名前だけで一括判断しない |
-| Python／uv／追加ネイティブ依存 | 実際の導入・同梱物は今回未監査 | 実行環境に入れるだけか、アプリと再配布するかを区別し、それぞれのライセンスを確認 |
+| Python／uv／追加ネイティブ依存 | Issue #24でPython 3.12、CI検証uv 0.13.1、13 packageのhash付きlock、実B-rep probeを固定 | 現行は別置きprovision。CPython/uvを成果物へ同梱する変更時は別途監査 |
 
 OCCTの公式資料は、利用表示やLGPL文面へのアクセス等、リンクしたアプリにも配慮すべき条件を説明している。配布時はライブラリのソース提供、改変部分、置換・再リンク等について、実際の構成に該当する要件を確認する。アプリ全体を必ず公開しなければならないと短絡しない一方、別プロセスで呼ぶだけで無条件に適用外とも判断しない。[R8]
 
-OCP上流のApache-2.0表示と、OCCTのLGPL系条件は別に確認する。[R9] PyPIの7.8.1.1ページには配布物があることを確認したが、今回そのwheelを展開して同梱ライセンスまで検査したわけではない。[R10]
+OCP上流のApache-2.0表示と、OCCTのLGPL系条件は別に確認する。[R9] Issue #24では
+実際に使用するcadquery-ocp 7.8.1.1.post1／VTK 9.3.1 wheelのライセンス原文を保持し、
+Python推移依存をhash付きlockへ固定した。[R10] これは法的適合性の認定ではなく、採用物の
+再現可能な工学台帳である。
 
 基準commitのツリーでは第三者ライセンスファイルはあるが、ルートのプロジェクト本体の`LICENSE`は確認できなかった。公開GitHubにあることと自由利用許諾は別。ユーザー自身のコードに採用するライセンスは、勝手にMIT等へ決めず、配布方針が必要になった時点で確認する。
 
