@@ -2113,3 +2113,8 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   `feat/21-sketch-solver`へ反映し、remote commit
   `43a6124d6cafa76ed646e207dbfa3626c779710c`、Draft PR #52を作成した。
   このPR/CI情報を含む最終文書commitのCIを確認するまでReady、merge、Issue自動closeを行わない。
+- PR本文と台帳証拠を含むremote head `1bb9ef3846d38c6552bc777affc74b93ed3ce829`
+  （tree `a115940e01c464133cc31618c10d5718ad945dfa`）に対し、push run
+  `41306173848`とPR run `41306178277`はいずれもattempt 1で全3job成功した。各runの
+  生ログはJS 229成功、native 105件中103成功・任意2skip、macOS Rust 23成功、browser
+  87成功（retryなし）を示した。このCI証拠を追記する文書専用commitにも同じ全CIを要求する。
