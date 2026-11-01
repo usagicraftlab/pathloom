@@ -2239,3 +2239,14 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   対してuvがvirtual environmentを要求したためPython lock同期で失敗し、native／probe／browserは
   未実行だった。全4失敗jobの生ログで同じexit 2を確認した。製品test失敗や成功へ置換しない。
   CI専用commandへ`--system`を追加し、訂正headのpush／PR両runで全検証をやり直す。
+- 最初に転送した訂正commit `935db81f7020b951b9a6b0dbcd9549ff8e75cfab`（tree
+  `796d00a0519827560fdd9b5e48cdf6ed033d485f`）は、大きい開発ログがツール出力上限で途中切断され、
+  ローカルtreeと一致しないことを読戻しで検出した。この不適格headのpush run `41348443682`と
+  PR run `41348449787`はattempt 1 cancelledであり、合格に使用しない。remoteの完全な既存blobへ
+  ローカル差分だけを付加して訂正し、製品head `4cbcdd84f816b0d71af88c1a46631caf6d8d325f`の
+  tree `1f95c9e50b82afd72766f92564f854b7464accf5`がローカルHEAD treeと一致することを確認した。
+- この製品headのpush run `41348490347`とPR run `41348495374`はいずれもattempt 1で全3job成功した。
+  全6jobの生ログを照合し、各runでJS 239成功、native全105件中103成功・任意NVIDIA USD 2skip、
+  macOS Rust 24成功、browser 89成功（retryなし）を確認した。ローカルbrowserはChromium取得不能のため
+  test body未実行のままであり、このCI成功へ置換しない。このCI証拠を含む最終文書commitにも同じ
+  push／PR両CIを要求し、その全job生ログ確認前はReady／mergeしない。
