@@ -17,6 +17,12 @@ Issue #20 adds a registry-derived assertion across the same 65 IDs:
 version pinning, collision resolution, and explicit history upgrade/rollback.
 This does not change any row's geometry/mode status or decide unresolved S modes.
 
+Issue #23 adds shared performance/resource evidence without changing any command's
+geometry or mode status: native handles are collected from current entity reachability,
+display geometry/material/texture resources are disposed on replacement/removal, and
+small/medium/large Linux samples live in `cad-performance-baseline.json`. These values
+are not Mac acceptance evidence; real Mac remains Issue #37.
+
 2026-10-21 JST · specification v2.0 · branch `codex/cad-workspace`.
 
 **All 65 IDs remain in scope; this is an incomplete implementation.**

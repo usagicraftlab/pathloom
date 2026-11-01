@@ -109,7 +109,8 @@ M01の残りとM02以降のGUI/OS実利用は未実施。インストールし�
   読取専用経路、Component/Shape/Command Libraryの版付き無損失移行を扱う。
   実Tauri/OS dialog/app-dataの最終実機合格はIssue #37へ残す。
 - 代表モデルで表示/再計算/転送/起動/メモリを測り、handle・表示cacheのGCを改善する。
-  合成モデルのLinux値をMac性能の達成根拠にしない。
+  Issue #23は[再現可能なLinux基準値とGC契約](cad-performance.md)に従い、全sampleを
+  `cad-performance-baseline.json`へ残す。合成モデルのLinux値をMac性能の達成根拠にしない。
 - Python/OCPの配備と探索、配布物の依存版・第三者表示・source/rebuild手順を確認する。
   既存の[第三者ソフトウェア表示](../THIRD_PARTY_NOTICES.md)の未完事項を引き継ぐ。
 

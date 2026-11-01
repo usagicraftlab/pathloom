@@ -100,7 +100,7 @@ export class CadStore {
       () => {
         this.epoch++;
         this.native.cancelAll();
-        this.handles.clear();
+        this.clearHandles();
       },
     );
     this.recomputing = null;
@@ -108,6 +108,49 @@ export class CadStore {
   }
   notify() {
     this.changed(this.document);
+  }
+  clearHandles() {
+    const handles = [
+      ...new Set(
+        [...this.handles.values()]
+          .map((entry) => entry?.value?.handle)
+          .filter(Boolean),
+      ),
+    ];
+    this.handles.clear();
+    if (handles.length) this.native.release(handles);
+    return handles.length;
+  }
+  collectHandles() {
+    const reachable = new Set(
+        this.document.entities.map((entity) => entity.geometry.assetHash),
+      ),
+      released = [];
+    for (const [hash, entry] of this.handles)
+      if (!reachable.has(hash)) {
+        this.handles.delete(hash);
+        if (entry?.value?.handle) released.push(entry.value.handle);
+      }
+    const handles = [...new Set(released)];
+    if (handles.length) this.native.release(handles);
+    return {
+      reachable: reachable.size,
+      cached: this.handles.size,
+      released: handles.length,
+    };
+  }
+  handleCacheStats() {
+    return {
+      reachable: new Set(
+        this.document.entities.map((entity) => entity.geometry.assetHash),
+      ).size,
+      cached: this.handles.size,
+    };
+  }
+  cacheHandle(hash, value) {
+    const previous = this.handles.get(hash)?.value?.handle;
+    this.handles.set(hash, { value, epoch: this.native.runtimeEpoch });
+    if (previous && previous !== value.handle) this.native.release([previous]);
   }
   cancelJobs() {
     this.epoch++;
@@ -125,7 +168,7 @@ export class CadStore {
       ];
     }
     this.native.cancelAll();
-    this.handles.clear();
+    this.clearHandles();
     this.notify();
   }
   getEntity(entityId) {
@@ -153,10 +196,7 @@ export class CadStore {
       this.native.release([result.handle]);
       throw new Error("CAD_CANCELLED");
     }
-    this.handles.set(assetHash, {
-      value: result,
-      epoch: this.native.runtimeEpoch,
-    });
+    this.cacheHandle(assetHash, result);
     entity.displayCache = result.summary;
     return result;
   }
@@ -499,7 +539,9 @@ export class CadStore {
     if (isSplit(feature?.operation.id)) this.resolveBindings();
     if (doomed.has(this.activeFeature)) {
       this.native.cancelAll();
-      this.handles.clear();
+      this.clearHandles();
+    } else {
+      this.collectHandles();
     }
     this.notify();
   }
@@ -723,10 +765,7 @@ export class CadStore {
             resultHash: hash,
             displayCache: output.summary,
           };
-          this.handles.set(output.geometryHash, {
-            value: output,
-            epoch: this.native.runtimeEpoch,
-          });
+          this.cacheHandle(output.geometryHash, output);
           this.document.assets[output.geometryHash] ??= {
             format: "occt-brep",
             encoding: "utf-8",
@@ -887,6 +926,7 @@ export class CadStore {
       }
     }
     if (this.synchronizeSketchSupports()) this.queued = true;
+    this.collectHandles();
   }
   synchronizeSketchSupports() {
     let changed = false;
@@ -1016,8 +1056,7 @@ export class CadStore {
       throw error;
     }
     this.document = candidate;
-    for (const [hash, value] of imported)
-      this.handles.set(hash, { value, epoch: this.native.runtimeEpoch });
+    for (const [hash, value] of imported) this.cacheHandle(hash, value);
     for (const d of patch.commandDefinitions)
       if (
         !this.document.commandDefinitions.some(
@@ -1128,7 +1167,7 @@ export class CadStore {
       throw error;
     }
     this.document = candidate;
-    this.handles.set(assetHash, { value: output, epoch: this.native.runtimeEpoch });
+    this.cacheHandle(assetHash, output);
     this.transactions.record(before, this.document, "既存STEPをCAD履歴へ取り込み");
     this.notify();
     return entityId;
@@ -1321,6 +1360,7 @@ export class CadStore {
   commitRestore(prepared) {
     this.native.cancelAll();
     this.epoch++;
+    this.clearHandles();
     this.handles = prepared.handles;
     this.document = prepared.document;
     this.transactions.clear();

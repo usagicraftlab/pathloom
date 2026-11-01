@@ -15,6 +15,12 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
   let previewSourceIds = [];
   let previewHasDelta = false;
   const shown = new Map();
+  const collectedResources = {
+    objects: 0,
+    geometries: 0,
+    materials: 0,
+    textures: 0,
+  };
   function ensure() {
     const { THREE, scene } = preview();
     if (!scene) return false;
@@ -52,11 +58,59 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
     return true;
   }
   function dispose(object) {
+    const geometries = new Set(),
+      materials = new Set(),
+      textures = new Set();
+    let objects = 0;
     object.traverse((node) => {
-      node.geometry?.dispose();
-      node.material?.dispose();
+      objects++;
+      if (node.geometry) geometries.add(node.geometry);
+      const values = Array.isArray(node.material)
+        ? node.material
+        : node.material
+          ? [node.material]
+          : [];
+      for (const material of values) {
+        materials.add(material);
+        for (const value of Object.values(material))
+          if (value?.isTexture) textures.add(value);
+      }
     });
+    for (const texture of textures) texture.dispose();
+    for (const material of materials) material.dispose();
+    for (const geometry of geometries) geometry.dispose();
+    collectedResources.objects += objects;
+    collectedResources.geometries += geometries.size;
+    collectedResources.materials += materials.size;
+    collectedResources.textures += textures.size;
     object.parent?.remove(object);
+  }
+  function resourceStats() {
+    const objects = new Set(),
+      geometries = new Set(),
+      materials = new Set(),
+      textures = new Set();
+    for (const root of [group, previewGroup].filter(Boolean))
+      root.traverse((node) => {
+        objects.add(node);
+        if (node.geometry) geometries.add(node.geometry);
+        const values = Array.isArray(node.material)
+          ? node.material
+          : node.material
+            ? [node.material]
+            : [];
+        for (const material of values) {
+          materials.add(material);
+          for (const value of Object.values(material))
+            if (value?.isTexture) textures.add(value);
+        }
+      });
+    return {
+      objects: objects.size,
+      geometries: geometries.size,
+      materials: materials.size,
+      textures: textures.size,
+    };
   }
   function draw(
     summary,
@@ -411,6 +465,8 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
         removedPreviewCount: previewGroup?.children.filter((object) => object.userData.entityId === "$removed").length || 0,
         addedVolumeMm3: previewGroup?.children.filter((object) => object.userData.entityId === "$preview").reduce((sum, object) => sum + object.userData.volumeMm3, 0) || 0,
         removedVolumeMm3: previewGroup?.children.filter((object) => object.userData.entityId === "$removed").reduce((sum, object) => sum + object.userData.volumeMm3, 0) || 0,
+        resources: resourceStats(),
+        collectedResources: { ...collectedResources },
       };
     },
     project(point) {

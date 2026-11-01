@@ -98,6 +98,34 @@ test("R01 latest preview wins and superseded handles are released", async () => 
   assert.equal(await a, null);
   assert.ok(native.released.includes("old"));
 });
+test("P4 native handle GC keeps only current entity hashes and releases replacements", () => {
+  const native = fakeNative(),
+    store = new CadStore(native);
+  store.document.entities = [
+    { id: "current", geometry: { assetHash: "live" } },
+  ];
+  store.handles.set("live", { value: output("live-handle"), epoch: 1 });
+  store.handles.set("retired", {
+    value: output("retired-handle"),
+    epoch: 1,
+  });
+  assert.deepEqual(store.collectHandles(), {
+    reachable: 1,
+    cached: 1,
+    released: 1,
+  });
+  assert.deepEqual(store.handleCacheStats(), { reachable: 1, cached: 1 });
+  assert.deepEqual(native.released, ["retired-handle"]);
+
+  store.cacheHandle("live", output("replacement-handle"));
+  assert.deepEqual(native.released, ["retired-handle", "live-handle"]);
+  assert.equal(store.clearHandles(), 1);
+  assert.deepEqual(native.released, [
+    "retired-handle",
+    "live-handle",
+    "replacement-handle",
+  ]);
+});
 test("R02 unrelated document revision does not discard a correct feature result", async () => {
   const native = fakeNative(),
     store = new CadStore(native);
@@ -257,6 +285,7 @@ for (const action of ["undo", "delete", "restore"]) {
     gate.release();
     await editing;
     assert.ok(native.released.includes("obsolete"));
+    assert.ok(native.released.includes("initial"));
     assert.equal(store.document.assets.obsolete, undefined);
     if (action === "undo") {
       assert.equal(store.document.features[0].parameters.end[0], 20);
@@ -330,6 +359,16 @@ test("AUD-001 asset import records the requested hash while the source entity ch
   assert.equal(resolved.prepared.object[0].geometryHash, "initial");
   assert.equal(store.handles.has("changed-during-import"), false);
   assert.equal(store.handles.get("initial").value.geometryHash, "initial");
+});
+test("P4 runtime epoch replacement releases the stale cached handle", async () => {
+  const { native, store, feature } = await committedLine(),
+    entity = store.getEntity(feature.outputSlots[0].entityId);
+  native.runtimeEpoch++;
+  native.importAsset = async () => output("initial-reimport");
+  const imported = await store.handle(entity);
+  assert.equal(imported.handle, "initial-reimport");
+  assert.ok(native.released.includes("initial"));
+  assert.equal(store.handleCacheStats().cached, 1);
 });
 test("AUD-001 a failed add cannot roll back unrelated edits made while evaluating", async () => {
   const native = fakeNative(),

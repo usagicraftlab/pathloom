@@ -82,6 +82,7 @@ Issue #19開始時の再列挙では、後続Issue #12〜#18の実装を含む�
 | 立体作成 B | 5 / 8 | Box/Sphere/Cylinder/Cone/Torusの一部 | Ellipsoid等の全モード、B07専用の面押出経路が未完。Pipe/Cap・閉体積組立未実装 |
 | 立体編集 D | 7 / 9 | 単一対象Boolean、semantic edgeのFillet、開口面を指定したShellの一部 | D02にAUD-002、D04にAUD-003。Chamfer等のper-ID fixture不足。一般MoveFace/SplitFace未実装 |
 | 共通基盤 | 65 ID外も含む | DAG、参照の明示的修復、単調revisionのUndo、正本保存、世代管理、型付きLibrary ID再割当、未知版の原文保持読取専用回復 | AUD-001、P4-03、R11。一般Modified/Generated伝播と実Mac回復は未完 |
+| 性能・資源寿命 | 共通 | Issue #23の再現可能なLinux計測器。entity到達性によるnative handle GC、置換／非表示／previewのThree.js geometry・material・texture dispose、現在／累積資源診断 | P4-04。Linux合成値は相対比較のみ。実Mac GUI/Tauri性能はIssue #37 |
 | スケッチ | 共通 | Workerソルバー、長方形寸法、線/円の限定fixture、未収束時の入力保持 | GUIからの任意スケッチ、円/円弧/NURBS等の形状化、ドラッグ、拘束glyph、スケール/成分分離/衝突候補診断の網羅は未完 |
 | 保存・連携 | 共通 | v1/v2検証、hash付き正本、全project回復候補、未知版読取専用、typed Library移行、body bindingの部品テスト | 代替storage browserまで実施。実OSでの全体回復、失敗分岐隔離、複数生成グラフの自動更新は検証不足/未完 |
 
