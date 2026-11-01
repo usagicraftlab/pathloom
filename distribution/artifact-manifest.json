@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "artifacts": [
+    {"path":"vendor/three/three.module.js","sha256":"ce1fa418de16a19495a9f72495580e3015d7745c296d3ce0485897f902ddedfb","source":"Three.js r170"},
+    {"path":"vendor/three/OrbitControls.js","sha256":"80efaadea4f8a636a65fb0bd08bfef62f3d93a0bb94e2e7500f23176c5c07f4e","source":"Three.js r170"},
+    {"path":"vendor/three/LICENSE","sha256":"4c40a1ef62450b857c3b2aaf294936304cd552d965fbcd9d32d4c5bcf4ba4454","source":"Three.js r170"},
+    {"path":"vendor/dxf/dxf-parser.js","sha256":"445dd62529369a4ef32520d8b6232031ea8af01f1029b08b2d876ff6b7807b7b","source":"bundled dxf-parser artifact"},
+    {"path":"vendor/dxf/LICENSE","sha256":"56eb37102e6e49ce363e8021f017fe0a6de61d3705273bed307110a3386cb42f","source":"dxf-parser MIT license"},
+    {"path":"vendor/clipper/clipper.js","sha256":"a650c6946682edc1a64016f6553eeb5c32ce45eb7ca0ad5d8221961af011d97c","source":"Clipper 6.4.2"},
+    {"path":"vendor/clipper/clipper-browser.js","sha256":"856b1375facd95ce0af0138c36a968bd567237b58ce62034bef33648d053f09e","source":"Pathloom browser adapter for Clipper 6.4.2"},
+    {"path":"vendor/clipper/clipper-env.js","sha256":"406135974b4cc23b3f32a1b8de7a29bc2b7a5e41680cdea5def85eadd5d6ad4f","source":"Pathloom environment adapter for Clipper 6.4.2"},
+    {"path":"vendor/clipper/LICENSE.txt","sha256":"85517ec7c0dad9f10be2245cc11c741609ab283f71eb27a3676e1a4ab2dd21ed","source":"Boost Software License 1.0"},
+    {"path":"vendor/quickjs/runtime.js","sha256":"6a5da182b92a9656e93c2e100378309aa622735214fdd486ef583462b65dd730","source":"quickjs-emscripten 0.32.0 adapter"},
+    {"path":"vendor/quickjs/LICENSE","sha256":"446a69ae534aa8612d8b16d3bfc670c5a5050597dca3ce9820441a60d5d04fbb","source":"quickjs-emscripten MIT license"},
+    {"path":"vendor/occt/occt-import-js.js","sha256":"3fb44ce11d00611f9b3f3c5775d520ebab48930c1f08279b7b1316f05f0d3379","source":"occt-import-js 0.0.23","sourceCommit":"c2148e54b456b571238d35cac037d304053d64b2"},
+    {"path":"vendor/occt/occt-import-js.wasm","sha256":"33391fc9d94ea5c869a6718488bf0a9a464222bac9bdc764dfe1690cef281952","source":"occt-import-js 0.0.23","sourceCommit":"c2148e54b456b571238d35cac037d304053d64b2"},
+    {"path":"vendor/occt/occt-import-js-worker.js","sha256":"21aab8ac184f6ebb549e66fc38f6254250da1820daea981606b30c9a47a1762d","source":"Pathloom worker adapter","sourceCommit":"repository history"},
+    {"path":"vendor/notices/OCP-LICENSE","sha256":"a13caea71627202ad33cc4cafafdd18e667e16716488f8d9c568127121fb89fd","source":"cadquery-ocp wheel 7.8.1.1.post1"},
+    {"path":"vendor/notices/VTK-LICENSE","sha256":"11232448be82e0ea2c2c66219c2e36389f42249894070ee10c549ff182fc08b6","source":"VTK wheel 9.3.1"},
+    {"path":"vendor/occt/LICENSE.occt-import-js.txt","sha256":"7ffe1954587c77dfba1cf8eb9b2ea743671fa6e63f9e7a2f258119d42e14eefe","source":"LGPL-2.1 text"},
+    {"path":"vendor/occt/LICENSE.occt.txt","sha256":"090f8eb6ba63e72887c1f89b009fb1656cfda02d83b6e9805b20468520a5d77f","source":"LGPL-2.1 text"},
+    {"path":"vendor/occt/OCCT_LGPL_EXCEPTION.txt","sha256":"04580a884ea6cea294402649ff7b5cbb167d47462d1340a4ed33e550db10a81b","source":"OCCT 7.6.1 commit d2abb6d844231cb8f29be6894440874a4700e4a5"}
+  ]
+}

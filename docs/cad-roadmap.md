@@ -112,7 +112,11 @@ M01の残りとM02以降のGUI/OS実利用は未実施。インストールし�
   Issue #23は[再現可能なLinux基準値とGC契約](cad-performance.md)に従い、全sampleを
   `cad-performance-baseline.json`へ残す。合成モデルのLinux値をMac性能の達成根拠にしない。
 - Python/OCPの配備と探索、配布物の依存版・第三者表示・source/rebuild手順を確認する。
-  既存の[第三者ソフトウェア表示](../THIRD_PARTY_NOTICES.md)の未完事項を引き継ぐ。
+  Issue #24はPython 3.12／cadquery-ocp 7.8.1.1.post1／VTK 9.3.1の別置きruntimeを
+  hash付きlockから同期し、版と実B-rep startup probeを検証する。配布frontendへ
+  [第三者ソフトウェア表示](../THIRD_PARTY_NOTICES.md)、artifact hash、対応source commit、
+  [再構築・置換手順](../distribution/SOURCE_AND_REBUILD.md)を含めて機械検査する。
+  `.app`へのPython同梱や実Mac GUI／dialog／app・DMG合格はIssue #37へ残す。
 
 ## 各PRで残すもの
 

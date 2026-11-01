@@ -2196,3 +2196,57 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   全3job成功した。全6jobの生ログを照合し、各runでJS 237成功、native全105件中103成功・
   任意NVIDIA USD 2skip、macOS Rust 24成功、browser 89成功（retryなし）を確認した。
   このCI証拠を含む最終文書commitにも同じ全CIを要求し、その確認前はReady／mergeしない。
+
+## 2026-11-02 — 指示024 / Issue #24 配布
+
+- 最新main `41924e239f5299d37f3f5f5dd46843d214fed1ce`とpost-merge checks
+  `41335710265` attempt 1の全job successを確認し、同SHAから`feat/24-distribution`を作成した。
+  指示024だけを`作業中`へ変更・読戻し後、範囲をボードとIssue #24へ記録した。
+- Python/OCP/VTKは`.app`へ埋め込まず、Python 3.12の別置きruntimeを維持する。
+  `cadquery-ocp 7.8.1.1.post1`、OCP表示7.8.1.1、VTK 9.3.1と全13 Python packageを
+  wheel hash付きlockへ固定し、setupを`uv pip sync --require-hashes`へ変更した。版照合に加え、
+  実OCPで1×2×3 boxのvalidity／volume 6を確かめるstartup probeを追加した。
+- 配布frontendへ第三者表示、runtime/artifact manifest、Python lock、source/rebuild guideを含める。
+  既存vendor 19ファイルをSHA-256で照合し、occt-import-js 0.0.23 commit `c2148e54...`、
+  OCCT 7.6.1 commit `d2abb6d...`、Emscripten 3.1.69のsource取得・rebuild・pair置換手順と
+  OCCT追加例外本文を保持した。npm/Cargoの全推移版は既存lockfileを正本とする。
+- 実装中の対象確認ではruntime probe、distribution検査、新規unitが成功した。指定の全JS、
+  native、browser、local Rust、CIはまだ未実施であり、この中間結果を最終合格へ使わない。
+  実Mac GUI/Tauri/OS dialog、Finder launch、sign/notarize、Issue #37は対象外のまま未実施。
+- fresh setupの初回は、既存ignored runtimeに`bin/python3 -> python`だけが残り`bin/python`本体が
+  欠けた不完全environmentを検出したが、旧setupが既存directoryをclearできずexit 1となった。
+  この失敗を成功へ置換しない。setupを「期待するPython実体がなければ同じignored environmentだけを
+  `uv venv --clear`で再作成」へ修正した再実行は13 packageをlockどおり導入し、版照合と実B-rep
+  probeに成功した。続く独立`npm run cad:verify`も成功した。
+- ローカル全検証ではNode 24.22.1と厳密なNode 20.20.2の全JSが各239成功
+  （失敗／skip 0）、native全105件は103成功・任意NVIDIA USD 2skipだった。local Rustは
+  `cargo`不在で未実行。`npm run distribution:verify`、desktop配布物準備、新規distribution unit
+  2件、別置きruntime setup／独立probeも成功した。
+- browser全89件はretryなしで起動したが、Playwright Chromium実行体がないため全件がtest body前の
+  `browserType.launch`で失敗した。`npx playwright install chromium`も5回すべて0 MiBの応答を
+  ZIPとして展開できずexit 1となった。この環境準備失敗を製品test失敗または成功へ置換しない。
+  必須browser検証を実行できないため、PR作成・CI・Ready・merge・Issue #24自動closeは行わず、
+  指示024を要判断としてMuseへ報告する。残件は利用可能なChromiumでのbrowser全89件、全CI、
+  Draft PR作成、完了条件照合、Ready／merge／Issue自動closeである。
+- 05:40 JSTのMuse判断で、push／PR両CIのbrowser 89件を含む全3job successを全job生ログで
+  照合する条件により、CI browserをこの環境のローカルbrowser代替として進める許可を受けた。
+  指示024を`作業中`へ戻して再開する。ローカルbrowserはtest body未実行のまま成功扱いせず、
+  CI browserに未知の失敗が残る場合は要判断へ戻す。local Rust未実行も従来どおりCIと区別する。
+- 通常の`git push`はGitHub認証情報不在で失敗し、成功へ置換しない。同一tree
+  `a812062dbc3ba63466764328b549cc292b18e20c`をGit Data APIでbranchへ反映し、Draft PR #55を
+  作成した。製品head `3d810f2e17b881d0fc9955317d2467c6d66f55c1`のpush run
+  `41348297459`とPR run `41348313900` attempt 1は、どちらもJS 239成功後、CIのsystem Pythonに
+  対してuvがvirtual environmentを要求したためPython lock同期で失敗し、native／probe／browserは
+  未実行だった。全4失敗jobの生ログで同じexit 2を確認した。製品test失敗や成功へ置換しない。
+  CI専用commandへ`--system`を追加し、訂正headのpush／PR両runで全検証をやり直す。
+- 最初に転送した訂正commit `935db81f7020b951b9a6b0dbcd9549ff8e75cfab`（tree
+  `796d00a0519827560fdd9b5e48cdf6ed033d485f`）は、大きい開発ログがツール出力上限で途中切断され、
+  ローカルtreeと一致しないことを読戻しで検出した。この不適格headのpush run `41348443682`と
+  PR run `41348449787`はattempt 1 cancelledであり、合格に使用しない。remoteの完全な既存blobへ
+  ローカル差分だけを付加して訂正し、製品head `4cbcdd84f816b0d71af88c1a46631caf6d8d325f`の
+  tree `1f95c9e50b82afd72766f92564f854b7464accf5`がローカルHEAD treeと一致することを確認した。
+- この製品headのpush run `41348490347`とPR run `41348495374`はいずれもattempt 1で全3job成功した。
+  全6jobの生ログを照合し、各runでJS 239成功、native全105件中103成功・任意NVIDIA USD 2skip、
+  macOS Rust 24成功、browser 89成功（retryなし）を確認した。ローカルbrowserはChromium取得不能のため
+  test body未実行のままであり、このCI成功へ置換しない。このCI証拠を含む最終文書commitにも同じ
+  push／PR両CIを要求し、その全job生ログ確認前はReady／mergeしない。

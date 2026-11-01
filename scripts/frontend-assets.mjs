@@ -7,4 +7,4 @@ export async function frontendFiles() {
   const entries = await readdir(frontendRoot, {withFileTypes: true});
   return ['index.html', 'style.css', 'THIRD_PARTY_NOTICES.md', 'samples/ukigara-clock.toolpath', ...entries.filter(e => e.isFile() && e.name.endsWith('.js')).map(e => e.name)].sort();
 }
-export const frontendDirectories = ['vendor','cad'];
+export const frontendDirectories = ['vendor','cad','distribution'];

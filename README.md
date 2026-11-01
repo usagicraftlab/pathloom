@@ -103,16 +103,20 @@ npm run cad:setup
 npm start
 ```
 
-`cad:setup` provisions an ignored Python 3.12 / cadquery-ocp 7.8.1.1 runtime under
-`.pathloom-runtime/`. You may instead set `PATHLOOM_BREP_PYTHON` to a compatible
-interpreter. The CAD Python environment is not embedded in the app bundle yet;
-distribution machines need it provisioned. Standard STEP editing does not need
-NVIDIA USD BRep or `occt_to_usd`. Legacy USD assets remain readable through the
-compatibility path.
+`cad:setup` provisions and verifies an ignored Python 3.12 /
+cadquery-ocp 7.8.1.1.post1 / VTK 9.3.1 runtime under `.pathloom-runtime/` from a
+hash-locked transitive inventory. You may instead set `PATHLOOM_BREP_PYTHON` to
+a compatible interpreter; run `npm run cad:verify` for the default local runtime.
+The CAD Python environment is deliberately provisioned separately rather than
+embedded in the app bundle. Standard STEP editing does not need NVIDIA USD BRep
+or `occt_to_usd`. Legacy USD assets remain readable through the compatibility
+path. See the [distribution/source/rebuild guide](distribution/SOURCE_AND_REBUILD.md)
+and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ```sh
 npm run mac:build       # .app + .dmg
 npm run desktop:prepare # frontend assets only
+npm run distribution:verify # release pins, notices and artifact hashes
 ```
 
 Development and packaging discover frontend modules through one asset manifest
