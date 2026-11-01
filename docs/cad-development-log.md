@@ -2040,3 +2040,15 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   新規DSL 2件はこのrunでも成功したが、全件合格には使用しない。欠けていたSwiftShaderを
   明示的に展開した後、retry無効の全87件を再実行し87成功（失敗/skip/retry 0）を確認した。
   33失敗の履歴を後続87成功へ置換しない。PR/CI/merge/Issue自動closeはこの時点で未実施。
+
+### 指示020 製品実装headのpush/PR CI（最終文書commit前）
+
+- 同一tree `43f1e17c06bc0997919f57a8f19ea75ae30b76cf`をGitHub Git Data APIで
+  `feat/20-command-dsl`へ反映し、Draft PR #50を作成した。直接`git push`は認証情報不在で
+  失敗したため、成功へ置換しない。
+- remote head `9d60d7524c2bde1f4dd3af8f4c9cceba53961f54`のpush checks
+  `41263257447` attempt 1とPR checks `41263272109` attempt 1は、いずれも全3job成功した。
+  全6jobの生ログを照合し、各runでNode20.20.2 JS 224成功、native全105件中103成功・
+  任意NVIDIA USD 2skip、macOS Rust 22成功、browser 87成功を確認した。
+- このCI記録を含む最終文書commitのpush/PR CIを再確認するまで、PRはDraftのままReady、
+  merge、Issue自動closeを行わない。指示021〜024、Issue #37、Draft PR #43には着手しない。
