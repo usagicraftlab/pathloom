@@ -2157,3 +2157,42 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   attempt 1で全3job成功した。両runの生ログはJS 233成功、native 105件中103成功・任意2skip、
   macOS Rust 24成功、browser 89成功（retryなし）を示した。このCI証拠を追記する文書commitにも
   同じ全CIを要求し、完了前に生ログを確認する。
+
+## 2026-11-02 — 指示023 / Issue #23 性能基準と資源GC
+
+- 開始時に最新main `a88a66d9afc1a0369e305d3a303d6aae5746f0f7`（tree
+  `543f10e60230d740c2919666d353540468ba7c52`）とpost-merge main run
+  `41324227776` attempt 1 successを確認した。小／中／大の代表モデルで表示、実OCP再計算、
+  B-rep転送、起動、RSSを測り、native handleと表示資源のGC前後を比較する範囲をボードと
+  Issue #23へ記録した。Linux合成値はMac性能達成の根拠にしない。
+- `CadStore`へentity asset hash到達性によるhandle GC、全clear時のnative release、同じhashの
+  handle置換時の旧handle releaseを追加した。削除・再計算・Undo／Redo・cancel・Open／restore・
+  runtime epoch切替で不要handleを残さない。exact assetは文書正本に残るため、必要時は再importする。
+- view adapterはgeometryだけでなくmaterial配列とmaterial内textureも重複なくdisposeし、
+  `displayState()`へ現在資源数と累積回収数を追加した。25 entityを20世代置換する対象unitでは
+  live geometry/materialが各75で有界、削除後0、回収各1575だった。
+- `node --expose-gc scripts/cad-performance.mjs`を追加し、全sampleを
+  `docs/cad-performance-baseline.json`へ保存した。Node 24.22.1／Python 3.12.14／OCP 7.8.1.1／
+  Linux x86_64で、表示medianは1/25/100 entityが0.686/1.358/3.246 ms、実OCP box
+  1/20/60個の再計算medianは7.268/124.271/384.402 ms、転送は0.131/0.205/0.436 ms、
+  runtime起動medianは1008.429 ms。CadStoreの21世代fixtureは21→1、525→25、2100→100 handle、
+  Runtime releaseは1→0、20→0、60→0だった。release後RSSは即時低下せず、allocator返却の証拠としない。
+- 初回対象run `node --test tests/cad-jobs.test.mjs tests/cad-performance.test.mjs`は
+  19成功・失敗0だった。全JS/native/browserとCIはこの後に実行し、未実施の段階では成功扱いしない。
+- 最終ローカルはNode 24.22.1 `npm test`とNode 20.20.2全JSが各237成功
+  （失敗／skip 0）、native全105件は103成功・任意NVIDIA USD 2skipだった。browser全89件の
+  初回run（retryなし）は88成功で、既存P3 `command reorder requires edit mode and object drag
+  creates a ready generation binding`が並び順期待C04<C02に対してC04 index 3／C02 index 1となり
+  1失敗した。同testの即時単独再実行（retryなし）は1成功だった。初回失敗を単独成功へ置換しない。
+  local Rustはcargo不在で未実行。実Mac GUI／Tauri／OS dialog、Issue #37も未実施であり、
+  Linux測定・自動テスト・CIを実Mac性能合格へ置換しない。
+- PR、CI、Ready、merge、Issue #23自動closeはこの時点では未実施。指示024、Issue #37、
+  Draft PR #43には着手していない。
+- 通常の`git push`はGitHub認証情報不在で失敗し、成功へ置換しない。同一tree
+  `30769055ec13eb2c9dc94706788443332aef44f0`をGitHub Git Data APIで
+  `feat/23-performance-improvements`へ反映し、remote commit
+  `8fbe77aa3e63becc031bedc5907069a9a44d6b63`、Draft PR #54を作成した。
+- この製品headのpush run `41333672950`とPR run `41333685484`はいずれもattempt 1で
+  全3job成功した。全6jobの生ログを照合し、各runでJS 237成功、native全105件中103成功・
+  任意NVIDIA USD 2skip、macOS Rust 24成功、browser 89成功（retryなし）を確認した。
+  このCI証拠を含む最終文書commitにも同じ全CIを要求し、その確認前はReady／mergeしない。
