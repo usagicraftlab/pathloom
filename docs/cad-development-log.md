@@ -2002,3 +2002,41 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   置換しない。local browser未実行、local Rust未実行もCI成功へ置換しない。
 - この記録を含む最終文書commitのCIを確認するまで、PRはDraftのままReady、merge、
   Issue自動closeを行わない。Issue #37、Draft PR #43、Phase 4には着手しない。
+
+## 2026-11-01 — 指示020 / Issue #20 command DSL・AI command編集の開始
+
+- 最新ボードの指示020を`未着手`から`作業中`へ`requiredRevisionId`付きで変更し、
+  読み戻してから着手した。最新main `5ca4de9032b95c1017174a10dd9247dc7f924735`
+  から`feat/20-command-dsl`を作成した。これはPR #49のmerge commitであり、Issue #19の
+  自動closeも確認済み。post-merge main checks `41215926987` attempt 1は全3job成功し、
+  生ログでNode20.20.2 JS 218成功、native全105件中103成功・任意NVIDIA USD 2skip、
+  macOS Rust 22成功、browser 85成功を確認した。Deploy Pages `41216783212` attempt 1も成功した。
+- 正規65 IDを単一registryから可逆変換する`PATHLOOM COMMAND DSL 1`、行単位のtyped診断、
+  alias衝突の新名・別alias・中止、既存版を上書きしない文書版固定、明示的upgrade/rollback、
+  既存ローカルAI接続を再利用した新version提案と適用前レビューを実装した。任意JavaScriptは
+  評価せず、native operationの意味変更も許可しない。S系コマンド意味、Issue #37、
+  指示021〜024、Draft PR #43、Phase 5以降は対象外とした。
+- 追加unit 5件の初回対象実行は5成功。追加後最初のNode24.22.1全JSは223件中222成功・
+  1失敗だった。既存のcommand adapter testが小文字`collision`を期待した一方、新typed errorの
+  messageが大文字`COLLISION`のみだった互換性失敗であり、error codeを維持したまま旧来の
+  `Alias collision`文言を併記して修正した。失敗runを後続成功へ置換しない。
+- 追加browser 2件の初回はPlaywright実行体不在でtest body前に失敗した。
+  `npx playwright install chromium`もCDNから0 MiB/truncated zipとなり反復失敗後に中止した。
+  npm配布Chromiumの初回展開は`chown` errorで空の`/tmp/chromium`を残し、最初のlaunchも
+  test body前に失敗した。再展開後はfixtureが`.pathloom-runtime/python`不在で終了し、
+  2件ともassert前に失敗した。OCPを備えたsystem PythonとFONTCONFIGを明示した最初の製品実行は
+  1成功・1失敗で、失敗はtextareaへ`toContainText`を使ったtest側assertだった。
+  `toHaveValue`へ修正した直後の追加browser再実行は2成功、失敗/skip/retry 0だった。
+- catalog内で複数の新commandが同じaliasを持つ場合も登録前に検出し、既存registry、文書版、
+  native operationを全件preflightしてから変更するようにした。最終のNode24/Node20全JS、
+  native全件、browser全件、local Rust可否、PR/CI/merge/Issue closeはこの時点で未実施である。
+- preflight回帰を1件追加した最終ローカル全JSは、Node24.22.1 `npm test`と
+  Node20.20.2 `node --test tests/*.test.mjs`が各224成功（失敗/skip 0）だった。
+  Python/OCP native全105件は103成功・任意NVIDIA USD 2skip、失敗0。local Rustは
+  `cargo`不在で未実行。実Mac GUI/Tauri/OS dialog/Issue #37も未実施のままである。
+- local browser全87件の最初の全件runは54成功・33失敗だった。最初のnpm Chromium展開が
+  `chown` error後に実行体だけを残し、SwiftShader共有libraryを展開していなかったため、
+  既存の描画系が`Error creating WebGL context`またはview未初期化で失敗した環境不備である。
+  新規DSL 2件はこのrunでも成功したが、全件合格には使用しない。欠けていたSwiftShaderを
+  明示的に展開した後、retry無効の全87件を再実行し87成功（失敗/skip/retry 0）を確認した。
+  33失敗の履歴を後続87成功へ置換しない。PR/CI/merge/Issue自動closeはこの時点で未実施。

@@ -97,6 +97,9 @@ M01の残りとM02以降のGUI/OS実利用は未実施。インストールし�
 
 - command DSL、別名衝突、保存版固定、明示的なupgrade/rollback、AIによるコマンド編集を完成させる。
   既存AI Componentの方式・ローカル認証・隔離QuickJSを維持する。
+  Issue #20は[実装境界と証拠](cad-command-dsl-plan.md)に従い、正規65 IDのregistry由来DSL、
+  衝突の明示解決、文書へのimmutable版固定、履歴の明示upgrade/rollback、既存ローカルAI経路を
+  実装する。C/Eの確定事項を保持し、確認継続中のS系の意味は変更しない。
 - 任意スケッチの要素・拘束・ドラッグ・寸法表示、非線形ソルバーの成分分離/スケーリング/診断を仕様に沿って拡張する。
 - CAD以外を含む回復、未知schema/operation版の読取専用回復、Library移行を仕上げる。
 - 代表モデルで表示/再計算/転送/起動/メモリを測り、handle・表示cacheのGCを改善する。

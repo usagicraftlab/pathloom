@@ -1107,6 +1107,22 @@ Rectangleの平面は現在の作業平面を既定とし、毎回の選択を�
 
 新しい入力計算が必要な場合は、既存adapterのデータ演算DSLを拡張する。許可演算は初期値として`projectToPlane`、`subtract`、`abs`、`multiply`、`distance`、`angle`、`makeAxis`、`mapFields`に限定。型検査し、ファイル・ネットワーク・任意関数呼出しは提供しない。
 
+### 20.6 command DSL・版管理・AI編集
+
+公開command definitionのテキスト表現は`PATHLOOM COMMAND DSL 1`で版を固定する。
+`command "<id>" version <integer>`から`end`までを1定義とし、display、aliases、
+category、description、operation、mode、adapter、result、inputs、defaults、settingsを
+JSON値として表す。parserは行番号付き診断を返し、式評価や任意コード実行を行わない。
+正規65 IDは単一command registryから生成し、DSL側に別のcommand一覧を持たない。
+
+ID・表示名・aliasの衝突時は既存定義を変更せず、新名、代替alias、採用中止を明示する。
+同じIDの定義変更は既存versionを上書きせず新versionにする。履歴のupgrade/rollbackは
+同じnative operationの既知version間だけを対象にし、旧版と新版を文書へ保存してUndo対象にする。
+
+AI編集は既存AI Componentと同じローカルCodexの接続・認証を使い、提案をDSLとして
+利用者へ返す。ID/native operationの変更、既存版の上書き、任意JavaScriptを拒否する。
+versioned Code Componentの隔離QuickJS実行経路は変更しない。
+
 ## 21. スケッチ拘束ソルバーの実装仕様
 
 ### 21.1 モデルと変数

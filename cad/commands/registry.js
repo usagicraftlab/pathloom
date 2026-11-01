@@ -1,6 +1,11 @@
 import { clone, WORLD_XY } from "../document.js";
 const definitions = new Map(),
   knownOperations = new Set();
+const normalizedCommandToken = (value) => value.trim().normalize("NFKC").toLowerCase();
+const commandTokens = (definition) =>
+  [definition.id, definition.displayName, ...definition.aliases]
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => ({ value, normalized: normalizedCommandToken(value) }));
 export function validateCommandDefinition(raw) {
   const d = clone(raw);
   if (
@@ -83,17 +88,57 @@ export function registerCommand(raw, { builtin = false } = {}) {
   const key = `${d.id}@${d.version}`;
   if (definitions.has(key))
     throw new Error("Command version already registered");
-  const alias = d.aliases.find((alias) =>
-    [...definitions.values()].some(
-      (o) =>
-        o.id !== d.id &&
-        o.aliases.some((a) => a.toLowerCase() === alias.toLowerCase()),
-    ),
-  );
-  if (alias) throw new Error("Alias collision: " + alias);
+  const conflicts = findCommandTokenConflicts(d);
+  if (conflicts.length) {
+    const error = new Error(
+      `CAD_COMMAND_ALIAS_COLLISION: Alias collision: ${conflicts.map((entry) => entry.token).join(", ")}`,
+    );
+    error.code = "CAD_COMMAND_ALIAS_COLLISION";
+    error.conflicts = conflicts;
+    throw error;
+  }
   definitions.set(key, clone(d));
   if (builtin) knownOperations.add(d.baseOperation.id);
   return d;
+}
+export function allCommandDefinitions() {
+  return [...definitions.values()].map(clone);
+}
+export function canonicalCommandDefinitions() {
+  return findCommands().filter((definition) => /^[CESFBD]\d{2}$/.test(definition.id));
+}
+export function findCommandTokenConflicts(raw) {
+  const candidate = validateCommandDefinition(raw);
+  const conflicts = [];
+  for (const token of commandTokens(candidate)) {
+    for (const existing of definitions.values()) {
+      if (existing.id === candidate.id) continue;
+      const matched = commandTokens(existing).find(
+        (entry) => entry.normalized === token.normalized,
+      );
+      if (matched)
+        conflicts.push({
+          token: token.value,
+          field: token.value === candidate.id
+            ? "id"
+            : token.value === candidate.displayName
+              ? "displayName"
+              : "alias",
+          existingId: existing.id,
+          existingVersion: existing.version,
+          existingToken: matched.value,
+        });
+    }
+  }
+  return conflicts.filter(
+    (entry, index, values) =>
+      values.findIndex(
+        (other) =>
+          other.token === entry.token &&
+          other.existingId === entry.existingId &&
+          other.existingVersion === entry.existingVersion,
+      ) === index,
+  );
 }
 export function findCommands(query = "") {
   query = query.trim().toLowerCase();
