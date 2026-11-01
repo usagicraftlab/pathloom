@@ -288,9 +288,6 @@ export function initModelWorkspace(api) {
   const measureButton = makeToolButton("↔", "2点の距離を測定");
   measureButton.id = "modelMeasure";
   measureButton.setAttribute("aria-label", "2点の距離を測定");
-  const arrayButton = makeToolButton("⠿", "配列コピー");
-  arrayButton.id = "modelArrayCopy";
-  arrayButton.setAttribute("aria-label", "配列コピー");
   const thumbnailToggle = makeToolButton("▧", "アウトライナーのサムネイル表示");
   thumbnailToggle.id = "modelThumbnailToggle";
   thumbnailToggle.setAttribute("aria-label", "サムネイル表示切替");
@@ -305,7 +302,6 @@ export function initModelWorkspace(api) {
   optionsItems.append(thumbnailToggle, commandDslButton, commandEditButton);
   optionsMenu.append(optionsSummary, optionsItems);
   // 配列コピーは機能ごと不採用。旧ダイアログを起動する入口は置かない。
-  arrayButton.disabled = true;
   commandBarTools.append(measureButton);
   const commandSearch = panel.querySelector("#modelCommandSearch").closest("label");
   const commandList = panel.querySelector("#modelCommands");
@@ -836,104 +832,6 @@ export function initModelWorkspace(api) {
   }
   dimensions.addEventListener("dblclick", editDisplayedDimension);
   projectedDimensions.addEventListener("dblclick", editDisplayedDimension);
-  const arrayDialog = document.createElement("dialog");
-  arrayDialog.className = "model-switch-dialog model-array-dialog";
-  arrayDialog.innerHTML = `<form method="dialog"><h3>配列コピー</h3><label>個数<input name="count" type="number" min="2" max="100" value="3"></label><label>間隔 XYZ mm<input name="spacing" value="20,0,0"></label><button value="cancel">キャンセル</button><button value="apply" class="primary">作成</button></form>`;
-  document.body.append(arrayDialog);
-  let arrayPreviewTimer = null, arrayPreviewSequence = 0, arrayPreviewPromise = Promise.resolve();
-  async function previewArrayCopies() {
-    clearTimeout(arrayPreviewTimer);
-    const sequence = ++arrayPreviewSequence;
-    const original = selection.length === 1 && store.getEntity(selection[0].entityId);
-    if (!original || !arrayDialog.open) return;
-    const document = store.document, outputs = [];
-    try {
-      await startRuntime();
-      const count = Number(arrayDialog.querySelector('[name="count"]').value);
-      const spacing = parseCoordinate(arrayDialog.querySelector('[name="spacing"]').value);
-      if (!Number.isSafeInteger(count) || count < 2 || count > 100) return;
-      native.release(previewHandles);
-      previewHandles = [];
-      for (let index = 1; index < count; index++) {
-        const command = clone(commandById("transform.move"));
-        command.resultPolicy = "independent";
-        const copySession = createCommandSession(command, {
-          selection: [{ entityId: original.id, entityKind: original.kind }],
-        });
-        copySession.parameters.translation = spacing.map((value) => value * index);
-        const result = await store.preview(copySession);
-        if (!result || !["ok", "warning"].includes(result.status))
-          throw new Error(result?.diagnostics?.[0]?.message || "配列のプレビューを作成できません。");
-        outputs.push(...result.outputs);
-        if (sequence !== arrayPreviewSequence || !arrayDialog.open || document !== store.document) {
-          native.release(outputs.map((output) => output.handle));
-          return;
-        }
-      }
-      previewHandles = outputs.map((output) => output.handle);
-      view.setPreview({ outputs }, { sourceEntityIds: [original.id] });
-      setStatus(`${count}個の等間隔配列をプレビューしています。`);
-    } catch (error) {
-      native.release(outputs.map((output) => output.handle));
-      if (sequence === arrayPreviewSequence && arrayDialog.open) report(error);
-    }
-  }
-  for (const input of arrayDialog.querySelectorAll("input"))
-    input.addEventListener("input", () => {
-      clearTimeout(arrayPreviewTimer);
-      arrayPreviewSequence++;
-      arrayPreviewTimer = setTimeout(() => { arrayPreviewPromise = previewArrayCopies(); }, 180);
-    });
-  arrayButton.addEventListener("click", () => {
-    const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
-    if (!entity) return setStatus("配列コピーする形状を1つ選択してください。");
-    arrayDialog.returnValue = "cancel";
-    arrayDialog.show();
-    setStatus("形状をドラッグして配列の間隔を決め、個数を調整してください。");
-    render({ keepProperties: true, keepHistory: true });
-    arrayPreviewPromise = previewArrayCopies();
-  });
-  arrayDialog.addEventListener("close", async () => {
-    clearTimeout(arrayPreviewTimer);
-    arrayPreviewSequence++;
-    await arrayPreviewPromise;
-    view.clearPreview();
-    native.release(previewHandles);
-    previewHandles = [];
-    if (arrayDialog.returnValue !== "apply") {
-      render({ keepProperties: true, keepHistory: true });
-      return;
-    }
-    try {
-      await startRuntime();
-      const original = selection.length === 1 && store.getEntity(selection[0].entityId);
-      if (!original) throw new Error("配列コピーする形状を1つ選択してください");
-      const count = Number(arrayDialog.querySelector('[name="count"]').value);
-      const spacing = parseCoordinate(arrayDialog.querySelector('[name="spacing"]').value);
-      if (!Number.isSafeInteger(count) || count < 2 || count > 100)
-        throw new Error("個数は2〜100の整数です");
-      let added = 0;
-      for (let index = 1; index < count; index++) {
-        const command = clone(commandById("transform.move"));
-        command.resultPolicy = "independent";
-        const copySession = createCommandSession(command, {
-          selection: [{ entityId: original.id, entityKind: original.kind }],
-        });
-        copySession.parameters.translation = spacing.map((value) => value * index);
-        if (await store.add(copySession)) added++;
-        else {
-          if (added > 1) store.transactions.squashLast(added, "配列コピー");
-          if (added) store.transactions.undo();
-          throw new Error("配列コピーを確定できませんでした。元形状を保持しました。");
-        }
-      }
-      if (added > 1) store.transactions.squashLast(added, "配列コピー");
-      setStatus(`${added + 1}個の等間隔配列を作成しました。`);
-      render();
-    } catch (error) {
-      report(error);
-    }
-  });
   gizmo.addEventListener("pointerdown", async (event) => {
     const handle = event.target.closest("button[data-gizmo]");
     if (!handle || session) return;
@@ -2381,6 +2279,7 @@ export function initModelWorkspace(api) {
       }
     }
   }
+  let activeCommandGroup = commandGroupDefinitions[0].id;
   function render({ keepProperties = false, keepHistory = false } = {}) {
     if (!panel.isConnected) return;
     $("modelStatus").textContent = status;
@@ -2453,28 +2352,28 @@ export function initModelWorkspace(api) {
       for (const command of pinned) pinnedSection.append(buildCommandButton(command));
       list.append(pinnedSection);
     }
-    for (const group of commandGroupDefinitions) {
-      const members = commands.filter((command) => commandGroup(command) === group.id);
-      if (!members.length) continue;
-      const section = document.createElement("details");
-      section.className = "model-command-group";
-      section.open = openCommandGroups.has(group.id) || !!q;
-      section.addEventListener("toggle", () => {
-        if (section.open) openCommandGroups.add(group.id);
-        else openCommandGroups.delete(group.id);
-      });
-      section.addEventListener("pointerenter", () => { section.open = true; });
-      const heading = document.createElement("summary");
-      heading.textContent = group.label;
-      heading.addEventListener("focus", () => { section.open = true; });
-      const buttons = document.createElement("div");
-      buttons.className = "model-command-group-buttons";
-      for (const command of members) {
-        buttons.append(buildCommandButton(command));
-      }
-      section.append(heading, buttons);
-      list.append(section);
+    // 指示026-1: グループは横並びタブで切り替え、選択中グループのアイコンだけを表示。
+    const tabs = document.createElement("div");
+    tabs.className = "model-command-tabs";
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "CADコマンドの分類");
+    const commandsPanel = document.createElement("div");
+    commandsPanel.className = "model-command-tab-panel";
+    const available = commandGroupDefinitions.filter((group) => commands.some((command) => commandGroup(command) === group.id));
+    if (!available.some((group) => group.id === activeCommandGroup)) activeCommandGroup = available[0]?.id || null;
+    for (const group of available) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "tab");
+      button.textContent = group.label;
+      button.dataset.groupId = group.id;
+      button.setAttribute("aria-selected", String(activeCommandGroup === group.id));
+      button.addEventListener("click", () => { activeCommandGroup = group.id; render({ keepProperties: true, keepHistory: true }); });
+      tabs.append(button);
     }
+    for (const command of commands.filter((candidate) => commandGroup(candidate) === activeCommandGroup))
+      commandsPanel.append(buildCommandButton(command));
+    list.append(tabs, commandsPanel);
     $("modelSession").textContent = session
       ? `${session.command.displayName} · ${session.state} · ${sessionReady(session) ? "入力済み" : "入力を選択してください"}`
       : "";
