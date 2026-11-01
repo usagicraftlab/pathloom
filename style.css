@@ -481,3 +481,10 @@ body[data-workspace-mode=model] .view-axis-buttons.view-cube{right:calc(var(--ca
 .model-options-items{position:absolute;right:0;top:calc(100% + 5px);min-width:184px;display:flex;flex-direction:column;gap:2px;padding:6px;border:1px solid rgba(158,172,186,.25);border-radius:9px;background:rgba(27,33,40,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px rgba(0,0,0,.22)}
 .model-options-items>button{text-align:left;min-height:29px;padding:5px 9px;border:0;border-radius:5px;background:transparent;font-size:11px}
 .model-options-items>button:hover{background:rgba(155,180,200,.16)}
+
+/* 指示026-1: Fusion風の水平タブ。旧縦展開グループは描画しない。 */
+.model-command-tabs{display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:thin;flex:1;min-width:0}
+.model-command-tabs>button{flex:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:7px 10px;background:transparent;color:inherit;font-size:11px;white-space:nowrap;cursor:pointer}
+.model-command-tabs>button[aria-selected="true"]{border-bottom-color:currentColor;background:rgba(143,165,180,.16)}
+.model-command-tab-panel{display:flex;align-items:center;gap:4px;flex-wrap:nowrap;min-width:0;overflow-x:auto;scrollbar-width:thin}
+.model-command-tab-panel .model-command-button{flex:none}
