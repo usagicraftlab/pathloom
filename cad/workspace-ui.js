@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 46977)
-Total output lines: 4059
-
 import { packageShapes } from "./shape-library.js";
 import { readLibraryContainer, writeLibraryContainer } from "../recovery-migration.js";
 import { constrainedRectangle } from "./sketch/model.js";
@@ -1091,7 +1088,1542 @@ export function initModelWorkspace(api) {
   objectMenu.setAttribute("role", "menu");
   objectMenu.hidden = true;
   document.body.append(objectMenu);
-  const…16977 tokens truncated…"].entries()) {
+  const historyMenu = document.createElement("div");
+  historyMenu.className = "model-object-menu";
+  historyMenu.setAttribute("role", "menu");
+  historyMenu.hidden = true;
+  document.body.append(historyMenu);
+  function closeHistoryMenu() {
+    historyMenu.hidden = true;
+  }
+  function showHistoryMenu(feature, event) {
+    closeObjectMenu();
+    historyMenu.replaceChildren();
+    historyMenu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - 220))}px`;
+    historyMenu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - 160))}px`;
+    const action = (label, run) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.textContent = label;
+      button.onclick = () => {
+        closeHistoryMenu();
+        Promise.resolve(run()).catch(report);
+      };
+      historyMenu.append(button);
+    };
+    action(feature.status === "suppressed" ? "操作の抑制を解除" : "操作を抑制", () =>
+      store.suppress(feature.id, feature.status !== "suppressed"));
+    action("履歴を削除", () => {
+      const outputIds = new Set(feature.outputSlots.map((slot) => slot.entityId));
+      const dependents = store.document.features.filter(
+        (candidate) => candidate !== feature && references(candidate.inputs).some(
+          (reference) => outputIds.has(reference.entityId),
+        ),
+      );
+      if (dependents.length && !window.confirm(
+        `この履歴を削除すると、${dependents.length}件の後続操作が未解決になります。削除しますか？`,
+      )) return;
+      store.remove(feature.id);
+      selectedFeature = null;
+      propertiesOpen = false;
+      featureEditActive = false;
+      render();
+    });
+    historyMenu.hidden = false;
+    historyMenu.querySelector("button")?.focus();
+  }
+  function showObjectMenu(entity, event) {
+    event.preventDefault();
+    selectOutlinerEntity(entity);
+    objectMenu.replaceChildren();
+    objectMenu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - 220))}px`;
+    objectMenu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - 220))}px`;
+    const addAction = (label, action) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.textContent = label;
+      button.addEventListener("click", () => {
+        closeObjectMenu();
+        action();
+      });
+      objectMenu.append(button);
+    };
+    addAction("形状 Library に登録 / Library を開く", () => {
+      selectOutlinerEntity(entity);
+      $("modelShapeName").value = entity.name || "CAD shape";
+      libraryDetails.hidden = false;
+      libraryDetails.open = true;
+      libraryDialog.showModal();
+    });
+    addAction("生成で使用", () => useEntityForGeneration(entity));
+    for (const binding of store.document.outputBindings.filter(
+      (binding) => ["split", "missing"].includes(binding.status),
+    )) {
+      addAction(`「${binding.name}」の生成参照をこの形状へ変更`, () => {
+        try {
+          store.rebindOutput(binding.id, entity.id);
+          setStatus("生成参照を修復しました。既存のノード配線を維持します。");
+        } catch (error) {
+          report(error);
+        }
+      });
+    }
+    addAction("削除", () => {
+      const feature = store.getFeature(entity.producer.featureId);
+      if (!feature) return;
+      const outputIds = new Set(feature.outputSlots.map((slot) => slot.entityId));
+      const dependents = store.document.features.filter(
+        (candidate) => candidate !== feature && references(candidate.inputs).some(
+          (reference) => outputIds.has(reference.entityId),
+        ),
+      );
+      const hasBinding = store.document.outputBindings.some(
+        (binding) => binding.resolvedEntityId === entity.id || binding.source.bodyId === entity.bodyId,
+      );
+      if ((dependents.length || hasBinding) && !window.confirm(
+        `この履歴を削除すると、${dependents.length ? `${dependents.length}件の後続操作が未解決になり` : ""}${hasBinding ? "生成参照も未解決になり" : ""}ます。削除しますか？`,
+      )) return;
+      store.remove(feature.id);
+      selection = [];
+      selectedFeature = null;
+      store.document.uiState.selection = [];
+      render();
+    });
+    objectMenu.hidden = false;
+    objectMenu.querySelector("button")?.focus();
+  }
+  function showSubshapeMenu(hit, event) {
+    const entity = store.getEntity(hit.entityId);
+    if (!entity || !hit.kind) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const topology = entity.displayCache?.topology?.find(
+      (candidate) => candidate.topologyId === hit.topologyId,
+    );
+    if (!topology) return;
+    const reference = makeSubshapeRef(entity, topology);
+    selection = [{ entityId: entity.id }, reference];
+    store.document.uiState.selection = clone(selection);
+    objectMenu.replaceChildren();
+    objectMenu.style.left = `${Math.max(8, Math.min(event.clientX, innerWidth - 220))}px`;
+    objectMenu.style.top = `${Math.max(8, Math.min(event.clientY, innerHeight - 180))}px`;
+    const commands = hit.kind === "edge"
+      ? entity.kind === "solid"
+        ? [["Fillet", "D05"], ["Chamfer", "D06"]]
+        : [["Reverse Curve", "E10"], ["Offset Curve", "E06"]]
+      : [
+        ...(entity.kind === "solid" ? [["Shell", "D07"]] : [["Reverse Normal", "F11"]]),
+        ["Mirror（このfaceを基準）", "transform.mirror"],
+      ];
+    for (const [label, commandId] of commands) {
+      const command = findCommands().find((candidate) => candidate.id === commandId);
+      if (!command) continue;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.textContent = label;
+      button.onclick = async () => {
+        closeObjectMenu();
+        await begin(clone(command));
+        if (commandId === "transform.mirror" && session) {
+          applyFaceWorkplane(hit);
+          dispatchSession(session, {
+            type: "setting.change",
+            key: "plane",
+            value: clone(store.document.uiState.workPlane),
+          });
+          mirrorPlanePicking = false;
+          referencePlanePicking = false;
+          view.showReferencePlanes?.(false);
+          queuePreview();
+        }
+      };
+      objectMenu.append(button);
+    }
+    objectMenu.hidden = false;
+    objectMenu.querySelector("button")?.focus();
+    render({ keepProperties: true, keepHistory: true });
+  }
+  function renderOutliner() {
+    outliner.replaceChildren();
+    const folderHosts = new Map();
+    for (const folder of uiPreferences.folders[store.document.id] || []) {
+      const host = document.createElement("details");
+      host.className = "model-outline-folder";
+      host.open = true;
+      host.dataset.folderId = folder.id;
+      const heading = document.createElement("summary");
+      heading.textContent = `▱ ${folder.name}`;
+      heading.ondblclick = (event) => {
+        event.preventDefault();
+        const input = document.createElement("input");
+        input.value = folder.name;
+        input.setAttribute("aria-label", "グループ名");
+        input.onkeydown = (keyEvent) => {
+          if (keyEvent.key === "Escape") renderOutliner();
+          if (keyEvent.key === "Enter" && input.value.trim()) {
+            folder.name = input.value.trim(); saveUiPreferences(); renderOutliner();
+          }
+        };
+        heading.replaceChildren(input); input.focus(); input.select();
+      };
+      host.ondragover = (event) => {
+        if (event.dataTransfer.types.includes("application/x-pathloom-body")) event.preventDefault();
+      };
+      host.ondrop = (event) => {
+        event.preventDefault(); event.stopPropagation();
+        const bodyId = event.dataTransfer.getData("application/x-pathloom-body");
+        if (!store.document.bodies.some((body) => body.id === bodyId)) return;
+        for (const existing of uiPreferences.folders[store.document.id])
+          existing.bodyIds = existing.bodyIds.filter((value) => value !== bodyId);
+        folder.bodyIds.push(bodyId); saveUiPreferences(); renderOutliner();
+      };
+      host.append(heading); outliner.append(host); folderHosts.set(folder.id, host);
+    }
+    const entitiesById = new Map(store.document.entities.map((entity) => [entity.id, entity]));
+    for (const body of store.document.bodies) {
+      const entity = entitiesById.get(body.tipEntityId);
+      if (!entity) continue;
+      const group = document.createElement("details");
+      group.className = "model-outline-body";
+      group.open = true;
+      group.draggable = true;
+      group.dataset.bodyId = body.id;
+      group.setAttribute("role", "treeitem");
+      const heading = document.createElement("summary");
+      heading.textContent = `${entity.kind === "solid" ? "立体" : entity.kind === "curve" ? "カーブ" : "サーフェス"} · ${entity.name || "無題"}`;
+      group.append(heading);
+      const row = document.createElement("div");
+      row.className = "model-outline-row";
+      row.setAttribute("role", "group");
+      const select = document.createElement("button");
+      select.type = "button";
+      select.className = "model-outline-select";
+      select.setAttribute("role", "treeitem");
+      const selected = selection.some((reference) => reference.entityId === entity.id);
+      select.setAttribute("aria-selected", String(selected));
+      row.classList.toggle("is-selected", selected);
+      select.textContent = entity.name || entity.kind;
+      group.classList.toggle("is-suppressed", store.getFeature(entity.producer.featureId)?.status === "suppressed");
+      select.title = `${entity.kind} · ${entity.closure.enclosesVolume ? "閉体積" : "開いた形状"}`;
+      let selectClickTimer = null;
+      select.addEventListener("click", () => {
+        clearTimeout(selectClickTimer);
+        selectClickTimer = setTimeout(() => selectOutlinerEntity(entity), 180);
+      });
+      select.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        clearTimeout(selectClickTimer);
+        const input = document.createElement("input");
+        input.className = "model-outline-name-input";
+        input.value = entity.name || "形状";
+        input.setAttribute("aria-label", "アウトライナー形状名");
+        let finished = false;
+        const finish = (apply) => {
+          if (finished) return;
+          finished = true;
+          if (apply && input.value.trim()) {
+            entity.name = input.value.trim();
+            const feature = store.getFeature(entity.producer.featureId);
+            if (feature) feature.name = input.value.trim();
+            store.document.documentRevision++;
+            queueAutosave();
+          }
+          renderOutliner();
+        };
+        input.addEventListener("keydown", (keyEvent) => {
+          if (keyEvent.key === "Enter") finish(true);
+          if (keyEvent.key === "Escape") finish(false);
+        });
+        input.addEventListener("blur", () => finish(true), { once: true });
+        select.replaceWith(input);
+        input.focus();
+        input.select();
+      });
+      select.addEventListener("contextmenu", (event) => showObjectMenu(entity, event));
+      if (uiPreferences.showThumbnails) {
+        const thumbnail = document.createElement("span");
+        thumbnail.className = "model-outline-thumbnail";
+        thumbnail.style.setProperty("--shape-color", uiPreferences.colors[body.id] || "#7693a8");
+        thumbnail.setAttribute("aria-hidden", "true");
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", "0 0 28 28");
+        const path = document.createElementNS(svg.namespaceURI, "path");
+        path.setAttribute("d", thumbnailPath(entity));
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", "currentColor");
+        path.setAttribute("stroke-width", "1.2");
+        svg.append(path); thumbnail.append(svg);
+        row.append(thumbnail);
+      }
+      const visibility = document.createElement("button");
+      visibility.type = "button";
+      visibility.className = "model-outline-toggle";
+      visibility.textContent = entity.visibility === "hidden" ? "◌" : "◉";
+      visibility.setAttribute("aria-label", entity.visibility === "hidden" ? "表示する" : "非表示にする");
+      visibility.title = visibility.getAttribute("aria-label");
+      visibility.addEventListener("click", () => {
+        entity.visibility = entity.visibility === "hidden" ? "visible" : "hidden";
+        store.document.documentRevision++;
+        render();
+      });
+      const lock = document.createElement("button");
+      lock.type = "button";
+      lock.className = "model-outline-toggle";
+      lock.textContent = entity.locked ? "▣" : "▢";
+      lock.setAttribute("aria-label", entity.locked ? "ロック解除" : "ロック");
+      lock.title = lock.getAttribute("aria-label");
+      lock.addEventListener("click", () => {
+        entity.locked = !entity.locked;
+        store.document.documentRevision++;
+        render();
+      });
+      const color = document.createElement("input");
+      color.type = "color";
+      color.className = "model-outline-color";
+      color.value = uiPreferences.colors[body.id] || "#7693a8";
+      color.setAttribute("aria-label", `${entity.name || "形状"}の色タグ`);
+      color.addEventListener("input", () => {
+        uiPreferences.colors[body.id] = color.value;
+        saveUiPreferences();
+        render();
+      });
+      row.append(select, color, visibility, lock);
+      group.append(row);
+      group.addEventListener("dragstart", (event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-pathloom-body", body.id);
+        event.dataTransfer.setData("application/x-pathloom-entity", entity.id);
+      });
+      group.addEventListener("dragover", (event) => {
+        if (!event.dataTransfer.types.includes("application/x-pathloom-body")) return;
+        event.preventDefault();
+        group.classList.add("is-drop-target");
+      });
+      group.addEventListener("dragleave", () => group.classList.remove("is-drop-target"));
+      group.addEventListener("drop", (event) => {
+        event.preventDefault();
+        group.classList.remove("is-drop-target");
+        const movingId = event.dataTransfer.getData("application/x-pathloom-body");
+        const from = store.document.bodies.findIndex((candidate) => candidate.id === movingId);
+        const to = store.document.bodies.findIndex((candidate) => candidate.id === body.id);
+        if (from < 0 || to < 0 || from === to) return;
+        const [moving] = store.document.bodies.splice(from, 1);
+        store.document.bodies.splice(to, 0, moving);
+        store.document.documentRevision++;
+        render();
+      });
+      const folder = (uiPreferences.folders[store.document.id] || []).find((item) => item.bodyIds.includes(body.id));
+      (folderHosts.get(folder?.id) || outliner).append(group);
+    }
+  }
+  generationDrop.addEventListener("dragover", (event) => {
+    if (!event.dataTransfer.types.includes("application/x-pathloom-entity")) return;
+    event.preventDefault();
+    generationDrop.classList.add("is-drop-target");
+  });
+  generationDrop.addEventListener("dragleave", () => generationDrop.classList.remove("is-drop-target"));
+  generationDrop.addEventListener("drop", (event) => {
+    event.preventDefault();
+    generationDrop.classList.remove("is-drop-target");
+    const entity = store.getEntity(event.dataTransfer.getData("application/x-pathloom-entity"));
+    if (entity) useEntityForGeneration(entity);
+  });
+  document.addEventListener("pointerdown", (event) => {
+    if (!objectMenu.contains(event.target)) closeObjectMenu();
+    if (!historyMenu.contains(event.target)) closeHistoryMenu();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeObjectMenu();
+      closeHistoryMenu();
+    }
+  });
+  function active() {
+    return document.body.dataset.workspaceMode === "model";
+  }
+  function report(error) {
+    setStatus(error.message || String(error));
+  }
+  exportStepButton.onclick = async () => {
+    try {
+      const entityId = selection.length === 1 && selection[0].entityId;
+      const entity = entityId && store.getEntity(entityId);
+      if (!entity) throw new Error("書出す現在のCAD bodyを1つ選択してください");
+      const result = await store.exportStep(entity.id);
+      const filename =
+        (entity.name || "Pathloom-CAD").replace(/\.(step|stp)$/i, "") + ".step";
+      const path = await native.saveStep(result.step, filename);
+      setStatus(path ? `STEPを書き出しました：${path}` : "STEP書出しを取り消しました。");
+    } catch (error) {
+      report(error);
+    }
+  };
+  // Transient editing state only; project/recovery restoration is a separate contract.
+  const invalidFields = new Map();
+  function restoreEditing(input, key) {
+    const pending = invalidFields.get(key);
+    if (pending) {
+      input.value = pending.value;
+      input.setCustomValidity(pending.message);
+    }
+  }
+  function invalidInput(input, key, error) {
+    input.setCustomValidity(error.message);
+    invalidFields.set(key, { value: input.value, message: error.message });
+    invalidateDrawingPreview();
+  }
+  function invalidateDrawingPreview() {
+    if (session) {
+      session.previewSequence++;
+      session.result = null;
+    }
+    clearTimeout(previewTimer);
+    previewAgain = false;
+    view.clearPreview();
+  }
+  function rejectDrawingPoint(error) {
+    invalidateDrawingPreview();
+    if (session) session.state = "repairing";
+    report(error);
+  }
+  function inputPlane(forClick = false) {
+    const plane = clone(
+      session?.parameters.plane || store.document.uiState.workPlane,
+    );
+    validateDrawingPlane(plane);
+    if (forClick && session && pointStep % 2 === 1) {
+      const operation = session.command.baseOperation.id;
+      if (operation === "curve.circle")
+        plane.origin = clone(session.parameters.center);
+      if (
+        operation === "curve.rectangle" &&
+        session.drawingMode !== "threePoints"
+      )
+        plane.origin = clone(
+          session.drawingMode === "twoCorners"
+            ? session.inputValues.rectangleA
+            : session.parameters.anchor,
+        );
+    }
+    return plane;
+  }
+  async function startRuntime() {
+    // Readiness includes the initial libraries: registration must not race an
+    // older library snapshot or a second initialization's status update.
+    if (runtimeStart) return runtimeStart;
+    if (ready) return;
+    runtimeStart = (async () => {
+      try {
+        const hello = await native.start();
+        ready = true;
+        store.document.kernel.version = hello.occtVersion ?? null;
+        store.document.kernel.bindingVersion = hello.ocpVersion;
+        setStatus(`OCCT（OCP ${hello.ocpVersion}） · 正確な形状で作図できます`);
+        await loadCommands();
+        await loadLibrary();
+        await checkRecovery();
+      } catch (error) {
+        report(error);
+      }
+    })();
+    try {
+      return await runtimeStart;
+    } finally {
+      runtimeStart = null;
+    }
+  }
+
+  function saveDraft() {
+    if (session && !["committed", "cancelled"].includes(session.state)) {
+      const draft = clone(session);
+      draft.result = null;
+      store.document.draftSessions = [
+        ...store.document.draftSessions.filter((d) => d.id !== session.id),
+        draft,
+      ];
+      draftVersion++;
+      queueAutosave();
+    }
+  }
+  function cancel() {
+    curvePointPicking=false;
+    referencePlanePicking=false;
+    mirrorPlanePicking = false;
+    closePolylineAsFace = false;
+    planeTooltip.hidden = true;
+    propertiesOpen = false;
+    featureEditActive = false;
+    invalidFields.clear();
+    clearTimeout(previewTimer);
+    if (session) {
+      session.previewSequence++;
+      session.state = "cancelled";
+      store.document.draftSessions = store.document.draftSessions.filter(
+        (d) => d.id !== session.id,
+      );
+    }
+    store.cancelJobs();
+    session = null;
+    view.clearPreview();
+    previewHandles = [];
+    setStatus("未確定操作を破棄しました。確定済み形状は保持しています。");
+    render();
+  }
+  async function begin(command) {
+    if (arrayDialog.open) {
+      arrayDialog.close("cancel");
+      await arrayPreviewPromise;
+    }
+    curvePointPicking=false;
+    closePolylineAsFace = false;
+    frozenHistoryStage = null;
+    view.clearStage();
+    lastCommand = clone(command);
+    if (session) {
+      saveDraft();
+      view.clearPreview();
+    }
+    selectedFeature = null;
+    propertiesOpen = true;
+    featureEditActive = false;
+    pointStep = 0;
+    lastPoint = null;
+    activeInputKey = null;
+    invalidFields.clear();
+    snapPoint = null;
+    session = createCommandSession(command, {
+      selection: selection
+        .filter((r) => {
+          const e = store.getEntity(r.entityId);
+          return e && !e.locked && e.visibility !== "hidden";
+        })
+        .map((r) => ({
+          ...r,
+          entityKind: store.getEntity(r.entityId)?.kind,
+        })),
+    });
+    store.document.commandDefinitions.some(
+      (d) => d.id === command.id && d.version === command.version,
+    ) || store.document.commandDefinitions.push(clone(command));
+    if (command.defaults.plane)
+      session.parameters.plane = clone(store.document.uiState.workPlane);
+    referencePlanePicking = new Set([
+      "point.create", "curve.line", "curve.polyline", "curve.rectangle",
+      "curve.polygon", "curve.circle", "curve.arc", "curve.ellipse",
+      "curve.nurbs", "curve.interpolate",
+    ]).has(command.baseOperation.id);
+    mirrorPlanePicking = command.id === "transform.mirror";
+    if (mirrorPlanePicking) {
+      referencePlanePicking = true;
+      view.showReferencePlanes?.(true, planeSelect.value);
+    }
+    setStatus(referencePlanePicking
+      ? mirrorPlanePicking
+        ? "ミラー基準にするfaceまたは基準面をクリックしてください。"
+        : "基準面または既存の平面をクリックしてください。"
+      : "設定・入力を指定して確定してください。");
+    if (command.baseOperation.id === "shape.transform" && new Set(selection.map((reference) => reference.entityId)).size > 1)
+      setStatus(
+        `${command.displayName}は形状1件が対象です。入力欄または重なり候補から対象を1件選んでください。`,
+      );
+    render();
+    await startRuntime();
+  }
+  function enhanceNumericFields(host) {
+    for (const input of host.querySelectorAll("input")) {
+      if (input.type === "checkbox" || input.dataset.numericEnhanced) continue;
+      const value = Number(input.value);
+      if (!Number.isFinite(value)) continue;
+      input.dataset.numericEnhanced = "true";
+      input.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        input.focus({ preventScroll: true });
+        const angle = /角度|angle/i.test(input.getAttribute("aria-label") || "");
+        const step = angle ? (event.shiftKey ? Math.PI / 180 : Math.PI / 12) : event.altKey ? 0.1 : 1;
+        const next = Number(input.value) + (event.deltaY < 0 ? step : -step);
+        input.value = String(angle && !event.shiftKey ? Math.round(next / step) * step : next);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      }, { passive: false });
+      const handle = document.createElement("span");
+      handle.className = "model-parameter-drag";
+      handle.tabIndex = 0;
+      handle.setAttribute("role", "slider");
+      handle.setAttribute("aria-label", `${input.getAttribute("aria-label") || "数値"}をドラッグ`);
+      handle.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        const startX = event.clientX;
+        const initial = Number(input.value);
+        const angle = /角度|angle/i.test(input.getAttribute("aria-label") || "");
+        const move = (moveEvent) => {
+          const raw = initial + (moveEvent.clientX - startX) * (angle ? Math.PI / 180 : moveEvent.altKey ? 0.1 : 1);
+          const step = angle && !moveEvent.shiftKey ? Math.PI / 12 : moveEvent.altKey ? 0.1 : 1;
+          input.value = String(Math.round(raw / step) * step);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          cursorReadout.hidden = false;
+          cursorReadout.style.left = `${moveEvent.clientX}px`;
+          cursorReadout.style.top = `${moveEvent.clientY}px`;
+          cursorReadout.textContent = angle
+            ? `${(Number(input.value) * 180 / Math.PI).toFixed(1)}°${moveEvent.shiftKey ? " · 自由" : " · 15° snap"}`
+            : `${Number(input.value).toFixed(moveEvent.altKey ? 1 : 0)} mm${moveEvent.altKey ? " · 精密" : " · 1mm snap"}`;
+        };
+        trackDrag(handle, event, move, () => {}, () => {
+          input.value = String(initial);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          if (session) cancel();
+          else { selectedFeature = null; featureEditActive = false; render(); }
+        });
+      });
+      input.insertAdjacentElement("afterend", handle);
+    }
+  }
+  function properties() {
+    const host = $("modelProperties");
+    host.replaceChildren();
+    const f = selectedFeature && store.getFeature(selectedFeature);
+    const params =
+      session?.parameters ||
+      (!featureEditActive || f?.operation.id === "asset.snapshot"
+        ? null
+        : f?.operation.id === "solid.difference"
+          ? { keepTools: false, ...f.parameters }
+          : f?.parameters);
+    const editingOperation=session?.command.baseOperation.id||f?.operation.id;
+    if(params&&editingOperation?.startsWith('curve.')){
+      const refs=session?.inputs||f?.inputs||{};
+      const entity=store.getEntity((refs.object||refs.first||refs.curve||[])[0]?.entityId);
+      if(entity?.displayCache?.curveParameters){
+        const details=document.createElement('details'),summary=document.createElement('summary'),text=document.createElement('pre');
+        summary.textContent='正本のparameter・制御点';
+        text.style.whiteSpace='pre-wrap';
+        text.textContent=JSON.stringify(entity.displayCache.curveParameters.map(({first,last,type,degree,poleCount,poles})=>({first,last,type,degree,poleCount,poles})),null,2);
+        details.append(summary,text);host.append(details);
+      }
+      if(editingOperation==='curve.extend'){
+        const text=document.createElement('p');text.textContent='startは始点、endは終点。NURBS/Bezierのcontinuationは接線延長です。到達対象がある場合、距離は交点を探す上限です。';host.append(text);
+      }
+      if(editingOperation==='curve.editPoles'){
+        const text=document.createElement('p');text.textContent='moveは指定制御点を移動。insertKnotは形状を変えずに制御点を追加。removeKnotは許容差内でknotと対応する制御点を減らします。番号は1始まりです。';host.append(text);
+      }
+      if(session&&['curve.trim','curve.seam','curve.fillet','curve.chamfer'].includes(editingOperation)){
+        const button=document.createElement('button');button.textContent='区間・接続側を画面で指定';
+        button.onclick=()=>{curvePointPicking=true;setStatus('作業平面上の区間内部・継ぎ目・接続側をクリックしてください。正本へ投影して検査します。');};host.append(button);
+      }
+    }
+    if(params){
+      const help={
+        'solid.box':'幅・奥行・高さ、底面2点、底面3点を選択できます。2点は指定平面に平行、3点は基準点→幅方向→奥行側の順です。高さは底面法線方向です。',
+        'surface.planarRegion':'同じ平面の閉輪郭を複数選択できます。内側の輪郭は穴、その内側は島として保持します。開輪郭や交差輪郭は自動補完しません。',
+        'shape.cap':'開口のうち平面の閉輪郭だけを塞ぎます。非平面の穴を勝手に平面で塞ぎません。閉じた結果と開いた結果を区別して保持します。',
+        'solid.assemble':'面を接続許容差内でつなぎ、閉じたShellは立体、閉じなければ開いた形状として保持します。独立した閉体積は全て出力します。',
+        'solid.chamfer':'2距離の場合は、各edgeの距離1側の隣接faceをedgeと同じ順序で指定してください。距離2のnullは等距離です。',
+        'solid.fillet':'選択edgeのみ、または接線でつながる連鎖を明示します。カーネルが連鎖を必要とする場合は、許可せずに勝手に対象を増やしません。'
+      }[editingOperation];
+      if(help){const p=document.createElement('p');p.textContent=help;host.append(p);}
+    }
+    if (f && !session && !featureEditActive) {
+      const summary = document.createElement("p");
+      summary.textContent = `${f.name} · ${f.status} · ${f.operation.id}`;
+      host.append(summary);
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.textContent = "形状を変更";
+      edit.addEventListener("click", () => {
+        featureEditActive = true;
+        propertiesOpen = true;
+        properties();
+      });
+      host.append(edit);
+      return;
+    }
+    if (!params) {
+      if (!propertiesOpen) {
+        const hint = document.createElement("p");
+        hint.textContent = "形状を右クリックしてプロパティを表示";
+        host.append(hint);
+        return;
+      }
+      const e = store.getEntity(selection[0]?.entityId);
+      if (e) {
+        const name = document.createElement("input");
+        name.value = e.name || "形状";
+        name.setAttribute("aria-label", "形状名");
+        name.addEventListener("change", () => {
+          e.name = name.value;
+          store.document.documentRevision++;
+          render();
+        });
+        host.append(name);
+        const text = document.createElement("p");
+        text.textContent = `${e.kind} · ${e.closure.enclosesVolume ? "閉体積" : "開いた形状を含む"}\n${e.displayCache?.volumeMm3?.toFixed(3) || 0} mm³`;
+        host.append(text);
+      }
+      return;
+    }
+    if (f && f.operation.id === "curve.rectangle" && !f.sketchId) {
+      const constrained = document.createElement("button");
+      constrained.textContent = "拘束付きスケッチとして編集";
+      constrained.onclick = async () => {
+        try {
+          const params = f.parameters,
+            pl = clone(params.plane);
+          pl.origin = clone(params.anchor);
+          const center =
+              params.anchorMode === "center"
+                ? [0, 0]
+                : [params.widthMm / 2, params.heightMm / 2],
+            sketch = constrainedRectangle({
+              widthMm: params.widthMm,
+              heightMm: params.heightMm,
+              center,
+              plane: pl,
+              support: f.sketchSupport || null,
+            }),
+            result = await solver.solve(sketch);
+          if (result.status !== "solved")
+            throw new Error("初期拘束を解けませんでした");
+          const solvedSketch = result.sketch;
+          solvedSketch.solveReport = {
+            status: result.status,
+            degreesOfFreedom: result.degreesOfFreedom,
+            fullyConstrained: result.fullyConstrained,
+            maxResidual: result.maxResidual,
+            conflictCandidates: result.conflictCandidates,
+            diagnostics: result.diagnostics,
+            components: result.components,
+            measurements: result.measurements,
+          };
+          await store.attachSketch(f.id, solvedSketch);
+          properties();
+        } catch (error) {
+          report(error);
+        }
+      };
+      host.append(constrained);
+    }
+    if (f?.sketchId) {
+      const sketch = store.document.sketches.find((s) => s.id === f.sketchId),
+        caption = document.createElement("p");
+      const fullyConstrained = sketch.solveReport?.fullyConstrained === true;
+      caption.className = "model-sketch-status";
+      caption.classList.toggle("is-fully-constrained", fullyConstrained);
+      caption.textContent = `平面スケッチ · ローカル原点 (${sketch.localOrigin?.u ?? 0}, ${sketch.localOrigin?.v ?? 0}) · 自由度 ${sketch.solveReport?.degreesOfFreedom ?? "未計算"} · ${fullyConstrained ? "完全拘束" : sketch.solveReport?.status || ""}`;
+      host.append(caption);
+      const base = sketch.draft || sketch;
+      if (sketch.supportWarning) {
+        const warning = document.createElement("p");
+        warning.className = "model-sketch-warning";
+        warning.textContent = sketch.supportWarning.message;
+        host.append(warning);
+      }
+      const componentSummary = document.createElement("p");
+      componentSummary.className = "model-sketch-components";
+      componentSummary.textContent = `ソルバー成分 ${sketch.solveReport?.components?.length ?? 0} · 最大残差 ${Number(sketch.solveReport?.maxResidual || 0).toExponential(2)}`;
+      host.append(componentSummary);
+      for (const diagnostic of sketch.solveReport?.diagnostics || []) {
+        const message = document.createElement("p");
+        message.className = "model-sketch-diagnostic";
+        message.textContent = `${diagnostic.code}: ${diagnostic.message}`;
+        host.append(message);
+      }
+      for (const constraint of base.constraints) {
+        const row = document.createElement("label");
+        row.className = "model-sketch-constraint";
+        if (sketch.solveReport?.conflictCandidates?.includes(constraint.id))
+          row.classList.add("has-conflict");
+        row.textContent = constraint.label || constraint.kind;
+        if (constraint.mode === "reference") {
+          const measurement = sketch.solveReport?.measurements?.find(
+            (candidate) => candidate.id === constraint.id,
+          );
+          const output = document.createElement("output");
+          output.textContent = `${measurement?.value?.toFixed(3) ?? "—"} ${measurement?.unit || "mm"}（参照）`;
+          row.append(output);
+          host.append(row);
+          continue;
+        }
+        const input = document.createElement("input");
+        input.type =
+          typeof constraint.value === "number" ? "number" : "checkbox";
+        if (input.type === "number") {
+          input.value = constraint.value;
+          input.setAttribute(
+            "aria-label",
+            `スケッチ ${constraint.label || constraint.kind}`,
+          );
+        } else {
+          input.checked = !constraint.suppressed;
+          input.setAttribute("aria-label", `拘束 ${constraint.kind}`);
+        }
+        input.onchange = async () => {
+          try {
+            const next = clone(base),
+              c = next.constraints.find((c) => c.id === constraint.id);
+            if (input.type === "number") c.value = parseScalar(input.value);
+            else c.suppressed = !input.checked;
+            const result = await solver.solve(next);
+            store.updateSketch(f.id, result);
+            if (result.status === "no-convergence")
+              setStatus(
+                "拘束が未収束です。前回の形状と変更中の指定を別々に保持しました。",
+              );
+            properties();
+          } catch (error) {
+            report(error);
+          }
+        };
+        row.append(input);
+        host.append(row);
+      }
+      const elements = document.createElement("details"),
+        elementsSummary = document.createElement("summary");
+      elementsSummary.textContent = "スケッチ要素を直接編集";
+      elements.append(elementsSummary);
+      for (const [index, point] of base.points.entries()) {
+        const row = document.createElement("div");
+        row.className = "model-sketch-point";
+        row.append(`点 ${index + 1}`);
+        for (const key of ["u", "v"]) {
+          const input = document.createElement("input");
+          input.type = "number";
+          input.value = point[key];
+          input.setAttribute(
+            "aria-label",
+            `スケッチ点 ${index + 1} ${key.toUpperCase()}`,
+          );
+          input.onchange = async () => {
+            try {
+              const target = [point.u, point.v];
+              target[key === "u" ? 0 : 1] = parseScalar(input.value);
+              const result = await solver.solve(clone(base), {
+                drag: { pointId: point.id, target, mode: "hard" },
+              });
+              store.updateSketch(f.id, result);
+              properties();
+            } catch (error) {
+              report(error);
+            }
+          };
+          row.append(input);
+        }
+        elements.append(row);
+      }
+      host.append(elements);
+      const advanced = document.createElement("details"),
+        summary = document.createElement("summary");
+      summary.textContent = "拘束を追加・修正（構造化定義）";
+      advanced.append(summary);
+      const editor = document.createElement("textarea");
+      editor.value = JSON.stringify(base.constraints, null, 2);
+      editor.setAttribute("aria-label", "スケッチ拘束定義");
+      editor.rows = 8;
+      const apply = document.createElement("button");
+      apply.textContent = "拘束を検証して解く";
+      apply.onclick = async () => {
+        try {
+          const next = clone(base);
+          next.constraints = JSON.parse(editor.value);
+          const result = await solver.solve(next);
+          store.updateSketch(f.id, result);
+          properties();
+        } catch (error) {
+          report(error);
+        }
+      };
+      advanced.append(editor, apply);
+      host.append(advanced);
+      if (sketch.draft) {
+        const discard = document.createElement("button");
+        discard.textContent = "未収束の拘束変更を取り消す";
+        discard.onclick = () => {
+          delete sketch.draft;
+          properties();
+        };
+        host.append(discard);
+      }
+    }
+    if (f) {
+      const caption = document.createElement("p");
+      caption.textContent = `${f.name} · ${f.status}`;
+      host.append(caption);
+    }
+    const settingsForm = document.createElement("form");
+    settingsForm.id = "modelSettingsForm";
+    settingsForm.onsubmit = (event) => event.preventDefault();
+    const draft = clone(params),
+      draftTolerance = clone(f?.toleranceOverrides || {});
+    if (session?.command.id === "C04") {
+      const label = document.createElement("label"),
+        select = document.createElement("select");
+      label.textContent = "作図モード";
+      select.setAttribute("aria-label", "長方形の作図モード");
+      for (const [value, text] of [
+        ["center", "中心＋幅・高さ"],
+        ["twoCorners", "2コーナー"],
+        ["threePoints", "3点"],
+      ]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = text;
+        select.append(option);
+      }
+      select.value = session.drawingMode || "center";
+      select.onchange = () => {
+        try {
+          setRectangleMode(session, select.value);
+          pointStep = 0;
+          lastPoint = null;
+          snapPoint = null;
+          invalidFields.clear();
+          saveDraft();
+          properties();
+          queuePreview();
+        } catch (error) {
+          report(error);
+          select.value = session.drawingMode || "center";
+        }
+      };
+      label.append(select);
+      settingsForm.append(label);
+      if (session.drawingMode && session.drawingMode !== "center")
+        for (const [i, key] of rectanglePointKeys(session).entries()) {
+          const label = document.createElement("label"),
+            input = document.createElement("input");
+          label.textContent = `作図点 ${i + 1} XYZ`;
+          input.setAttribute("aria-label", label.textContent);
+          input.value = JSON.stringify(session.inputValues[key]);
+          restoreEditing(input, key);
+          input.oninput = () => {
+            try {
+              const p = input.value.trim().startsWith("[")
+                ? JSON.parse(input.value)
+                : parseCoordinate(input.value, {
+                    previous:
+                      session.inputValues[rectanglePointKeys(session)[i - 1]] ||
+                      null,
+                    plane: inputPlane(),
+                  });
+              if (
+                !Array.isArray(p) ||
+                p.length !== 3 ||
+                !p.every(Number.isFinite)
+              )
+                throw new Error("有限のXYZを指定してください");
+              session.inputValues[key] = p;
+              lastPoint = p;
+              session.previewSequence++;
+              session.result = null;
+              invalidFields.delete(key);
+              input.setCustomValidity("");
+              saveDraft();
+              queuePreview();
+            } catch (error) {
+              invalidInput(input, key, error);
+            }
+          };
+          label.append(input);
+          settingsForm.append(label);
+        }
+    }
+    const note = document.createElement("p");
+    const commandId = session?.command.id || f?.command.id;
+    note.textContent =
+      commandId === "C02"
+        ? "始点・終点で作図します。方向＋長さモードは未対応です。"
+        : commandId === "C06"
+          ? "中心＋半径で作図します。直径・2端点・3点モードは未対応です。"
+          : editingOperation === "shape.transform"
+            ? "対象は形状1件です。複数形状の一括変換は未対応です。正本B-repへ適用します。"
+            : "";
+    if (note.textContent) settingsForm.append(note);
+    for (const [key, value] of Object.entries(f?.sketchId ? {} : params)) {
+      if (
+        session?.command.id === "C04" &&
+        session.drawingMode &&
+        session.drawingMode !== "center" &&
+        (["anchor", "anchorMode", "widthMm", "heightMm"].includes(key) ||
+          (session.drawingMode === "threePoints" && key === "plane"))
+      )
+        continue;
+      if (key === "translation" && Array.isArray(value)) {
+        for (const [i, axis] of ["X", "Y", "Z"].entries()) {
+          const label = document.createElement("label"),
+            input = document.createElement("input");
+          label.textContent = `移動 ${axis} mm`;
+          input.setAttribute("aria-label", label.textContent);
+          input.value = value[i];
+          const rawKey = `translation.${i}`;
+          restoreEditing(input, rawKey);
+          input.oninput = () => {
+            try {
+              const vector = [
+                ...(session?.parameters.translation || draft.translation),
+              ];
+              vector[i] = parseScalar(input.value);
+              draft.translation = vector;
+              invalidFields.delete(rawKey);
+              input.setCustomValidity("");
+              if (session) {
+                dispatchSession(session, {
+                  type: "setting.change",
+                  key,
+                  value: vector,
+                });
+                saveDraft();
+                queuePreview();
+              }
+            } catch (error) {
+              invalidInput(input, rawKey, error);
+            }
+          };
+          label.append(input);
+          settingsForm.append(label);
+        }
+        continue;
+      }
+      const label = document.createElement("label");
+      const parameterLabel=key==='end'&&editingOperation==='curve.extend'?'延長する端点':key==='mode'&&editingOperation==='solid.box'?'Boxの作図モード':labels[key]||key;
+      label.textContent = parameterLabel;
+      const solidEnums=({chainPolicy:['selected','tangent'],transitionMode:['transformed','rightCorner','roundCorner'],frameMode:['corrected-frame','frenet'],directionMode:['inward','outward'],...(editingOperation==='solid.box'?{mode:['dimensions','twoCorners','threePoints'],anchorMode:['center','corner']}:{})})[key];
+      const enumValues=solidEnums || (editingOperation?.startsWith('curve.')&&typeof value==='string'?({end:['start','end'],method:['continuation','tangent'],firstEnd:['start','end'],secondEnd:['start','end'],continuity:['G1','G2'],firstSide:['start','end'],secondSide:['start','end'],...(editingOperation==='curve.editPoles'?{mode:['move','insertKnot','removeKnot']}:{})})[key]:null);
+      const input = enumValues?document.createElement('select'):
+        typeof value === "object" && value !== null && !Array.isArray(value)
+          ? document.createElement("textarea")
+          : document.createElement("input");
+      if(enumValues)for(const value of enumValues){const option=document.createElement('option');option.value=value;option.textContent=solidEnums?({selected:'選択edgeのみ',tangent:'接線でつながる連鎖',dimensions:'幅・奥行・高さ',twoCorners:'底面2点',threePoints:'底面3点',rightCorner:'角を交差で接続',roundCorner:'角を丸く接続',transformed:'フレーム変換','corrected-frame':'補正フレーム',frenet:'Frenet',inward:'内側',outward:'外側'}[value]||value):value;input.append(option);}
+      input.dataset.parameter = key;
+      input.setAttribute("aria-label", parameterLabel);
+      const operation = session?.command.baseOperation.id || f?.operation.id;
+      if (
+        key === "tangentChain" ||
+        (operation === "surface.loft" && key === "closed") ||
+        (operation === "surface.offset" &&
+          ["bothSides", "solidify"].includes(key))
+      ) {
+        input.disabled = true;
+        input.title = key==='tangentChain'?'旧版の保存挙動を保持しています。新規Filletでは連鎖を明示選択できます。':
+          'このオプションは未実装です。現在の対応範囲はコマンド台帳を参照してください。';
+      }
+      if (typeof value === "boolean") {
+        input.type = "checkbox";
+        input.checked = value;
+      } else
+        input.value =
+          typeof value === "object"
+            ? JSON.stringify(value)
+            : value === null
+              ? "null"
+              : String(value);
+      restoreEditing(input, key);
+      input.addEventListener("input", () => {
+        try {
+          const v =
+            typeof value === "boolean"
+              ? input.checked
+              : typeof value === "number"
+                ? key.toLowerCase().includes("anglerad")
+                  ? parseScalar(
+                      /(?:deg|rad)\s*$/i.test(input.value)
+                        ? input.value
+                        : input.value + "rad",
+                      "angle",
+                    )
+                  : parseScalar(input.value)
+                : typeof value === "object"
+                  ? JSON.parse(input.value)
+                  : input.value;
+          draft[key] = v;
+          invalidFields.delete(key);
+          if (
+            ["start", "end", "center", "anchor"].includes(key) &&
+            Array.isArray(v) &&
+            v.length === 3 &&
+            v.every(Number.isFinite)
+          ) {
+            lastPoint = v;
+            pointStep = key === "end" ? 2 : 1;
+          }
+          if (key === "plane") {
+            snapPoint = null;
+            referencePlanePicking = false;
+            view.showReferencePlanes?.(false);
+          }
+          if (session) {
+            dispatchSession(session, { type: "setting.change", key, value: v });
+            saveDraft();
+            queuePreview();
+          }
+          input.setCustomValidity("");
+          if(editingOperation==='solid.box'&&key==='mode')updateBoxFields();
+        } catch (error) {
+          invalidInput(input, key, error);
+          if (session) {
+            session.rawDraft[key] = input.value;
+            saveDraft();
+          }
+        }
+      });
+      label.append(input);
+      settingsForm.append(label);
+    }
+    host.append(settingsForm);
+    function updateBoxFields(){
+      if(editingOperation!=='solid.box')return;
+      const mode=(session?.parameters||draft).mode||'dimensions';
+      for(const field of settingsForm.querySelectorAll('[data-parameter]')){
+        const key=field.dataset.parameter;
+        field.parentElement.hidden=(mode==='dimensions'&&key==='points')||(mode!=='dimensions'&&['anchor','anchorMode','widthMm','depthMm'].includes(key))||(mode==='threePoints'&&key==='plane');
+      }
+    }
+    updateBoxFields();
+    if (
+      (session?.command.baseOperation.id || f?.operation.id)?.endsWith(".join")
+    ) {
+      const label = document.createElement("label");
+      label.textContent = "Join許容差 mm";
+      const input = document.createElement("input");
+      input.setAttribute("aria-label", "Join許容差 mm");
+      input.dataset.tolerance = "joinLinearMm";
+      input.value =
+        session?.toleranceOverrides?.joinLinearMm ??
+        f?.toleranceOverrides?.joinLinearMm ??
+        store.document.tolerances.joinLinearMm;
+      input.oninput = () => {
+        try {
+          const v = parseScalar(input.value);
+          if (v <= 0) throw new Error("正の許容差を指定してください");
+          input.setCustomValidity("");
+          if (session) {
+            session.toleranceOverrides ??= {};
+            session.toleranceOverrides.joinLinearMm = v;
+            session.previewSequence++;
+            saveDraft();
+            queuePreview();
+          } else draftTolerance.joinLinearMm = v;
+        } catch (error) {
+          input.setCustomValidity(error.message);
+        }
+      };
+      label.append(input);
+      settingsForm.append(label);
+    }
+    if (session)
+      for (const slot of session.command.inputs.filter(
+        (s) => s.kind === "point",
+      )) {
+        const label = document.createElement("label");
+        label.textContent = slot.prompt || slot.key;
+        const input = document.createElement("input");
+        input.value = session.inputValues?.[slot.key]
+          ? JSON.stringify(session.inputValues[slot.key])
+          : "";
+        input.setAttribute("aria-label", `CAD point ${slot.key}`);
+        input.onchange = () => {
+          try {
+            const p = input.value.trim().startsWith("[")
+              ? JSON.parse(input.value)
+              : parseCoordinate(input.value, {
+                  plane: store.document.uiState.workPlane,
+                });
+            if (
+              !Array.isArray(p) ||
+              p.length !== 3 ||
+              !p.every(Number.isFinite)
+            )
+              throw new Error("XYZを指定してください");
+            session.inputValues[slot.key] = p;
+            session.previewSequence++;
+            saveDraft();
+            queuePreview();
+            render({ keepProperties: true });
+          } catch (error) {
+            report(error);
+          }
+        };
+        label.append(input);
+        host.append(label);
+      }
+    const specs =
+      session?.command.inputs ||
+      commandById(f?.command.id, f?.command.version)?.inputs ||
+      [];
+    for (const slot of specs.filter((s) =>
+      ["entity", "subshape"].includes(s.kind),
+    )) {
+      const label = document.createElement("label");
+      const roleLabel =
+        (session?.command.baseOperation.id || f?.operation.id) ===
+        "solid.difference"
+          ? slot.prompt
+          : slot.key;
+      label.textContent = `${roleLabel} · ${slot.kind === "subshape" ? "面/edge" : "形状"}（順序を保持）`;
+      const select = document.createElement("select");
+      select.multiple = slot.maxCount !== 1;
+      select.size =
+        slot.maxCount === 1
+          ? 1
+          : Math.min(5, Math.max(2, store.document.entities.length));
+      select.setAttribute("aria-label", `CAD input ${slot.key}`);
+      select.onfocus = () => {
+        activeInputKey = slot.key;
+      };
+      if (slot.maxCount === 1) {
+        const o = document.createElement("option");
+        o.value = "";
+        o.textContent = "対象を選択";
+        select.append(o);
+      }
+      const refs = session?.inputs[slot.key] || f?.inputs[slot.key] || [];
+      const candidates = (
+        selectedFeature
+          ? store.document.entities
+          : deriveVisibleEntities(store.document)
+      ).filter((e) => !e.locked);
+      for (const e of candidates) {
+        if (slot.kind === "subshape") {
+          const allowed = (session?.inputs.body || f?.inputs.body || []).map(
+            (r) => r.entityId,
+          );
+          if (allowed.length && !allowed.includes(e.id)) continue;
+          for (const t of e.displayCache?.topology || [])
+            if (slot.allowedEntityKinds.includes(t.kind)) {
+              const o = document.createElement("option");
+              o.value = JSON.stringify(makeSubshapeRef(e, t));
+              o.textContent = `${e.name || e.kind} · ${t.semanticPath?.join("/") || t.topologyId.split(":").slice(-2).join("/") + " · " + t.fingerprint.centroid.map((n) => n.toFixed(2)).join(",")}`;
+              o.selected = refs.some(
+                (r) => r.entityId === e.id && r.topologyId === t.topologyId,
+              );
+              select.append(o);
+            }
+        } else if (slot.allowedEntityKinds.includes(e.kind)) {
+          const o = document.createElement("option");
+          o.value = JSON.stringify({ entityId: e.id, role: slot.key });
+          o.textContent = e.name || e.kind;
+          o.selected = refs.some((r) => r.entityId === e.id);
+          select.append(o);
+        }
+      }
+      select.onchange = () => {
+        const refs = [...select.selectedOptions]
+          .filter((o) => o.value)
+          .map((o) => JSON.parse(o.value));
+        if (session) {
+          dispatchSession(session, { type: "input.set", key: slot.key, refs });
+          saveDraft();
+          queuePreview();
+        } else store.repair(f.id, slot.key, refs).catch(report);
+      };
+      label.append(select);
+      host.append(label);
+    }
+    queueMicrotask(() => enhanceNumericFields(settingsForm));
+    if (f) {
+      const apply = document.createElement("button");
+      apply.textContent = "確定";
+      apply.setAttribute("aria-label", "設定変更を確定");
+      apply.onclick = () => {
+        if (settingsForm.reportValidity())
+          store
+            .edit(f.id, draft, { toleranceOverrides: draftTolerance })
+            .catch(report);
+      };
+      host.append(apply);
+      const close = document.createElement("button");
+      close.textContent = "キャンセル";
+      close.onclick = () => {
+        selectedFeature = null;
+        propertiesOpen = false;
+        featureEditActive = false;
+        render();
+      };
+      host.append(close);
+    }
+  }
+  function updateBindings(connectBindingId = null) {
+    for (const b of store.document.outputBindings) {
+      const stamp = `${b.status}:${b.resolvedResultHash}:${b.resolvedEntityId}`;
+      if (bindingStamps.get(b.id) === stamp && b.id !== connectBindingId) continue;
+      const entity = store.getEntity(b.resolvedEntityId);
+      if (b.status === "ready" && entity) {
+        const input = generationInput(
+          b,
+          entity,
+          store.document.assets[entity.geometry.assetHash],
+        );
+        window.PathloomCad?.upsertCadBinding?.({
+          bindingId: b.id,
+          status: b.status,
+          input,
+          connect: b.id === connectBindingId,
+        });
+      } else
+        window.PathloomCad?.upsertCadBinding?.({
+          bindingId: b.id,
+          status: b.status,
+          connect: b.id === connectBindingId,
+        });
+      bindingStamps.set(b.id, stamp);
+    }
+  }
+  function updateView() {
+    view.update(store.document, selection, { colors: uiPreferences.colors });
+  }
+  function positionViewportControls() {
+    if (activeDrag) return;
+    const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
+    if (entity?.bbox && entity.visibility !== "hidden") {
+      const center = centerOf(entity);
+      const pivot = pendingPivot?.entityId === entity.id ? pendingPivot.point : center;
+      const screen = view.project(pivot);
+      if (screen && !gizmo.hidden) {
+        gizmo.style.left = `${screen.x + 18}px`;
+        gizmo.style.top = `${screen.y - 42}px`;
+      }
+      projectedDimensions.hidden = !!session || arrayDialog.open || !!selection[0]?.kind || !screen?.visible;
+      for (const [axis, label] of [...projectedDimensions.children].entries()) {
+        const point = [...entity.bbox.max];
+        point[axis] = center[axis];
+        const projected = view.project(point);
+        label.hidden = !projected?.visible;
+        if (projected) {
+          label.style.left = `${Math.min(projected.x - 12, screen.x - 18)}px`;
+          label.style.top = `${projected.y + 8 + axis * 15}px`;
+          label.textContent = `${["W", "D", "H"][axis]} ${(entity.bbox.max[axis] - entity.bbox.min[axis]).toFixed(2)} mm`;
+        }
+      }
+    } else projectedDimensions.hidden = true;
+    if (session && !distanceHandle.hidden) {
+      const source = Object.values(session.inputs).flat().map((reference) => store.getEntity(reference.entityId)).find(Boolean);
+      const point = source ? centerOf(source) : session.parameters.center || session.parameters.anchor || [0,0,0];
+      const screen = view.project(point);
+      if (screen) {
+        distanceHandle.style.left = `${screen.x + 38}px`;
+        distanceHandle.style.top = `${screen.y - 50}px`;
+      }
+    }
+  }
+  function render({ keepProperties = false, keepHistory = false } = {}) {
+    if (!panel.isConnected) return;
+    $("modelStatus").textContent = status;
+    renderOutliner();
+    workplaneControls.hidden = !session;
+    const operationId = session?.command.baseOperation.id;
+    const planeOperation = new Set([
+      "point.create", "curve.line", "curve.polyline", "curve.rectangle",
+      "curve.polygon", "curve.circle", "curve.arc", "curve.ellipse",
+      "curve.nurbs", "curve.interpolate",
+    ]);
+    view.showReferencePlanes?.(referencePlanePicking, planeSelect.value);
+    if (!referencePlanePicking)
+      document.querySelector(".model-plane-tooltip")?.setAttribute("hidden", "");
+    planeControls.hidden = !planePicking && !(
+      session && (session.parameters.plane || planeOperation.has(operationId))
+    );
+    const q = "";
+    const list = $("modelCommands");
+    list.replaceChildren();
+    const commandRank = new Map(uiPreferences.commandOrder.map((commandId, index) => [commandId, index]));
+    const commands = findCommands(q).sort((a, b) =>
+      (commandRank.get(a.id) ?? Number.MAX_SAFE_INTEGER) -
+      (commandRank.get(b.id) ?? Number.MAX_SAFE_INTEGER));
+    const buildCommandButton = (command) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "model-command-button";
+      button.dataset.commandId = command.id;
+      button.setAttribute("aria-label", command.displayName);
+      button.title = `${command.displayName} · ${command.description}`;
+      button.classList.toggle("is-pinned", uiPreferences.pinnedCommands.includes(command.id));
+      button.append(createCommandIcon(command));
+      button.onclick = () => begin(command).catch(report);
+      button.oncontextmenu = (event) => {
+        event.preventDefault();
+        const pins = new Set(uiPreferences.pinnedCommands);
+        pins.has(command.id) ? pins.delete(command.id) : pins.add(command.id);
+        uiPreferences.pinnedCommands = [...pins];
+        saveUiPreferences();
+        render({ keepProperties: true, keepHistory: true });
+      };
+      button.draggable = commandEditMode;
+      button.addEventListener("dragstart", (event) => {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("application/x-pathloom-command", command.id);
+      });
+      button.addEventListener("dragover", (event) => {
+        if (!commandEditMode || !event.dataTransfer.types.includes("application/x-pathloom-command")) return;
+        event.preventDefault();
+      });
+      button.addEventListener("drop", (event) => {
+        if (!commandEditMode) return;
+        event.preventDefault();
+        const moving = event.dataTransfer.getData("application/x-pathloom-command");
+        const order = commands.map((candidate) => candidate.id).filter((id) => id !== moving);
+        const target = order.indexOf(command.id);
+        order.splice(Math.max(0, target), 0, moving);
+        uiPreferences.commandOrder = order;
+        saveUiPreferences();
+        render({ keepProperties: true, keepHistory: true });
+      });
+      return button;
+    };
+    const pinned = commands.filter((command) => uiPreferences.pinnedCommands.includes(command.id));
+    if (pinned.length) {
+      const pinnedSection = document.createElement("section");
+      pinnedSection.className = "model-command-pinned";
+      pinnedSection.setAttribute("aria-label", "ピン留めしたコマンド");
+      for (const command of pinned) pinnedSection.append(buildCommandButton(command));
+      list.append(pinnedSection);
+    }
+    for (const group of commandGroupDefinitions) {
+      const members = commands.filter((command) => commandGroup(command) === group.id);
+      if (!members.length) continue;
+      const section = document.createElement("details");
+      section.className = "model-command-group";
+      section.open = openCommandGroups.has(group.id) || !!q;
+      section.addEventListener("toggle", () => {
+        if (section.open) openCommandGroups.add(group.id);
+        else openCommandGroups.delete(group.id);
+      });
+      section.addEventListener("pointerenter", () => { section.open = true; });
+      const heading = document.createElement("summary");
+      heading.textContent = group.label;
+      heading.addEventListener("focus", () => { section.open = true; });
+      const buttons = document.createElement("div");
+      buttons.className = "model-command-group-buttons";
+      for (const command of members) {
+        buttons.append(buildCommandButton(command));
+      }
+      section.append(heading, buttons);
+      list.append(section);
+    }
+    $("modelSession").textContent = session
+      ? `${session.command.displayName} · ${session.state} · ${sessionReady(session) ? "入力済み" : "入力を選択してください"}`
+      : "";
+    inspector.hidden = !session && !featureEditActive;
+    inspector.closest(".model-right").hidden = inspector.hidden;
+    inspector.querySelector("header strong").textContent =
+      session?.command.displayName || store.getFeature(selectedFeature)?.name || "操作";
+    actionControls.hidden = !session;
+    panel.classList.toggle("has-inspector", !inspector.hidden);
+    $("modelCommit").disabled = !session || session.state === "committing";
+    $("modelPreview").disabled = !session || session.state === "committing";
+    if (!activeDrag && !keepProperties && !document.activeElement?.closest("#modelProperties"))
+      properties();
+    if (!keepHistory) {
+      const history = $("modelHistory");
+      history.replaceChildren();
+      historyScrubber.max = String(store.document.features.length - 1);
+      if (!frozenHistoryStage) historyScrubber.value = "-1";
+      for (const f of store.document.features) {
+      const b = document.createElement("button");
+      b.className = "model-history-entry";
+      b.classList.toggle("is-suppressed", f.status === "suppressed");
+      b.dataset.featureId = f.id;
+      b.setAttribute("aria-pressed", String(selectedFeature === f.id));
+      const historyLabel = `${f.name} · ${f.status}${!["valid", "warning", "empty"].includes(f.status) && f.lastValid ? " · 更新前を表示" : ""}`;
+      b.setAttribute("aria-label", historyLabel);
+      b.title = `${historyLabel} · ${f.operation.id}`;
+      b.append(createCommandIcon({
+        baseOperation: f.operation,
+        defaults: f.parameters,
+      }));
+      const accessibleLabel = document.createElement("span");
+      accessibleLabel.className = "model-icon-label";
+      accessibleLabel.textContent = historyLabel;
+      b.append(accessibleLabel);
+      const activate = (edit = false) => {
+        invalidFields.clear();
+        saveDraft();
+        session = null;
+        view.clearPreview();
+        selectedFeature = f.id;
+        propertiesOpen = true;
+        featureEditActive = edit;
+        selection = f.outputSlots.map((s) => ({ entityId: s.entityId }));
+        render({ keepHistory: true });
+      };
+      b.onclick = () => activate(true);
+      b.ondblclick = () => {
+        activate(true);
+        requestAnimationFrame(() => {
+          const input = $("modelProperties").querySelector(
+            "[data-parameter], select, input, textarea, button",
+          );
+          input?.focus();
+          input?.scrollIntoView({ block: "nearest" });
+        });
+      };
+      b.oncontextmenu = (event) => {
+        event.preventDefault();
+        showHistoryMenu(f, event);
+      };
+      b.onpointerenter = () => {
+        if (!frozenHistoryStage) view.setStage(f.id);
+      };
+      b.onpointerleave = () => {
+        if (!frozenHistoryStage) view.clearStage();
+      };
+      history.append(b);
+      }
+    } else {
+      for (const button of $("modelHistory").querySelectorAll(".model-history-entry"))
+        button.setAttribute("aria-pressed", String(button.dataset.featureId === selectedFeature));
+    }
+    const diagnostics = [
+      ...(session?.diagnostics || []),
+      ...store.document.features
+        .filter((f) => f.id === selectedFeature)
+        .flatMap((f) => f.diagnostics),
+    ];
+    const detail = $("modelDiagnostics").querySelector("div");
+    detail.replaceChildren();
+    for (const d of diagnostics) {
+      const p = document.createElement("p");
+      p.textContent = `${d.code}: ${d.message}`;
+      if(d.details&&Object.keys(d.details).length)p.textContent+=' · '+JSON.stringify(d.details);
+      detail.append(p);
+      for (const action of d.actions || []) {
+        const b = document.createElement("button");
+        b.textContent = action.label || action.id;
+        b.onclick = () => {
+          if (action.id === "restartRuntime")
+            native
+              .restart()
+              .then(() => {
+                store.handles.clear();
+                setStatus("再起動しました。再計算を実行できます。");
+              })
+              .catch(report);
+          else if (action.id === "retry") store.recompute().catch(report);
+          else {
+            selectedFeature = d.featureId || selectedFeature;
+            properties();
+            $("modelProperties").scrollIntoView({ block: "nearest" });
+            if (action.id === "editTolerance")
+              $("modelProperties")
+                .querySelector("[data-tolerance=joinLinearMm]")
+                ?.focus();
+            if (action.id === "editRadius")
+              $("modelProperties")
+                .querySelector("[data-parameter=radiusMm]")
+                ?.focus();
+          }
+        };
+        detail.append(b);
+      }
+    }
+    $("modelDiagnostics").open = diagnostics.length > 0;
+    $("modelUndo").disabled = !store.transactions.canUndo;
+    $("modelRedo").disabled = !store.transactions.canRedo;
+    updateView();
+    const selectedEntity = selection.length === 1 && store.getEntity(selection[0].entityId)?.visibility !== "hidden" ? store.getEntity(selection[0].entityId) : null;
+    if (selectedEntity?.bbox) {
+      const size = selectedEntity.bbox.max.map((value, index) => value - selectedEntity.bbox.min[index]);
+      dimensions.replaceChildren();
+      for (const [index, label] of ["W", "D", "H"].entries()) {
         const item = document.createElement("span");
         item.dataset.dimension = ["widthMm", "depthMm", "heightMm"][index];
         item.textContent = `${index ? " × " : ""}${label} ${size[index].toFixed(2)}`;
