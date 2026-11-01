@@ -695,7 +695,7 @@ export function initModelWorkspace(api) {
     frozenHistoryStage = null;
     view.clearStage();
   });
-  panel.querySelector(".model-history header").append(historyScrubber);
+  // Playhead overlays the entire history strip rather than occupying the header.\n  panel.querySelector(".model-history").append(historyScrubber);
   const viewportOverlay = document.createElement("div");
   viewportOverlay.className = "model-viewport-overlay";
   const cursorReadout = document.createElement("output");
