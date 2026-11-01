@@ -101,6 +101,9 @@ M01の残りとM02以降のGUI/OS実利用は未実施。インストールし�
   衝突の明示解決、文書へのimmutable版固定、履歴の明示upgrade/rollback、既存ローカルAI経路を
   実装する。C/Eの確定事項を保持し、確認継続中のS系の意味は変更しない。
 - 任意スケッチの要素・拘束・ドラッグ・寸法表示、非線形ソルバーの成分分離/スケーリング/診断を仕様に沿って拡張する。
+  Issue #21は[実装境界と証拠](cad-sketch-solver-plan.md)に従い、sketch一履歴項目、local origin、
+  支持面追従/消失警告、Point/Line/Circle、拘束・駆動/参照寸法、drag、成分別診断を実装する。
+  C系65 commandの一括UI再配置とE系契約変更はこのIssueに含めない。
 - CAD以外を含む回復、未知schema/operation版の読取専用回復、Library移行を仕上げる。
 - 代表モデルで表示/再計算/転送/起動/メモリを測り、handle・表示cacheのGCを改善する。
   合成モデルのLinux値をMac性能の達成根拠にしない。
