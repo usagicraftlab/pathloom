@@ -99,6 +99,13 @@ Move transform, project v2, CAD recovery file, shape/history Library with typed 
 remapping, command-data registration, 4-stage layout and explicit body-result
 generation binding are implemented in part. See `cad-implementation-notes.md`.
 
+2026-11-01 指示025では、デスクトップ版の永続CAD daemonへ同梱するPython module一覧を
+`CAD_RUNTIME_SOURCES`へ集約し、`curve_surface_creation.py`と`surface_editing.py`の欠落を
+修正した。Rust回帰は`native/cad_operations/*.py`（`test_*`を除く）と
+`cad_runtime.py`がimportするnative直下moduleをsource treeから列挙し、同梱一覧との不足・
+余剰を機械的に拒否する。これは起動時bundleの完全性修正であり、65 IDの個別完了状態や
+実Mac GUI/Tauri/OS dialog/Issue #37の未実施状態を変更しない。
+
 ## Issue #4 — AUD-001 asynchronous result application
 
 The isolated `fix/4-aud-001` branch changes Store result adoption and its race

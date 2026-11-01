@@ -2052,3 +2052,29 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   任意NVIDIA USD 2skip、macOS Rust 22成功、browser 87成功を確認した。
 - このCI記録を含む最終文書commitのpush/PR CIを再確認するまで、PRはDraftのままReady、
   merge、Issue自動closeを行わない。指示021〜024、Issue #37、Draft PR #43には着手しない。
+
+## 2026-11-01 — 指示025 デスクトップ版CADランタイム起動失敗の緊急修正
+
+- 最新ボードで指示021が予約へ戻り、指示025が`未着手`であることを確認した。
+  `requiredRevisionId`付きで025だけを`作業中`へ変更し、読み戻してから最新main
+  `fc43f9095aaf063fa3879206a420dfa8595dc3ee`から`fix/25-cad-runtime-bundle`を作成した。
+  指示021〜024、Issue #37、Draft PR #43には着手していない。
+- 原因は`native/cad_runtime.py`が`cad_operations`から公開する
+  `curve_surface_creation.py`と`surface_editing.py`を、Tauri起動時のcacheコピー一覧が
+  同梱していなかったことだった。同梱一覧を`CAD_RUNTIME_SOURCES`へ集約して2moduleを追加し、
+  全非test `native/cad_operations/*.py`とruntimeがimportするnative直下moduleの不足・余剰を
+  source treeから検査するRust回帰を追加した。
+- `native/step_brep_bridge.py`は永続CAD daemonのbundleには不要で、`src-tauri/src/lib.rs`が
+  `include_bytes!`から`app_cache_dir()/native/step_brep_bridge.py`へ別配置し、STEP face操作時に
+  個別起動する経路を確認した。このため追加の仕様判断や`@Muse`停止は不要だった。
+- ローカルNode24.22.1 `npm test`とNode20.20.2全JSは各224成功（失敗/skip 0）。
+  native全105件は103成功・任意NVIDIA USD 2skip。manifestに列挙された8ファイルだけを
+  一時cacheへ置くsmokeはdaemon hello（protocol 1、77 operation）成功。browser全87件は
+  retry無効で87成功（失敗/skip/retry 0）。local Rustはcargo不在で未実行。実Mac GUI、
+  Tauri transport、OS dialog、Issue #37も未実施である。
+- browser準備では`npx playwright install chromium`が5回とも0 MiBの破損ZIPで失敗し、
+  OS package導入もcontainerのsetgroups制約でtest前に失敗した。npm配布Chromiumの標準展開も
+  `/tmp/fonts`のchown制約で失敗したため、同じnpm packageのBrotli archiveを所有権変更なしで
+  一時領域へ展開して全件を実行した。これら環境準備失敗を87成功へ置換しない。
+- PR、CI、Ready、mergeはこの時点では未実施。CIでRust回帰を含む全jobを確認するまで
+  mergeしない。対象にGitHub Issueはないため`Closes`とIssue自動closeは行わない。

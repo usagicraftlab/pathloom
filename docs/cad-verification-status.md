@@ -392,3 +392,14 @@ Modes/Diagnostics/Fixture/Known limitsの非空、証拠setとファイルの存
 失敗時の出力なし/cache不変を明示的に追加する。C11/C12のbrowser pendingは
 PR #46〜#48の全件85成功証拠へ更新する。これは証拠の追跡閉鎖であり、未対応モード、
 一般参照修復、実Mac GUI/Tauri/OS dialog/Issue #37を合格へ昇格しない。
+
+## 2026-11-01 — 指示025 デスクトップCADランタイムbundle
+
+R04は引き続きpartialのまま。`src-tauri/src/cad_runtime.rs`のRust回帰は、全ての非test
+`native/cad_operations/*.py`と`cad_runtime.py`がimportするnative直下moduleが
+デスクトップ同梱一覧と一致することを検査する。別途、同じ一覧だけを一時cacheへ配置した
+packaged-manifest smokeでdaemonを起動し、protocol 1・77 operationのhello成功を確認した。
+`step_brep_bridge.py`は永続daemonの依存ではなく、`src-tauri/src/lib.rs`が別の
+`app_cache_dir()/native`へ配置してSTEP face操作時に起動する経路を確認した。
+ローカルではcargo不在のためRust test自体は未実行で、CI結果と区別する。実Mac GUI、
+Tauri transport、OS dialog、Issue #37も未実施であり、この自動証拠で合格へ昇格しない。
