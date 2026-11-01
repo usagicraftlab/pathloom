@@ -28,6 +28,11 @@ function rectangleCommand(id = "user.rectangle.center", displayName = "Custom Ce
   };
 }
 
+async function deferWholeProjectRecovery(page) {
+  const later = page.locator('dialog button[data-project-recovery="later"]');
+  if (await later.isVisible()) await later.click();
+}
+
 // Real OCCT daemon behind browser IPC. Only the OS-specific Tauri transport is substituted.
 let daemon,
   queue = [],
@@ -695,6 +700,7 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
     .toBe(3);
   await page.reload();
   await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
+  await deferWholeProjectRecovery(page);
   await page.locator("#modeModel").click();
   await page.getByRole("button", { name: "CADを回復", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
@@ -777,6 +783,7 @@ test("A04/R06: work-order command definition creates real geometry and persists 
   }), definition);
   await page.reload();
   await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
+  await deferWholeProjectRecovery(page);
   await page.locator("#modeModel").click();
   await page
     .getByRole("button", { name: "Custom Center Rectangle", exact: true })
@@ -890,6 +897,11 @@ test("A11/T07: Join gap remains until the user explicitly changes tolerance", as
 
 test("#11: delayed shared commands load through the registry without a JSON registration UI", async ({ page }) => {
   const definition = rectangleCommand("user.rectangle.deferred", "Deferred Rectangle");
+  // Let the fixture's initial empty legacy library migration finish before
+  // replacing it with the legacy array whose delayed migration is under test.
+  await expect.poll(() => page.evaluate(async () =>
+    JSON.parse(await window.__cadStorage({ key: "commands" }))?.format,
+  )).toBe("pathloom-library");
   await page.evaluate((definition) => window.__cadStorage({
     key: "commands", content: JSON.stringify([definition]),
   }), definition);
@@ -897,6 +909,7 @@ test("#11: delayed shared commands load through the registry without a JSON regi
   await page.exposeBinding("__commandLoadGate", () => new Promise(resolve => { release = resolve; }));
   await page.goto("/?defer-command-load");
   await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
+  await deferWholeProjectRecovery(page);
   await page.locator("#modeModel").click();
   await expect.poll(() => typeof release).toBe("function");
   try {
@@ -904,7 +917,10 @@ test("#11: delayed shared commands load through the registry without a JSON regi
     await expect(page.getByRole("button", { name: definition.displayName, exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => window.PathloomModel.store.document.commandDefinitions.map(d => d.id))).not.toContain(definition.id);
     release();
-    await expect.poll(() => page.evaluate(async () => JSON.parse(await window.__cadStorage({ key: "commands" })).map(d => d.id))).toContain(definition.id);
+    await expect.poll(() => page.evaluate(async () => {
+      const stored = JSON.parse(await window.__cadStorage({ key: "commands" }));
+      return (Array.isArray(stored) ? stored : stored.entries).map(d => d.id);
+    })).toContain(definition.id);
     await expect(page.getByRole("button", { name: definition.displayName, exact: true })).toBeVisible();
     await page.getByRole("button", { name: definition.displayName, exact: true }).click();
     await page.getByRole("textbox", { name: "CAD point center", exact: true }).fill("10,20,0");
@@ -941,5 +957,8 @@ test("#11: project command definitions reopen when the shared command file is un
   await expect(page.locator(".model-history-entry")).toContainText("valid");
   expect(await page.evaluate(() => window.PathloomModel.store.document.entities[0].bbox)).toEqual({ min: [-20,0,0], max: [40,40,0] });
   expect(await page.evaluate(() => window.PathloomModel.store.document.commandDefinitions.map(d => d.id))).toContain(definition.id);
-  expect(await page.evaluate(async () => JSON.parse(await window.__cadStorage({ key: "commands" })).map(d => d.id))).not.toContain(definition.id);
+  expect(await page.evaluate(async () => {
+    const stored = JSON.parse(await window.__cadStorage({ key: "commands" }));
+    return (Array.isArray(stored) ? stored : stored.entries).map(d => d.id);
+  })).not.toContain(definition.id);
 });

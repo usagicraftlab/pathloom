@@ -13,6 +13,7 @@ import {compactProjectGenerators,validateProject} from './pathloom-project.js';
 import {createProjectRecovery,parseProjectRecovery,prepareProjectOpen,readLibraryContainer,writeLibraryContainer} from './recovery-migration.js';
 const clone=value=>structuredClone(value),$=id=>document.getElementById(id);
 export function initCad(api){
+  window.PathloomProjectRecoveryEnabled=true;
   let definition=geometryDefinition(DEFAULT_DEFINITION),sourceId=null,generatorKey=`cad:${crypto.randomUUID()}`,worker=null,idleWorker=null,timer=null,timeout=null,revision=0;
   let curveDataAttributes={},drawing=false,drag=null,pointerStart=null,inputsGroup=null,library=[],history=[],historyIndex=-1,projectPath=null,pending=false,chat=null,inputUi=null,generationError=null;
   let workspaceMode='generate',gizmo=null,liveEpoch=0,definitionVersion=0,generationCompletion=null;
@@ -176,7 +177,7 @@ export function initCad(api){
 
   function download(name,text){const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
   $('cadExportPaths').addEventListener('click',()=>{const source=api.sources().find(s=>s.id===sourceId);if(!source||source.generationError){status('Generate a valid object first');return}download(`${source.label}.toolpath`,JSON.stringify({paths:source.paths},null,2))});
-  let readOnlyProject=null,readOnlyFromRecovery=false,projectRecoveryReadable=false,projectRecoveryPending=false,projectRecoveryStamp=null,projectRecoveryBusy=false;
+  let readOnlyProject=null,readOnlyFromRecovery=false,projectRecoveryReadable=false,projectRecoveryPending=false,legacyCadRecoveryPending=false,projectRecoveryStamp=null,projectRecoveryBusy=false;
   const readOnlyDialog=document.createElement('dialog');readOnlyDialog.className='model-switch-dialog';readOnlyDialog.innerHTML='<h2>読取専用で回復</h2><p data-read-only-reason></p><dl data-read-only-summary></dl><p>未知の版を含む原文は変更していません。編集・自動保存は無効です。</p><button data-read-only="copy">原文を別名保存</button><button data-read-only="close">閉じる</button>';document.body.append(readOnlyDialog);
   function enterReadOnly(candidate,name='Recovery candidate',fromRecovery=false){
     readOnlyProject=clone(candidate.raw);readOnlyFromRecovery=fromRecovery;projectRecoveryPending=true;
@@ -188,15 +189,15 @@ export function initCad(api){
   readOnlyDialog.addEventListener('click',async event=>{const choice=event.target.dataset.readOnly;if(!choice)return;try{if(choice==='copy'&&readOnlyProject){const path=await invoke('save_pathloom_project',{content:JSON.stringify(readOnlyProject),currentPath:null});if(path)api.toast('読取専用の原文を変更せず別名保存しました')}if(choice==='close'){readOnlyProject=null;document.querySelector('.app-shell').inert=false;readOnlyDialog.close();$('projectName').textContent='Untitled';$('projectName').title='';if(readOnlyFromRecovery)projectRecoveryDialog.showModal();else{projectRecoveryPending=false;queueProjectRecovery()}readOnlyFromRecovery=false}}catch(error){api.toast(error.message,'error')}});
   async function buildRecoveryProject(){const base=api.captureProject({allowCadDraft:true}),cadDocument=await window.PathloomModel.snapshot();return validateProject({...base,version:2,cadDocument})}
   async function queueProjectRecovery(){
-    if(!projectRecoveryReadable||projectRecoveryPending||readOnlyProject||projectRecoveryBusy)return;
+    if(!projectRecoveryReadable||projectRecoveryPending||legacyCadRecoveryPending||readOnlyProject||projectRecoveryBusy)return;
     projectRecoveryBusy=true;
     try{const project=compactProjectGenerators(await buildRecoveryProject()),stamp=JSON.stringify(project);if(stamp===projectRecoveryStamp)return;const envelope=createProjectRecovery(project);await invoke('project_recovery',{content:JSON.stringify(envelope)});projectRecoveryStamp=stamp}catch{}finally{projectRecoveryBusy=false}
   }
   const projectRecoveryDialog=document.createElement('dialog');projectRecoveryDialog.className='model-switch-dialog';projectRecoveryDialog.innerHTML='<p>前回のプロジェクト全体（CAD以外を含む）の回復データがあります。</p><button data-project-recovery="restore">プロジェクトを回復</button><button data-project-recovery="discard">回復データを破棄</button><button data-project-recovery="later">今はしない</button>';document.body.append(projectRecoveryDialog);
   let projectRecoveryCandidate=null;
   async function checkProjectRecovery(){
-    try{const raw=await invoke('project_recovery');projectRecoveryReadable=true;if(raw){projectRecoveryCandidate=parseProjectRecovery(JSON.parse(raw));projectRecoveryPending=true;projectRecoveryDialog.showModal()}}catch{projectRecoveryReadable=false}
-    if(projectRecoveryReadable&&!projectRecoveryPending)queueProjectRecovery();
+    try{legacyCadRecoveryPending=!!(await invoke('cad_recovery'));const raw=await invoke('project_recovery');projectRecoveryReadable=true;if(raw){projectRecoveryCandidate=parseProjectRecovery(JSON.parse(raw));projectRecoveryPending=true;if(!legacyCadRecoveryPending)projectRecoveryDialog.showModal()}}catch{projectRecoveryReadable=false}
+    if(projectRecoveryReadable&&!projectRecoveryPending&&!legacyCadRecoveryPending)queueProjectRecovery();
   }
   async function saveProject(as=false){
     try{
@@ -227,7 +228,7 @@ export function initCad(api){
     }catch(error){api.toast(error.message,'error')}
   });
   projectRecoveryDialog.addEventListener('click',async event=>{const choice=event.target.dataset.projectRecovery;if(!choice)return;try{if(choice==='restore'){if(projectRecoveryCandidate?.kind!=='project')throw new Error('Unsupported recovery candidate');projectRecoveryDialog.close();if(projectRecoveryCandidate.candidate.mode==='read-only')enterReadOnly(projectRecoveryCandidate.candidate,'Recovery candidate',true);else{await applyProject(projectRecoveryCandidate.candidate.project);await invoke('project_recovery',{discard:true});projectRecoveryCandidate=null;projectRecoveryPending=false}}if(choice==='discard'){await invoke('project_recovery',{discard:true});projectRecoveryCandidate=null;projectRecoveryPending=false;projectRecoveryDialog.close()}if(choice==='later')projectRecoveryDialog.close();if(choice!=='later')queueProjectRecovery()}catch(error){api.toast(error.message,'error')}});
-  setTimeout(checkProjectRecovery,0);setInterval(queueProjectRecovery,10000);document.addEventListener('change',queueProjectRecovery);document.addEventListener('pathloom:rhino-bindings-restored',queueProjectRecovery);
+  setTimeout(checkProjectRecovery,0);setInterval(queueProjectRecovery,10000);document.addEventListener('change',queueProjectRecovery);document.addEventListener('pathloom:rhino-bindings-restored',queueProjectRecovery);document.addEventListener('pathloom:cad-recovery-state',event=>{legacyCadRecoveryPending=event.detail.pending;if(!legacyCadRecoveryPending)queueProjectRecovery()});
   document.addEventListener('pathloom:source-removed',event=>{const removed=event.detail;if((removed?.generatorGroup||removed?.liveSource)!==generatorKey)return;const sibling=api.sources().find(s=>s.id!==removed.sourceId&&(s.generatorGroup||s.liveSource)===generatorKey);if(sibling&&removed.generatorOutputId){const output=printOutputNodes(definition).find(o=>o.id===removed.generatorOutputId);sourceId=sibling.id;if(output)replace(removePrintOutput(definition,output.nodeId))}else{chat?.cancel();cancelJob();sourceId=null;disposeInputs();status('Generated object deleted')}});
   async function saveAiRecipes(snapshot,before){
     let next=[...library];const updates=[];
