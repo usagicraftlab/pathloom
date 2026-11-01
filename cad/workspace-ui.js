@@ -1633,51 +1633,15 @@ export function initModelWorkspace(api) {
     render();
     await startRuntime();
   }
+  // 指示026: 数値入力はタイピングのみ。wheel・ドラッグ操作で値を変更しない。
   function enhanceNumericFields(host) {
-    for (const input of host.querySelectorAll("input")) {
-      if (input.type === "checkbox" || input.dataset.numericEnhanced) continue;
-      const value = Number(input.value);
-      if (!Number.isFinite(value)) continue;
+    for (const input of host.querySelectorAll('input[type="number"]')) {
+      if (input.dataset.numericEnhanced) continue;
       input.dataset.numericEnhanced = "true";
       input.addEventListener("wheel", (event) => {
-        event.preventDefault();
-        input.focus({ preventScroll: true });
-        const angle = /角度|angle/i.test(input.getAttribute("aria-label") || "");
-        const step = angle ? (event.shiftKey ? Math.PI / 180 : Math.PI / 12) : event.altKey ? 0.1 : 1;
-        const next = Number(input.value) + (event.deltaY < 0 ? step : -step);
-        input.value = String(angle && !event.shiftKey ? Math.round(next / step) * step : next);
-        input.dispatchEvent(new Event("input", { bubbles: true }));
+        // フォーカス中の number input はブラウザ既定動作で値が変わるため抑止。
+        if (document.activeElement === input) event.preventDefault();
       }, { passive: false });
-      const handle = document.createElement("span");
-      handle.className = "model-parameter-drag";
-      handle.tabIndex = 0;
-      handle.setAttribute("role", "slider");
-      handle.setAttribute("aria-label", `${input.getAttribute("aria-label") || "数値"}をドラッグ`);
-      handle.addEventListener("pointerdown", (event) => {
-        event.preventDefault();
-        const startX = event.clientX;
-        const initial = Number(input.value);
-        const angle = /角度|angle/i.test(input.getAttribute("aria-label") || "");
-        const move = (moveEvent) => {
-          const raw = initial + (moveEvent.clientX - startX) * (angle ? Math.PI / 180 : moveEvent.altKey ? 0.1 : 1);
-          const step = angle && !moveEvent.shiftKey ? Math.PI / 12 : moveEvent.altKey ? 0.1 : 1;
-          input.value = String(Math.round(raw / step) * step);
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          cursorReadout.hidden = false;
-          cursorReadout.style.left = `${moveEvent.clientX}px`;
-          cursorReadout.style.top = `${moveEvent.clientY}px`;
-          cursorReadout.textContent = angle
-            ? `${(Number(input.value) * 180 / Math.PI).toFixed(1)}°${moveEvent.shiftKey ? " · 自由" : " · 15° snap"}`
-            : `${Number(input.value).toFixed(moveEvent.altKey ? 1 : 0)} mm${moveEvent.altKey ? " · 精密" : " · 1mm snap"}`;
-        };
-        trackDrag(handle, event, move, () => {}, () => {
-          input.value = String(initial);
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          if (session) cancel();
-          else { selectedFeature = null; featureEditActive = false; render(); }
-        });
-      });
-      input.insertAdjacentElement("afterend", handle);
     }
   }
   function properties() {
