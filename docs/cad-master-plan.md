@@ -56,7 +56,7 @@ CI設定の変更はない。PRを作成してレビューに渡し、mainへは
 | 既存STEP読込・面編集・Z断面 | `step-import.js`、`lib.rs::run_editable_cad`、`cad_process.rs` → `native/occt_brep_bridge.py` | 常駐CADとは別の既存プロセス経路。25秒制限。実OCCTの読込・平面の面移動・スライスをPythonで確認。旧USDは任意互換経路 |
 | CAD→生成ノード | `cad/generation-adapter.js`、`workspace-ui.js::updateBindings` → `cad-ui.js`、`app.js::syncCadBinding` | 明示的body-result binding。Curveは0.02 mmでサンプル化、B-repは正本を保持して渡す。自動配線しない。非アクティブな生成グラフの自動再計算は未完 |
 | 生成→出力 | `cad-pipeline.js`、`toolpath-data.js`、`app.js::generateGcode` | 現行binding/hash、生成失敗、印刷座標・設定を出力時に検証。既存JS回帰テスト成功。CAD寸法変更からG-codeまでの全経路は未確認 |
-| プロジェクト・回復・ライブラリ | `cad-ui.js::saveProject/openProject`、`pathloom-project.js`、`cad/{persistence,store,shape-library}.js` → `src-tauri/src/project_files.rs` | 通常保存v2、v1読込、正本hash/byte検証、prepare/commit restore、別のCAD回復ファイル。Rustは同ディレクトリの一時ファイル→sync→rename。OS保存・再起動は未確認 |
+| プロジェクト・回復・ライブラリ | `cad-ui.js::saveProject/openProject`、`pathloom-project.js`、`recovery-migration.js`、`cad/{persistence,store,shape-library}.js` → `src-tauri/src/project_files.rs` | 通常保存v2、v1読込、正本hash/byte検証、prepare/commit restore、既存CAD回復と全project回復を別候補で保持。未知project/CAD schema/operation版は原文保持の読取専用。3種Libraryはlegacy配列からtyped schema 1 containerへ無損失移行。Rustは同ディレクトリの一時ファイル→sync→rename。実Mac OS保存・再起動はIssue #37で未確認 |
 
 Python探索は`PATHLOOM_BREP_PYTHON`、開発用`.pathloom-runtime/python`、`python3`の順。
 `npm run cad:setup`はPython 3.12と`cadquery-ocp==7.8.1.1`を用意する。
@@ -81,9 +81,9 @@ Issue #19開始時の再列挙では、後続Issue #12〜#18の実装を含む�
 | 面編集 F | 5 / 11 | 開いた面のJoin、Explode、有限domainのUntrim、片側Offset、Reverse | Trimと一般的な面編集は未完。`surface.split`/`surface.extract`だけでF03/D09完成としない |
 | 立体作成 B | 5 / 8 | Box/Sphere/Cylinder/Cone/Torusの一部 | Ellipsoid等の全モード、B07専用の面押出経路が未完。Pipe/Cap・閉体積組立未実装 |
 | 立体編集 D | 7 / 9 | 単一対象Boolean、semantic edgeのFillet、開口面を指定したShellの一部 | D02にAUD-002、D04にAUD-003。Chamfer等のper-ID fixture不足。一般MoveFace/SplitFace未実装 |
-| 共通基盤 | 65 ID外も含む | DAG、参照の明示的修復、単調revisionのUndo、正本保存、世代管理、型付きLibrary ID再割当 | AUD-001。一般Modified/Generated伝播、分割の由来、未対応版の読取専用回復が未完 |
+| 共通基盤 | 65 ID外も含む | DAG、参照の明示的修復、単調revisionのUndo、正本保存、世代管理、型付きLibrary ID再割当、未知版の原文保持読取専用回復 | AUD-001、P4-03、R11。一般Modified/Generated伝播と実Mac回復は未完 |
 | スケッチ | 共通 | Workerソルバー、長方形寸法、線/円の限定fixture、未収束時の入力保持 | GUIからの任意スケッチ、円/円弧/NURBS等の形状化、ドラッグ、拘束glyph、スケール/成分分離/衝突候補診断の網羅は未完 |
-| 保存・連携 | 共通 | v1/v2検証、hash付き正本、ライブラリ・body bindingの部品テスト | 実OSでの全体回復、失敗分岐隔離、複数生成グラフの自動更新は検証不足/未完。STEPのCAD文書への統合とSTEP書出しも未完 |
+| 保存・連携 | 共通 | v1/v2検証、hash付き正本、全project回復候補、未知版読取専用、typed Library移行、body bindingの部品テスト | 代替storage browserまで実施。実OSでの全体回復、失敗分岐隔離、複数生成グラフの自動更新は検証不足/未完 |
 
 具体的には長方形中心・寸法、開曲線押出の面積300 mm²、開Loftの面積200 mm²、
 押出体積60,000→80,000 mm³、Boolean体積1,500/500/500 mm³、Shell等を今回の実OCCTテストで確認した。

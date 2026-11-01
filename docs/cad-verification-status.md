@@ -65,6 +65,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | T24 | passed | real negative nonplanar curve persisted; CAD browser free 3D creation |
 | T25 | partial | runtime destroyed/new instance: curve+solid exact hash/bounds/length/volume; Issue #14 exports current exact body as STEP and fresh Runtime rereads equal bbox/area/volume/closure/validity. Open shell+NURBS exhaustive trim/parameter proof pending |
 | P4-02 | partial | Issue #21 unit fixtures pass component isolation, far-origin scaling, hard drag, axis symmetry, reference dimensions, linked-face movement and orphan retention. Browser/full regression/CI state is recorded in the development log; real Mac remains #37 |
+| P4-03 | partial | Issue #22: unknown project/CAD schema/operation versions retain the raw JSON graph in a read-only recovery view; edits and autosave are blocked and only unchanged Save As is allowed. Unit + packaged-browser substitute storage; real Tauri/macOS remains #37 |
 | R01 | passed | Issue #4: latest preview/export result wins, superseded handles released; late upstream evaluation/export failures cannot overwrite the latest dependent dirty state |
 | R02 | passed | Issue #4: unrelated revision retains a valid result; all queued recompute callers wait until the newest input has been evaluated |
 | R03 | passed | Issue #4: Undo/delete/Open during export cannot adopt the old result; add initialization cannot insert into a replaced document |
@@ -75,6 +76,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | R08 | partial | Browser recovery restores real assets and history; failed feature + lastValid saved in v2; complete failed-draft restart matrix pending |
 | R09 | partial | existing representative JS fixtures + browser regressions; Issue #14 covers editable embedded STEP adapter and display-only legacy preservation without changing v1 meaning. Complete legacy asset matrix and real OS dialog pending |
 | R10 | partial | Issue #6/#15: per-source Split candidates, vanished part bindings, explicit repair UI, blocked v2 reopen, independent Library copies and exact placement Undo/Redo tested. Real Tauri/macOS interaction remains untested |
+| R11 | partial | Issue #22: versioned whole-project recovery retains non-CAD sources/settings alongside CAD; legacy CAD recovery remains separate and compatible; Component/Shape/Command legacy arrays migrate losslessly to typed containers. Unit/browser/Rust contract coverage; real app-data restart and OS dialog remain #37 |
 
 ## 2026-10-27 JST — Issue #5 scope
 

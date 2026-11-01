@@ -2118,3 +2118,42 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   `41306173848`とPR run `41306178277`はいずれもattempt 1で全3job成功した。各runの
   生ログはJS 229成功、native 105件中103成功・任意2skip、macOS Rust 23成功、browser
   87成功（retryなし）を示した。このCI証拠を追記する文書専用commitにも同じ全CIを要求する。
+
+## 2026-11-01 — 指示022 / Issue #22 全体回復・未知版・Library移行
+
+- 最新ボードで指示022が`未着手`へ有効化され、@codex返信がmain/PR #52/post-merge CI確認を
+  要求していることを確認した。main `ea4ce7dd4c5bfe271ba06d5e7e16b1643855a702`、
+  PR #52のmerge commit、post-merge run `41308110600` attempt 1 successのhead SHA一致を
+  確認し、`requiredRevisionId`付きで022だけを`作業中`へ変更・読戻し後、
+  `feat/22-recovery-migration`を作成した。023/024、Issue #37、Draft PR #43は触っていない。
+- 対象を全project回復候補、未知project/CAD schema/operation版の原文保持読取専用経路、
+  Component/Shape/Command Libraryのlegacy配列からtyped schema 1 containerへの無損失移行とし、
+  着手前にCodexログとIssue #22へ記録した。既存CAD単体候補と既知版validatorは維持する。
+- 初回Node24全JSは233成功（失敗/skip 0）。追加browser 2件の最初の実行はPlaywright実行体が
+  未配置でtest body前に2失敗、`npx playwright install chromium`も5回とも0 MiBの破損ZIPで
+  失敗した。この環境準備失敗を成功へ置換しない。既存の所有権変更不要Chromium実行体と
+  runtime同梱OCP Pythonを明示した再実行は追加2件成功（失敗/skip/retry 0）。
+- 既存CAD単体候補と新しい全project候補が同時にある場合は、既存候補の保留・破棄・回復を
+  先に提示し、解決後に全project自動保存を再開する。Library形式変更に伴い、既存browserの
+  Command Library読取りと回復ダイアログ処理もtyped container契約へ更新した。
+- 修正前のbrowser全件（retryなし）は89件中83成功・6失敗だった。内訳は既存CAD回復2件、
+  A19回復件数1件、新しい全project回復ダイアログを処理していない既存test 2件、旧Command
+  Library配列を直接読むtest 1件であり、成功へ置換しない。回復候補の優先順位修正後、既存CAD
+  回復6件とA19は限定再実行で成功した。ダイアログとtyped container期待値を更新した3件も
+  限定再実行で成功した。
+- 最終ローカルはNode 24.22.1とNode 20.20.2の全JSが各233成功（失敗/skip 0）、nativeは
+  105件中103成功・任意NVIDIA USD 2skipだった。browser全件（retryなし）は89件中88成功、
+  既存`P3 Move inference, Alt precision and Shift free rotation`だけが一度`angleRad`未設定で
+  失敗し、同testの即時単独再実行（retryなし）は1成功だった。全件失敗履歴は保持する。
+  追加browser 2件はこの最終全件runでも両方成功した。local Rustはcargo不在で未実行である。
+- 直接`git push`はGitHub認証情報不在で失敗し、成功へ置換しない。Git Data APIで同一treeを
+  `feat/22-recovery-migration`へ反映してDraft PR #53を作成した。最終headのCI生ログ確認、
+  Ready、merge、Issue #22自動close、post-merge main CIはこの時点では未実施である。
+- 最初の最終差分転送commit `7443bf4667d6138474ef731cb2154ca3e6fe0086`は、大きい2ファイルが
+  ツール出力上限で途中切断されたことを読戻しで検出した。このheadのpush `41321979710`とPR
+  `41321984024`はattempt 1 cancelledであり合格に使わない。全4 blob SHAをローカルと照合して
+  訂正した製品head `cd69f670c130668bfa38c1e3e1acd32f80308aa7`（tree
+  `2bad9fa3d652be220468762795404a46238e8672`）のpush `41322035431`とPR `41322039692`は
+  attempt 1で全3job成功した。両runの生ログはJS 233成功、native 105件中103成功・任意2skip、
+  macOS Rust 24成功、browser 89成功（retryなし）を示した。このCI証拠を追記する文書commitにも
+  同じ全CIを要求し、完了前に生ログを確認する。
