@@ -472,3 +472,12 @@ body[data-workspace-mode=model] .view-axis-buttons.view-cube{right:calc(var(--ca
 .model-viewport-overlay{z-index:38}.model-command-bar{margin-right:145px}
 .model-projected-dimensions span{position:fixed;transform:translateX(-100%);padding:2px 5px;border-radius:4px;background:#f7fbf9d9;color:#31576b;font-size:11px;pointer-events:auto;cursor:text;font-variant-numeric:tabular-nums}
 .model-array-dialog{position:fixed;left:auto;right:22px;top:100px;margin:0;width:260px;z-index:42;background:#f8fbfaf5;box-shadow:0 8px 30px #253b3d2b}
+
+/* 指示026: 補助操作をCADメニューバーへ集約 */
+.model-options-menu{position:relative;align-self:center;z-index:35;font-size:11px}
+.model-options-menu>summary{list-style:none;cursor:pointer;padding:6px 10px;border-radius:7px;color:inherit;user-select:none}
+.model-options-menu>summary::-webkit-details-marker{display:none}
+.model-options-menu>summary:hover,.model-options-menu[open]>summary{background:rgba(127,145,162,.16)}
+.model-options-items{position:absolute;right:0;top:calc(100% + 5px);min-width:184px;display:flex;flex-direction:column;gap:2px;padding:6px;border:1px solid rgba(158,172,186,.25);border-radius:9px;background:rgba(27,33,40,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px rgba(0,0,0,.22)}
+.model-options-items>button{text-align:left;min-height:29px;padding:5px 9px;border:0;border-radius:5px;background:transparent;font-size:11px}
+.model-options-items>button:hover{background:rgba(155,180,200,.16)}
