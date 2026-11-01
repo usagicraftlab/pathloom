@@ -6,6 +6,7 @@ import {
   sha256,
 } from "../cad/document.js";
 import { planRecompute } from "../cad/history.js";
+import { CadStore } from "../cad/store.js";
 import { createTransactions } from "../cad/transactions.js";
 import { resolveSubshape } from "../cad/references.js";
 import { parseScalar, parseCoordinate } from "../cad/commands/input.js";
@@ -16,6 +17,11 @@ import {
   adaptCommand,
 } from "../cad/commands/registry.js";
 import { solveSketch, qrSolve } from "../cad/sketch/solver.js";
+import {
+  createSketch,
+  sketchPointWorld,
+  updateSketchSupport,
+} from "../cad/sketch/model.js";
 function feature(id, input = []) {
   return {
     id,
@@ -238,6 +244,141 @@ test("QR handles a rank-deficient system without a matrix inverse", () => {
   );
   assert.equal(rank, 1);
   assert.ok(Math.abs(x[0] + x[1] - 2) < 1e-9);
+});
+test("P4-02 solver isolates independent components and records the failed one", () => {
+  const s = {
+    points: [
+      { id: "a", u: 0, v: 0 },
+      { id: "b", u: 8, v: 0 },
+      { id: "c", u: 100, v: 0 },
+      { id: "d", u: 108, v: 0 },
+    ],
+    lines: [
+      { id: "first", start: "a", end: "b" },
+      { id: "second", start: "c", end: "d" },
+    ],
+    circles: [],
+    constraints: [
+      { id: "fix-a", kind: "fixed", refs: ["a"] },
+      { id: "first-horizontal", kind: "horizontal", refs: ["first"] },
+      { id: "first-length", kind: "length", refs: ["first"], value: 10 },
+      { id: "fix-c", kind: "fixed", refs: ["c"] },
+      { id: "second-horizontal", kind: "horizontal", refs: ["second"] },
+      { id: "second-long", kind: "length", refs: ["second"], value: 10 },
+      { id: "second-short", kind: "length", refs: ["second"], value: 5 },
+    ],
+  };
+  const result = solveSketch(s);
+  assert.equal(result.status, "no-convergence");
+  assert.equal(result.components.length, 2);
+  assert.equal(result.components.filter((component) => component.status === "no-convergence").length, 1);
+  assert.ok(Math.abs(result.candidate.points[1].u - 10) < 1e-6);
+  assert.ok(result.conflictCandidates.includes("second-long"));
+  assert.ok(result.conflictCandidates.includes("second-short"));
+});
+test("P4-02 scaled solve remains precise far from the local origin", () => {
+  const s = {
+    points: [
+      { id: "a", u: 1_000_000, v: -2_000_000 },
+      { id: "b", u: 1_000_008, v: -2_000_000 },
+    ],
+    lines: [{ id: "line", start: "a", end: "b" }],
+    circles: [],
+    constraints: [
+      { id: "fixed", kind: "fixed", refs: ["a"] },
+      { id: "horizontal", kind: "horizontal", refs: ["line"] },
+      { id: "length", kind: "length", refs: ["line"], value: 10 },
+    ],
+  };
+  const result = solveSketch(s);
+  assert.equal(result.status, "solved");
+  assert.ok(Math.abs(result.sketch.points[1].u - 1_000_010) < 1e-6);
+  assert.ok(result.diagnostics.some((diagnostic) => diagnostic.code === "SKETCH_SOLVER_COMPONENTS"));
+});
+test("P4-02 hard drag, symmetry and reference dimensions share one component", () => {
+  const s = {
+    points: [
+      { id: "axis-a", u: 0, v: -10 },
+      { id: "axis-b", u: 0, v: 10 },
+      { id: "left", u: -2, v: 1 },
+      { id: "right", u: 3, v: 4 },
+    ],
+    lines: [{ id: "axis", start: "axis-a", end: "axis-b" }],
+    circles: [],
+    constraints: [
+      { id: "fixed-axis", kind: "fixed", refs: ["axis"] },
+      { id: "symmetric", kind: "symmetry", refs: ["left", "right", "axis"] },
+      { id: "span", kind: "distance", refs: ["left", "right"], mode: "reference", label: "幅" },
+    ],
+  };
+  const result = solveSketch(s, {
+    drag: { pointId: "left", target: [-5, 2], mode: "hard" },
+  });
+  assert.equal(result.status, "solved");
+  assert.equal(result.fullyConstrained, true);
+  const left = result.sketch.points.find((point) => point.id === "left"),
+    right = result.sketch.points.find((point) => point.id === "right");
+  assert.ok(Math.abs(left.u + 5) < 1e-6 && Math.abs(left.v - 2) < 1e-6);
+  assert.ok(Math.abs(right.u - 5) < 1e-6 && Math.abs(right.v - 2) < 1e-6);
+  assert.ok(Math.abs(result.measurements.find((dimension) => dimension.id === "span").value - 10) < 1e-6);
+});
+test("P4-02 support movement follows its plane and missing support keeps the last plane", () => {
+  const sketch = createSketch({ support: { entityId: "body", topologyId: "face-1" } });
+  sketch.points.push({ id: "point", u: 2, v: 3 });
+  const moved = updateSketchSupport(sketch, {
+    origin: [10, 20, 30],
+    xAxis: [0, 1, 0],
+    yAxis: [0, 0, 1],
+  });
+  assert.deepEqual(sketchPointWorld(moved, moved.points[0]), [10, 22, 33]);
+  const orphaned = updateSketchSupport(moved, null);
+  assert.deepEqual(orphaned.plane, moved.plane);
+  assert.equal(orphaned.supportStatus, "orphaned");
+  assert.equal(orphaned.supportWarning.code, "SKETCH_SUPPORT_MISSING");
+});
+
+test("P4-02 linked face recompute moves the sketch and missing topology keeps it orphaned", () => {
+  const store = new CadStore({ cancelAll() {} }),
+    sketch = createSketch({
+      plane: { origin: [2, 3, 0], xAxis: [1, 0, 0], yAxis: [0, 1, 0] },
+      support: {
+        entityId: "support-entity",
+        topologyId: "support-face",
+        centroid: [0, 0, 0],
+      },
+    });
+  sketch.points.push({ id: "p", u: 0, v: 0 });
+  store.document.sketches.push(sketch);
+  const sketchFeature = feature("sketch");
+  sketchFeature.sketchId = sketch.id;
+  sketchFeature.status = "valid";
+  store.document.features.push(sketchFeature);
+  store.document.entities.push({
+    id: "support-entity",
+    producer: { featureId: "source", slotKey: "result" },
+    displayCache: {
+      topology: [
+        {
+          kind: "face",
+          topologyId: "support-face",
+          fingerprint: { centroid: [10, 20, 30] },
+        },
+      ],
+      faces: [{ planar: true, normal: [0, 0, 1] }],
+    },
+  });
+
+  assert.equal(store.synchronizeSketchSupports(), true);
+  assert.deepEqual(store.document.sketches[0].plane.origin, [12, 23, 30]);
+  assert.equal(store.document.sketches[0].supportStatus, "linked");
+  assert.equal(sketchFeature.status, "dirty");
+
+  store.document.entities[0].displayCache.topology = [];
+  store.document.entities[0].displayCache.faces = [];
+  assert.equal(store.synchronizeSketchSupports(), true);
+  assert.deepEqual(store.document.sketches[0].plane.origin, [12, 23, 30]);
+  assert.equal(store.document.sketches[0].supportStatus, "orphaned");
+  assert.equal(store.document.sketches[0].supportWarning.code, "SKETCH_SUPPORT_MISSING");
 });
 import { generationInput } from "../cad/generation-adapter.js";
 import {

@@ -167,7 +167,7 @@ CAD表示のための三角形分割、通常の陰影表示、面・エッジ�
 
 ### 5.1 自由作図との両立
 
-自由な3D曲線作図と、平面上の拘束付きスケッチを両方提供する。すべての形状をスケッチへ押し込まない。拘束不足でも正常に使える。スケッチ平面の変更はワールド形状との関係を明示して行う。
+自由な3D曲線作図と、平面上の拘束付きスケッチを両方提供する。C系の線作図コマンドは概念上スケッチ内ツールとして利用できる設計とする一方、任意3D曲線はスケッチ外でも保持する。拘束不足でも正常に使える。スケッチは履歴上1項目で、内部要素の編集を別の時系列履歴へ分割しない。各スケッチはlocal originを持つ。datum面または選択faceを支持面にでき、支持faceが移動すれば追従し、消失時は最後の位置を保持して警告する。既存65 command UIの一括再配置はcommand契約・fixtureを別途移行するときに行い、E系編集コマンドの意味は変えない。
 
 ### 5.2 拘束の目標範囲
 
@@ -1128,6 +1128,8 @@ versioned Code Componentの隔離QuickJS実行経路は変更しない。
 ### 21.1 モデルと変数
 
 スケッチは`plane={origin,xAxis,yAxis}`を持つ。直交・正規化を検証し、`zAxis=xAxis×yAxis`。world点は`origin+u*xAxis+v*yAxis`。拘束は原則このu,v上で解く。
+
+`localOrigin={u,v}`、`support={entityId,topologyId,centroid}`、`supportStatus='datum'|'linked'|'orphaned'`を保存する。linked faceの再計算後はstable topology IDと更新後centroid/normalから平面を更新する。topologyが見つからない場合は平面を変更せず`SKETCH_SUPPORT_MISSING`を表示する。
 
 | 要素 | 未知数と保持データ |
 | --- | --- |

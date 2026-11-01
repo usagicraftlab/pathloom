@@ -2078,3 +2078,43 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   一時領域へ展開して全件を実行した。これら環境準備失敗を87成功へ置換しない。
 - PR、CI、Ready、mergeはこの時点では未実施。CIでRust回帰を含む全jobを確認するまで
   mergeしない。対象にGitHub Issueはないため`Closes`とIssue自動closeは行わない。
+
+## 2026-11-01 — 指示021 / Issue #21 任意スケッチ拘束・ソルバー拡張の再開
+
+- 最新ボードの指示021は一度`要判断`だったが、Museの指示に従ってSHA無指定のmain push runと
+  main tipを再確認した。run `41278224707` attempt 1は全3job成功、head SHAとmain tipはともに
+  `d5fa50388565b37d8d83db2128c71d31e04a7892`だった。`requiredRevisionId`付きで021だけを
+  `作業中`へ変更し、読戻し後に同mainから`feat/21-sketch-solver`を作成した。
+- sketchを一履歴項目として保つmodel、local origin、datum/linked/orphaned支持面、Point/Line/Circle、
+  点-線上と軸対称を含む拘束、駆動/参照寸法、hard/soft drag、連結成分分離、変数/残差scale、
+  rank/DOF/完全拘束/成分別診断、last-valid/draft、完全拘束色と警告表示を実装した。
+  linked faceは再計算後centroid/normalへ自動追従し、topology消失時は最終平面を保持して
+  `SKETCH_SUPPORT_MISSING`を表示する。
+- 既存C系65 command UIの一括再配置は既存command契約/fixtureを横断するため本Issueの対象外とし、
+  既存Rectangleから拘束付きsketchへ入る経路と共通model/solverを拡張した。E系契約は変更していない。
+- 初回対象unitはT03/T04/T05と追加P4-02 4件が7成功。支持face自動追従fixture追加後の対象runは
+  229件中229成功（Node test runnerのpattern外既存testも実行される構成）。途中のNode24全JSは
+  228成功だったが、その後に支持面自動追従と1 fixtureを追加したため最終全件結果ではない。
+- 追加browser対象の初回はChromium実行体不在でtest body前に失敗した。
+  `npx playwright install chromium`も5回ともCDNの0 MiB/truncated ZIPで失敗した。この失敗を
+  browser成功へ置換しない。最終Node24/Node20、native、browser、CI、PR、mergeは未実施である。
+- 最終コードのbrowser全87件初回は86成功・1失敗。既存A05 fixtureの押出体積が期待80000に対して
+  `79999.99991248752`となり、既存の4桁比較許容5e-5を差8.75e-5で超えた。新scale実装が
+  公称hard許容1e-6へ入った時点で停止した数値精度不足であり、公称判定は変えず内部解を
+  toleranceの1/100まで磨くよう修正した。この失敗を後続結果へ置換しない。
+- 数値精度修正後、対象A05は単独1成功。最終ローカルはNode24.22.1 `npm test`と
+  Node20.20.2全JSが各229成功（失敗/skip 0）、native全105件は103成功・任意NVIDIA USD
+  2skip（失敗0）、browser全87件はretry無効で87成功（失敗/skip/retry 0）だった。
+  local Rustはcargo不在で未実行。実Mac GUI/Tauri/OS dialog/Issue #37も未実施であり、
+  自動テストやCIを実機合格へ置換しない。
+- Issue #21へ対象拘束、支持面、診断、証拠、非対象範囲をコメントとして記録した。
+  直接`git push`は認証情報不在で失敗し、成功へ置換しない。同一tree
+  `d2e6a32c752620af17f0caa28de4ce28a3f671d6`をGitHub Git Data APIで
+  `feat/21-sketch-solver`へ反映し、remote commit
+  `43a6124d6cafa76ed646e207dbfa3626c779710c`、Draft PR #52を作成した。
+  このPR/CI情報を含む最終文書commitのCIを確認するまでReady、merge、Issue自動closeを行わない。
+- PR本文と台帳証拠を含むremote head `1bb9ef3846d38c6552bc777affc74b93ed3ce829`
+  （tree `a115940e01c464133cc31618c10d5718ad945dfa`）に対し、push run
+  `41306173848`とPR run `41306178277`はいずれもattempt 1で全3job成功した。各runの
+  生ログはJS 229成功、native 105件中103成功・任意2skip、macOS Rust 23成功、browser
+  87成功（retryなし）を示した。このCI証拠を追記する文書専用commitにも同じ全CIを要求する。

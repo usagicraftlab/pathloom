@@ -48,21 +48,62 @@ export function qrSolve(matrix, rhs, tolerance = 1e-10) {
   order.forEach((j, i) => (x[j] = perm[i]));
   return { x, rank };
 }
+function maps(s) {
+  return {
+    points: new Map(s.points.map((point) => [point.id, point])),
+    lines: new Map(s.lines.map((line) => [line.id, line])),
+    circles: new Map(s.circles.map((circle) => [circle.id, circle])),
+  };
+}
+
+function expandedObjectIds(refs, geometry) {
+  const ids = new Set();
+  for (const ref of refs || []) {
+    if (geometry.points.has(ref)) ids.add(ref);
+    const line = geometry.lines.get(ref);
+    if (line) {
+      ids.add(line.start);
+      ids.add(line.end);
+    }
+    const circle = geometry.circles.get(ref);
+    if (circle) {
+      ids.add(circle.center);
+      ids.add(circle.id);
+    }
+  }
+  return ids;
+}
+
 function variables(s) {
-  const fixed = new Set(
-    s.constraints
-      .filter((c) => c.kind === "fixed" && !c.suppressed)
-      .flatMap((c) => c.refs),
-  );
+  const geometry = maps(s),
+    fixed = new Set();
+  for (const constraint of s.constraints.filter(
+    (candidate) => candidate.kind === "fixed" && !candidate.suppressed,
+  ))
+    for (const objectId of expandedObjectIds(constraint.refs, geometry))
+      fixed.add(objectId);
   const vars = [];
   for (const p of s.points)
     if (!fixed.has(p.id))
-      for (const key of ["u", "v"]) vars.push({ object: p, key });
+      for (const key of ["u", "v"])
+        vars.push({ object: p, key, id: `${p.id}:${key}` });
   for (const c of s.circles)
-    if (!fixed.has(c.id)) vars.push({ object: c, key: "radiusMm" });
+    if (!fixed.has(c.id))
+      vars.push({ object: c, key: "radiusMm", id: `${c.id}:radiusMm` });
   return vars;
 }
-function residuals(s) {
+
+function constraintScale(constraint) {
+  if (["parallel", "perpendicular", "angle", "symmetry"].includes(constraint.kind))
+    return 1;
+  if (typeof constraint.value === "number")
+    return Math.max(1, Math.abs(constraint.value));
+  if (Array.isArray(constraint.value))
+    return Math.max(1, Math.hypot(...constraint.value));
+  return 1;
+}
+
+function residuals(s, { constraintIds = null, drag = null } = {}) {
   const pts = new Map(s.points.map((p) => [p.id, [p.u, p.v]])),
     lines = new Map(s.lines.map((l) => [l.id, l])),
     circles = new Map(s.circles.map((c) => [c.id, c]));
@@ -86,10 +127,17 @@ function residuals(s) {
       return { ...c, p: point(c.center) };
     };
   const out = [],
-    owners = [];
+    owners = [],
+    scales = [];
   for (const c of s.constraints) {
-    if (c.suppressed || c.mode === "reference" || c.kind === "fixed") continue;
-    const [a, b] = c.refs;
+    if (
+      c.suppressed ||
+      c.mode === "reference" ||
+      c.kind === "fixed" ||
+      (constraintIds && !constraintIds.has(c.id))
+    )
+      continue;
+    const [a, b, axis] = c.refs;
     let r;
     switch (c.kind) {
       case "coincident":
@@ -159,18 +207,46 @@ function residuals(s) {
         ];
         break;
       }
+      case "pointOnLine": {
+        const l = line(b),
+          p = point(a),
+          d = p.map((value, index) => value - l.a[index]);
+        r = [d[0] * l.unit[1] - d[1] * l.unit[0]];
+        break;
+      }
+      case "symmetry": {
+        const l = line(axis),
+          first = point(a),
+          second = point(b),
+          middle = first.map((value, index) => (value + second[index]) / 2),
+          fromAxis = middle.map((value, index) => value - l.a[index]),
+          between = second.map((value, index) => value - first[index]);
+        r = [
+          fromAxis[0] * l.unit[1] - fromAxis[1] * l.unit[0],
+          between[0] * l.unit[0] + between[1] * l.unit[1],
+        ];
+        break;
+      }
       default:
         throw new Error("SKETCH_UNSUPPORTED_CONSTRAINT: " + c.kind);
     }
     out.push(...r);
     owners.push(...r.map(() => c.id));
+    scales.push(...r.map(() => constraintScale(c)));
   }
-  return { values: out, owners };
+  if (drag && (!constraintIds || constraintIds.has(`drag:${drag.pointId}`))) {
+    const current = point(drag.pointId),
+      weight = drag.mode === "soft" ? Math.max(1e-6, drag.weight ?? 0.2) : 1;
+    out.push(current[0] - drag.target[0], current[1] - drag.target[1]);
+    owners.push(`drag:${drag.pointId}`, `drag:${drag.pointId}`);
+    scales.push(1 / weight, 1 / weight);
+  }
+  return { values: out, owners, scales };
 }
 function jacobian(s, vars, r) {
   return r.map(() => Array(vars.length).fill(0)).map((row, i) => row);
 }
-function differentiated(s, vars, r) {
+function differentiated(s, vars, r, options = {}) {
   const j = jacobian(s, vars, r),
     index = new Map(vars.map((v, i) => [`${v.object.id}:${v.key}`, i])),
     points = new Map(s.points.map((p) => [p.id, p])),
@@ -197,7 +273,13 @@ function differentiated(s, vars, r) {
     }
   };
   for (const c of s.constraints) {
-    if (c.suppressed || c.mode === "reference" || c.kind === "fixed") continue;
+    if (
+      c.suppressed ||
+      c.mode === "reference" ||
+      c.kind === "fixed" ||
+      (options.constraintIds && !options.constraintIds.has(c.id))
+    )
+      continue;
     const [a, b] = c.refs;
     let count = 1;
     if (c.kind === "horizontal" || c.kind === "vertical") {
@@ -235,7 +317,7 @@ function differentiated(s, vars, r) {
         }
       else fallback.push(row);
     } else {
-      count = c.kind === "concentric" ? 2 : 1;
+      count = ["concentric", "symmetry"].includes(c.kind) ? 2 : 1;
       for (let i = 0; i < count; i++) fallback.push(row + i);
     }
     row += count;
@@ -246,104 +328,274 @@ function differentiated(s, vars, r) {
         v = object[key],
         h = Math.max(1e-8, Math.abs(v) * 1e-6);
       object[key] = v + h;
-      const a = residuals(s).values;
+      const a = residuals(s, options).values;
       object[key] = v - h;
-      const b = residuals(s).values;
+      const b = residuals(s, options).values;
       object[key] = v;
       for (const i of fallback) j[i][k] = (a[i] - b[i]) / (2 * h);
     }
+  if (options.drag && (!options.constraintIds || options.constraintIds.has(`drag:${options.drag.pointId}`))) {
+    const at = j.length - 2;
+    put(at, options.drag.pointId, "u", 1);
+    put(at + 1, options.drag.pointId, "v", 1);
+  }
   return j;
 }
-export function solveSketch(
-  raw,
-  { iterations = 200, timeBudgetMs = 1500, toleranceMm = 1e-6 } = {},
-) {
-  validateSketch(raw);
-  const s = structuredClone(raw),
-    vars = variables(s),
-    start = performance.now();
+
+function constraintVariableIds(s, constraint, variableIds) {
+  const geometry = maps(s),
+    objectIds = expandedObjectIds(constraint.refs, geometry),
+    ids = [];
+  for (const objectId of objectIds)
+    for (const suffix of ["u", "v", "radiusMm"]) {
+      const id = `${objectId}:${suffix}`;
+      if (variableIds.has(id)) ids.push(id);
+    }
+  return ids;
+}
+
+function solverComponents(s, vars, drag) {
+  const variableIds = new Set(vars.map((variable) => variable.id)),
+    adjacency = new Map(vars.map((variable) => [variable.id, new Set()])),
+    owners = [];
+  for (const constraint of s.constraints) {
+    if (constraint.suppressed || constraint.mode === "reference" || constraint.kind === "fixed")
+      continue;
+    owners.push({
+      id: constraint.id,
+      variables: constraintVariableIds(s, constraint, variableIds),
+    });
+  }
+  if (drag)
+    owners.push({
+      id: `drag:${drag.pointId}`,
+      variables: ["u", "v"]
+        .map((key) => `${drag.pointId}:${key}`)
+        .filter((id) => variableIds.has(id)),
+    });
+  for (const owner of owners)
+    for (const first of owner.variables)
+      for (const second of owner.variables)
+        if (first !== second) adjacency.get(first).add(second);
+  const seen = new Set(),
+    components = [];
+  for (const variable of vars) {
+    if (seen.has(variable.id)) continue;
+    const queue = [variable.id],
+      ids = new Set();
+    while (queue.length) {
+      const current = queue.pop();
+      if (seen.has(current)) continue;
+      seen.add(current);
+      ids.add(current);
+      queue.push(...adjacency.get(current));
+    }
+    components.push({
+      variables: vars.filter((candidate) => ids.has(candidate.id)),
+      constraintIds: new Set(
+        owners
+          .filter((owner) => owner.variables.some((id) => ids.has(id)))
+          .map((owner) => owner.id),
+      ),
+    });
+  }
+  for (const owner of owners.filter((candidate) => !candidate.variables.length))
+    components.push({ variables: [], constraintIds: new Set([owner.id]) });
+  return components;
+}
+
+function dimensionMeasurements(s) {
+  const geometry = maps(s),
+    point = (id) => geometry.points.get(id),
+    lineLength = (id) => {
+      const line = geometry.lines.get(id),
+        a = point(line.start),
+        b = point(line.end);
+      return Math.hypot(b.u - a.u, b.v - a.v);
+    },
+    measured = [];
+  for (const constraint of s.constraints) {
+    const [a, b] = constraint.refs || [];
+    let value = null,
+      unit = "mm";
+    if (constraint.kind === "length") value = lineLength(a);
+    else if (constraint.kind === "distance") {
+      const first = point(a),
+        second = point(b);
+      value = Math.hypot(second.u - first.u, second.v - first.v);
+    } else if (constraint.kind === "distanceU") value = point(b).u - point(a).u;
+    else if (constraint.kind === "distanceV") value = point(b).v - point(a).v;
+    else if (constraint.kind === "radius") value = geometry.circles.get(a).radiusMm;
+    else if (constraint.kind === "diameter") value = geometry.circles.get(a).radiusMm * 2;
+    else if (constraint.kind === "angle") {
+      const first = geometry.lines.get(a),
+        second = geometry.lines.get(b),
+        p1 = point(first.start),
+        q1 = point(first.end),
+        p2 = point(second.start),
+        q2 = point(second.end),
+        u = [q1.u - p1.u, q1.v - p1.v],
+        v = [q2.u - p2.u, q2.v - p2.v];
+      value = Math.atan2(u[0] * v[1] - u[1] * v[0], u[0] * v[0] + u[1] * v[1]);
+      unit = "rad";
+    }
+    if (Number.isFinite(value))
+      measured.push({
+        id: constraint.id,
+        label: constraint.label || constraint.kind,
+        kind: constraint.kind,
+        mode: constraint.mode || "driving",
+        value,
+        unit,
+      });
+  }
+  return measured;
+}
+
+function solveComponent(s, component, options, deadline) {
+  const vars = component.variables,
+    // Keep the public hard-constraint tolerance at solverLinearMm, but polish
+    // accepted geometry below it so downstream exact B-rep measurements do not
+    // amplify a just-inside-the-threshold dimensional residual.
+    solveTolerance = options.toleranceMm * 0.01,
+    residualOptions = {
+      constraintIds: component.constraintIds,
+      drag: options.drag || null,
+    };
   let lambda = 1e-3,
     iteration = 0,
-    converged = false,
-    r = residuals(s).values;
-  for (
-    ;
-    iteration < iterations && performance.now() - start < timeBudgetMs;
-    iteration++
-  ) {
-    if (r.every((v) => Math.abs(v) <= toleranceMm)) {
-      converged = true;
-      break;
-    }
-    if (!vars.length) break;
-    const j = differentiated(s, vars, r),
-      a = j.map((row) => [...row]),
-      b = r.map((v) => -v);
-    for (let k = 0; k < vars.length; k++) {
-      const row = Array(vars.length).fill(0);
-      row[k] =
-        Math.sqrt(lambda) * Math.max(1, Math.hypot(...j.map((row) => row[k])));
-      a.push(row);
+    r = residuals(s, residualOptions),
+    converged = r.values.every(
+      (value) => Math.abs(value) <= solveTolerance,
+    );
+  for (; !converged && iteration < options.iterations && performance.now() < deadline; iteration++) {
+    if (!vars.length || !r.values.length) break;
+    const jacobian = differentiated(s, vars, r.values, residualOptions),
+      variableScales = vars.map((variable) => Math.max(1, Math.abs(variable.object[variable.key]))),
+      a = jacobian.map((row, rowIndex) =>
+        row.map((value, column) => (value * variableScales[column]) / r.scales[rowIndex]),
+      ),
+      b = r.values.map((value, index) => -value / r.scales[index]);
+    for (let column = 0; column < vars.length; column++) {
+      const damping = Array(vars.length).fill(0);
+      damping[column] = Math.sqrt(lambda) * Math.max(1, Math.hypot(...a.map((row) => row[column])));
+      a.push(damping);
       b.push(0);
     }
-    const { x } = qrSolve(a, b);
-    const old = vars.map((v) => v.object[v.key]);
-    vars.forEach((v, k) => (v.object[v.key] += x[k]));
-    const next = residuals(s).values;
-    if (
-      s.circles.some((c) => c.radiusMm <= 0) ||
-      next.reduce((n, v) => n + v * v, 0) >= r.reduce((n, v) => n + v * v, 0)
-    ) {
-      vars.forEach((v, k) => (v.object[v.key] = old[k]));
+    const { x } = qrSolve(a, b),
+      old = vars.map((variable) => variable.object[variable.key]);
+    vars.forEach(
+      (variable, index) =>
+        (variable.object[variable.key] += x[index] * variableScales[index]),
+    );
+    const next = residuals(s, residualOptions),
+      score = (result) =>
+        result.values.reduce(
+          (sum, value, index) => sum + (value / result.scales[index]) ** 2,
+          0,
+        );
+    if (s.circles.some((circle) => circle.radiusMm <= 0) || score(next) >= score(r)) {
+      vars.forEach((variable, index) => (variable.object[variable.key] = old[index]));
       lambda *= 10;
     } else {
       r = next;
       lambda /= 3;
     }
-  }
-  if (r.every((v) => Math.abs(v) <= toleranceMm)) converged = true;
-  const j = differentiated(s, vars, r),
-    rank =
-      vars.length && r.length
-        ? qrSolve(
-            j,
-            r.map(() => 0),
-            1e-7,
-          ).rank
-        : 0,
-    conflicts = residuals(s).owners.filter(
-      (_, i) => Math.abs(r[i]) > toleranceMm,
+    converged = r.values.every(
+      (value) => Math.abs(value) <= solveTolerance,
     );
-  const status = converged
-    ? r.length > rank
-      ? "redundant"
-      : "solved"
-    : "no-convergence";
+  }
+  const jacobian = differentiated(s, vars, r.values, residualOptions),
+    scaledJacobian = jacobian.map((row, rowIndex) =>
+      row.map(
+        (value, column) =>
+          (value * Math.max(1, Math.abs(vars[column].object[vars[column].key]))) /
+          r.scales[rowIndex],
+      ),
+    ),
+    rank =
+      vars.length && r.values.length
+        ? qrSolve(scaledJacobian, r.values.map(() => 0), 1e-7).rank
+        : 0,
+    maxResidual = Math.max(0, ...r.values.map(Math.abs)),
+    status = converged
+      ? vars.length > 0 && r.values.length > rank
+        ? "redundant"
+        : "solved"
+      : "no-convergence";
+  return {
+    status,
+    variableIds: vars.map((variable) => variable.id),
+    constraintIds: [...component.constraintIds],
+    degreesOfFreedom: Math.max(0, vars.length - rank),
+    rank,
+    iterations: iteration,
+    maxResidual,
+    conflictCandidates: [
+      ...new Set(
+        r.owners.filter((_, index) => Math.abs(r.values[index]) > options.toleranceMm),
+      ),
+    ],
+  };
+}
+export function solveSketch(
+  raw,
+  {
+    iterations = 200,
+    timeBudgetMs = 1500,
+    toleranceMm = 1e-6,
+    drag = null,
+  } = {},
+) {
+  validateSketch(raw);
+  const s = structuredClone(raw),
+    vars = variables(s),
+    start = performance.now(),
+    solveOptions = { iterations, toleranceMm, drag },
+    deadline = start + timeBudgetMs,
+    components = solverComponents(s, vars, drag).map((component) =>
+      solveComponent(s, component, solveOptions, deadline),
+    ),
+    status = components.some((component) => component.status === "no-convergence")
+      ? "no-convergence"
+      : components.some((component) => component.status === "redundant")
+        ? "redundant"
+        : "solved",
+    converged = status !== "no-convergence",
+    conflicts = [...new Set(components.flatMap((component) => component.conflictCandidates))],
+    degreesOfFreedom = components.reduce((sum, component) => sum + component.degreesOfFreedom, 0),
+    rank = components.reduce((sum, component) => sum + component.rank, 0),
+    maxResidual = Math.max(0, ...components.map((component) => component.maxResidual)),
+    measurements = dimensionMeasurements(converged ? s : raw);
   return {
     status,
     sketch: converged ? s : structuredClone(raw),
     candidate: converged ? null : s,
-    degreesOfFreedom: vars.length - rank,
+    degreesOfFreedom,
+    fullyConstrained: converged && degreesOfFreedom === 0,
     rank,
-    iterations: iteration,
+    iterations: components.reduce((sum, component) => sum + component.iterations, 0),
     elapsedMs: performance.now() - start,
-    maxResidual: Math.max(0, ...r.map(Math.abs)),
-    conflictCandidates: [...new Set(conflicts)],
-    diagnostics: converged
-      ? status === "redundant"
-        ? [
-            {
-              code: "SKETCH_REDUNDANT",
-              message: "重複する拘束があります。形状は使用できます。",
-            },
-          ]
-        : []
-      : [
-          {
-            code: "SKETCH_NO_CONVERGENCE",
-            message:
-              "拘束を満たす解に収束しませんでした。候補を確認してください。矛盾の証明ではありません。",
-          },
-        ],
+    maxResidual,
+    conflictCandidates: conflicts,
+    components,
+    measurements,
+    diagnostics: [
+      ...(raw.supportWarning ? [raw.supportWarning] : []),
+      ...(status === "redundant"
+        ? [{ code: "SKETCH_REDUNDANT", message: "重複する拘束があります。形状は使用できます。" }]
+        : status === "no-convergence"
+          ? [{
+              code: "SKETCH_NO_CONVERGENCE",
+              message: "拘束を満たす解に収束しませんでした。候補を確認してください。矛盾の証明ではありません。",
+            }]
+          : []),
+      {
+        code: "SKETCH_SOLVER_COMPONENTS",
+        message: `${components.length}成分を分離し、変数・残差をスケーリングして解きました。`,
+        componentCount: components.length,
+        componentStatuses: components.map((component) => component.status),
+      },
+    ],
   };
 }

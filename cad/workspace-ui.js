@@ -1779,15 +1779,23 @@ export function initModelWorkspace(api) {
               heightMm: params.heightMm,
               center,
               plane: pl,
+              support: f.sketchSupport || null,
             }),
             result = await solver.solve(sketch);
           if (result.status !== "solved")
             throw new Error("初期拘束を解けませんでした");
-          sketch.solveReport = {
+          const solvedSketch = result.sketch;
+          solvedSketch.solveReport = {
             status: result.status,
             degreesOfFreedom: result.degreesOfFreedom,
+            fullyConstrained: result.fullyConstrained,
+            maxResidual: result.maxResidual,
+            conflictCandidates: result.conflictCandidates,
+            diagnostics: result.diagnostics,
+            components: result.components,
+            measurements: result.measurements,
           };
-          await store.attachSketch(f.id, sketch);
+          await store.attachSketch(f.id, solvedSketch);
           properties();
         } catch (error) {
           report(error);
@@ -1798,12 +1806,44 @@ export function initModelWorkspace(api) {
     if (f?.sketchId) {
       const sketch = store.document.sketches.find((s) => s.id === f.sketchId),
         caption = document.createElement("p");
-      caption.textContent = `平面スケッチ · 自由度 ${sketch.solveReport?.degreesOfFreedom ?? "未計算"} · ${sketch.solveReport?.status || ""}`;
+      const fullyConstrained = sketch.solveReport?.fullyConstrained === true;
+      caption.className = "model-sketch-status";
+      caption.classList.toggle("is-fully-constrained", fullyConstrained);
+      caption.textContent = `平面スケッチ · ローカル原点 (${sketch.localOrigin?.u ?? 0}, ${sketch.localOrigin?.v ?? 0}) · 自由度 ${sketch.solveReport?.degreesOfFreedom ?? "未計算"} · ${fullyConstrained ? "完全拘束" : sketch.solveReport?.status || ""}`;
       host.append(caption);
       const base = sketch.draft || sketch;
+      if (sketch.supportWarning) {
+        const warning = document.createElement("p");
+        warning.className = "model-sketch-warning";
+        warning.textContent = sketch.supportWarning.message;
+        host.append(warning);
+      }
+      const componentSummary = document.createElement("p");
+      componentSummary.className = "model-sketch-components";
+      componentSummary.textContent = `ソルバー成分 ${sketch.solveReport?.components?.length ?? 0} · 最大残差 ${Number(sketch.solveReport?.maxResidual || 0).toExponential(2)}`;
+      host.append(componentSummary);
+      for (const diagnostic of sketch.solveReport?.diagnostics || []) {
+        const message = document.createElement("p");
+        message.className = "model-sketch-diagnostic";
+        message.textContent = `${diagnostic.code}: ${diagnostic.message}`;
+        host.append(message);
+      }
       for (const constraint of base.constraints) {
         const row = document.createElement("label");
+        row.className = "model-sketch-constraint";
+        if (sketch.solveReport?.conflictCandidates?.includes(constraint.id))
+          row.classList.add("has-conflict");
         row.textContent = constraint.label || constraint.kind;
+        if (constraint.mode === "reference") {
+          const measurement = sketch.solveReport?.measurements?.find(
+            (candidate) => candidate.id === constraint.id,
+          );
+          const output = document.createElement("output");
+          output.textContent = `${measurement?.value?.toFixed(3) ?? "—"} ${measurement?.unit || "mm"}（参照）`;
+          row.append(output);
+          host.append(row);
+          continue;
+        }
         const input = document.createElement("input");
         input.type =
           typeof constraint.value === "number" ? "number" : "checkbox";
@@ -1837,6 +1877,40 @@ export function initModelWorkspace(api) {
         row.append(input);
         host.append(row);
       }
+      const elements = document.createElement("details"),
+        elementsSummary = document.createElement("summary");
+      elementsSummary.textContent = "スケッチ要素を直接編集";
+      elements.append(elementsSummary);
+      for (const [index, point] of base.points.entries()) {
+        const row = document.createElement("div");
+        row.className = "model-sketch-point";
+        row.append(`点 ${index + 1}`);
+        for (const key of ["u", "v"]) {
+          const input = document.createElement("input");
+          input.type = "number";
+          input.value = point[key];
+          input.setAttribute(
+            "aria-label",
+            `スケッチ点 ${index + 1} ${key.toUpperCase()}`,
+          );
+          input.onchange = async () => {
+            try {
+              const target = [point.u, point.v];
+              target[key === "u" ? 0 : 1] = parseScalar(input.value);
+              const result = await solver.solve(clone(base), {
+                drag: { pointId: point.id, target, mode: "hard" },
+              });
+              store.updateSketch(f.id, result);
+              properties();
+            } catch (error) {
+              report(error);
+            }
+          };
+          row.append(input);
+        }
+        elements.append(row);
+      }
+      host.append(elements);
       const advanced = document.createElement("details"),
         summary = document.createElement("summary");
       summary.textContent = "拘束を追加・修正（構造化定義）";
@@ -2731,6 +2805,11 @@ export function initModelWorkspace(api) {
     if (!$("modelSettingsForm")?.reportValidity()) return;
     if (invalidFields.size) return;
     const target = session;
+    target.sketchSupport =
+      store.document.uiState.workPlaneSupport &&
+      canonical(target.parameters.plane) === canonical(store.document.uiState.workPlane)
+        ? clone(store.document.uiState.workPlaneSupport)
+        : null;
     const operationId = target.command.baseOperation.id;
     const previousSolidIds = new Set(
       deriveVisibleEntities(store.document)
@@ -3045,6 +3124,7 @@ export function initModelWorkspace(api) {
       xAxis: name === "YZ" ? [0, 1, 0] : [1, 0, 0],
       yAxis: name === "XY" ? [0, 1, 0] : [0, 0, 1],
     };
+    store.document.uiState.workPlaneSupport = null;
     if (session?.parameters.plane) {
       dispatchSession(session, {
         type: "setting.change",
@@ -3090,6 +3170,13 @@ export function initModelWorkspace(api) {
     const plane = { origin: hit.point, xAxis, yAxis };
     validateDrawingPlane(plane);
     store.document.uiState.workPlane = plane;
+    store.document.uiState.workPlaneSupport = {
+      entityId: hit.entityId,
+      topologyId: hit.topologyId,
+      centroid: clone(
+        faces[faceIndex]?.fingerprint?.centroid || hit.point,
+      ),
+    };
     planeSelect.value = "face";
     snapPoint = null;
     if (session?.parameters.plane) {

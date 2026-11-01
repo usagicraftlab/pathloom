@@ -1,5 +1,8 @@
 import { insertShapes } from "./shape-library.js";
-import { sketchCurveParameters } from "./sketch/model.js";
+import {
+  sketchCurveParameters,
+  updateSketchSupport as resolveSketchSupport,
+} from "./sketch/model.js";
 import {
   createCadDocument,
   clone,
@@ -37,6 +40,49 @@ const checkpoint = (doc) => {
   const { assets, ...rest } = doc;
   return { ...clone(rest), assets };
 };
+
+function supportPlane(document, sketch) {
+  const support = sketch.support;
+  if (!support?.entityId || !support?.topologyId) return null;
+  const entity = document.entities.find((candidate) => candidate.id === support.entityId),
+    faces = entity?.displayCache?.topology?.filter((item) => item.kind === "face") || [],
+    faceIndex = faces.findIndex((face) => face.topologyId === support.topologyId),
+    topology = faces[faceIndex],
+    face = entity?.displayCache?.faces?.[faceIndex],
+    centroid = topology?.fingerprint?.centroid;
+  if (
+    !face?.planar ||
+    !Array.isArray(face.normal) ||
+    !face.normal.every(Number.isFinite) ||
+    !Array.isArray(centroid) ||
+    !centroid.every(Number.isFinite)
+  )
+    return null;
+  const normalLength = Math.hypot(...face.normal);
+  if (normalLength <= 1e-12) return null;
+  const normal = face.normal.map((value) => value / normalLength),
+    reference = Math.abs(normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0],
+    projection = reference.reduce(
+      (sum, value, index) => sum + value * normal[index],
+      0,
+    ),
+    xAxis = reference.map(
+      (value, index) => value - projection * normal[index],
+    ),
+    xLength = Math.hypot(...xAxis);
+  if (xLength <= 1e-12) return null;
+  for (let index = 0; index < 3; index++) xAxis[index] /= xLength;
+  const yAxis = [
+      normal[1] * xAxis[2] - normal[2] * xAxis[1],
+      normal[2] * xAxis[0] - normal[0] * xAxis[2],
+      normal[0] * xAxis[1] - normal[1] * xAxis[0],
+    ],
+    previousCentroid = support.centroid || centroid,
+    origin = sketch.plane.origin.map(
+      (value, index) => value + centroid[index] - previousCentroid[index],
+    );
+  return { plane: { origin, xAxis, yAxis }, centroid };
+}
 export class CadStore {
   constructor(native, { changed = () => {} } = {}) {
     this.native = native;
@@ -266,6 +312,9 @@ export class CadStore {
       inputs: operation.inputs,
       parameters: operation.parameters,
       toleranceOverrides: clone(session.toleranceOverrides || {}),
+      ...(session.sketchSupport
+        ? { sketchSupport: clone(session.sketchSupport) }
+        : {}),
       resultPolicy: session.command.resultPolicy,
       outputSlots: [{ key: "result", entityId: id(), bodyId }],
       featureRevision: 1,
@@ -837,6 +886,35 @@ export class CadStore {
         if (document === this.document && epoch === this.epoch) this.notify();
       }
     }
+    if (this.synchronizeSketchSupports()) this.queued = true;
+  }
+  synchronizeSketchSupports() {
+    let changed = false;
+    for (let index = 0; index < this.document.sketches.length; index++) {
+      const current = this.document.sketches[index];
+      if (!current.support) continue;
+      const resolved = supportPlane(this.document, current),
+        feature = this.getFeature(
+          this.document.features.find((candidate) => candidate.sketchId === current.id)?.id,
+        );
+      if (!resolved) {
+        if (current.supportStatus === "orphaned") continue;
+        this.document.sketches[index] = resolveSketchSupport(current, null);
+        this.document.documentRevision++;
+        changed = true;
+        continue;
+      }
+      const next = resolveSketchSupport(current, resolved.plane);
+      next.support.centroid = clone(resolved.centroid);
+      if (canonical(next) === canonical(current)) continue;
+      this.document.sketches[index] = next;
+      if (feature)
+        applyFeatureEdit(this.document, feature.id, sketchCurveParameters(next));
+      else this.document.documentRevision++;
+      changed = true;
+    }
+    if (changed) this.notify();
+    return changed;
   }
   attachSketch(featureId, sketch) {
     const before = checkpoint(this.document),
@@ -858,9 +936,12 @@ export class CadStore {
     sketch.solveReport = {
       status: result.status,
       degreesOfFreedom: result.degreesOfFreedom,
+      fullyConstrained: result.fullyConstrained,
       maxResidual: result.maxResidual,
       diagnostics: result.diagnostics,
       conflictCandidates: result.conflictCandidates,
+      components: result.components,
+      measurements: result.measurements,
     };
     if (result.status === "no-convergence") {
       this.document.sketches[i].draft = clone(result.candidate);
@@ -872,7 +953,10 @@ export class CadStore {
     }
     sketch.lastValid = {
       points: clone(sketch.points),
+      lines: clone(sketch.lines),
       circles: clone(sketch.circles),
+      plane: clone(sketch.plane),
+      localOrigin: clone(sketch.localOrigin || { u: 0, v: 0 }),
     };
     delete sketch.draft;
     this.document.sketches[i] = sketch;
@@ -880,6 +964,24 @@ export class CadStore {
     this.transactions.record(before, this.document, "寸法・拘束を編集");
     this.notify();
     return this.recompute();
+  }
+  updateSketchSupport(featureId, plane) {
+    const before = checkpoint(this.document),
+      feature = this.getFeature(featureId),
+      index = this.document.sketches.findIndex(
+        (sketch) => sketch.id === feature?.sketchId,
+      );
+    if (!feature || index < 0) throw new Error("Sketch feature missing");
+    const sketch = resolveSketchSupport(this.document.sketches[index], plane);
+    this.document.sketches[index] = sketch;
+    applyFeatureEdit(this.document, featureId, sketchCurveParameters(sketch));
+    this.transactions.record(
+      before,
+      this.document,
+      plane ? "スケッチ基準面を更新" : "スケッチ基準面の消失を保持",
+    );
+    this.notify();
+    return plane ? this.recompute() : false;
   }
   async insertLibrary(entry, options = {}) {
     const before = checkpoint(this.document),

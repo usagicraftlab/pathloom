@@ -1,8 +1,19 @@
 import { clone, id, WORLD_XY } from "../document.js";
-export function createSketch() {
+
+const finitePlane = (plane) =>
+  plane &&
+  [plane.origin, plane.xAxis, plane.yAxis].every(
+    (axis) => Array.isArray(axis) && axis.length === 3 && axis.every(Number.isFinite),
+  );
+
+export function createSketch({ plane = WORLD_XY, support = null } = {}) {
   return {
     id: id(),
-    plane: clone(WORLD_XY),
+    plane: clone(plane),
+    localOrigin: { u: 0, v: 0 },
+    support: support ? clone(support) : null,
+    supportStatus: support ? "linked" : "datum",
+    supportWarning: null,
     points: [],
     lines: [],
     circles: [],
@@ -20,6 +31,14 @@ export function validateSketch(s) {
     !Array.isArray(s.circles)
   )
     throw new Error("Invalid sketch");
+  // v1 fixtures and projects may predate explicit local-frame persistence.
+  if (s.plane != null && !finitePlane(s.plane))
+    throw new Error("Invalid sketch plane");
+  if (
+    s.localOrigin &&
+    ![s.localOrigin.u, s.localOrigin.v].every(Number.isFinite)
+  )
+    throw new Error("Invalid sketch local origin");
   const ids = new Set();
   for (const e of [...s.points, ...s.lines, ...s.circles, ...s.constraints]) {
     if (!e.id || ids.has(e.id)) throw new Error("Duplicate sketch ID");
@@ -41,14 +60,42 @@ export function validateSketch(s) {
       throw new Error("Invalid sketch circle");
   return s;
 }
+
+// A sketch remains one history item. Moving its support changes only the local
+// frame; the element/constraint arrays have no internal chronological history.
+export function updateSketchSupport(sketch, nextPlane) {
+  validateSketch(sketch);
+  const next = clone(sketch);
+  if (nextPlane == null) {
+    next.supportStatus = "orphaned";
+    next.supportWarning = {
+      code: "SKETCH_SUPPORT_MISSING",
+      message: "基準面が見つからないため、スケッチを現在位置に保持しています。",
+    };
+    return next;
+  }
+  if (!finitePlane(nextPlane)) throw new Error("Invalid sketch support plane");
+  next.plane = clone(nextPlane);
+  next.supportStatus = next.support ? "linked" : "datum";
+  next.supportWarning = null;
+  return next;
+}
+
+export function sketchPointWorld(sketch, point) {
+  const { origin, xAxis, yAxis } = sketch.plane;
+  return origin.map(
+    (value, index) =>
+      value + point.u * xAxis[index] + point.v * yAxis[index],
+  );
+}
 export function constrainedRectangle({
   widthMm = 60,
   heightMm = 40,
   center = [0, 0],
   plane = WORLD_XY,
+  support = null,
 } = {}) {
-  const s = createSketch();
-  s.plane = clone(plane);
+  const s = createSketch({ plane, support });
   const [u, v] = center,
     w = widthMm / 2,
     h = heightMm / 2;
@@ -98,11 +145,8 @@ export function constrainedRectangle({
   return s;
 }
 export function sketchCurveParameters(sketch) {
-  const { origin, xAxis, yAxis } = sketch.plane;
   return {
-    points: sketch.points.map((p) =>
-      origin.map((v, i) => v + p.u * xAxis[i] + p.v * yAxis[i]),
-    ),
+    points: sketch.points.map((point) => sketchPointWorld(sketch, point)),
     closed: true,
   };
 }

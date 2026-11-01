@@ -16,7 +16,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | A02 | not-run | 未実装または未検証。合格としない。 |
 | A03 | passed | Issue #8: center(10,20),60×40 and constrained width80 retain center; two-corner input is distinct; three-mode browser Save/Undo. Scoped to this fixture |
 | A04 | passed | Issue #20: single-registry DSL round-trips all canonical 65 IDs, pins a new immutable definition in v2, and exposes explicit history upgrade/rollback with both versions retained. Earlier work-order/global loading and Issue #11 ordering/failure coverage remain documented in [evidence](cad-phase1-regression-verification.md). Scoped browser fixture; real macOS remains #37 |
-| A05 | partial | T03/T05 plus Issue #8 real Worker width60→80, center/height retained, Undo/Redo and normal Save/reopen; all constraint types/drag pending |
+| A05 | partial | T03/T05 plus Issue #8 real Worker width60→80 and Issue #21 Point/Line/Circle constraints, hard drag, symmetry, reference dimensions, component isolation/scaling and full-constraint UI. Arc/Ellipse/NURBS/general-curve tangent and real Mac remain pending |
 | A06 | partial | Issue #8 conflicting width20 produces no-convergence; previous exact asset hash/bbox survives, draft is retained through Undo/Redo/Save/reopen; broader conflict/recovery cases pending |
 | A07 | partial | native T10/T11 + sketch->extrude and semantic fillet browser paths; full chained generation numerical test pending |
 | A08 | partial | Existing fillet repair plus Issue #6 Split exact source/asset identity, disappearance/candidates and explicit reselection; no ordinal/proximity remap. Generalized topology mapping pending |
@@ -64,6 +64,7 @@ below extends T19/T20 without declaring other Boolean modes complete.
 | T23 | not-run | 未実装または未検証。合格としない。 |
 | T24 | passed | real negative nonplanar curve persisted; CAD browser free 3D creation |
 | T25 | partial | runtime destroyed/new instance: curve+solid exact hash/bounds/length/volume; Issue #14 exports current exact body as STEP and fresh Runtime rereads equal bbox/area/volume/closure/validity. Open shell+NURBS exhaustive trim/parameter proof pending |
+| P4-02 | partial | Issue #21 unit fixtures pass component isolation, far-origin scaling, hard drag, axis symmetry, reference dimensions, linked-face movement and orphan retention. Browser/full regression/CI state is recorded in the development log; real Mac remains #37 |
 | R01 | passed | Issue #4: latest preview/export result wins, superseded handles released; late upstream evaluation/export failures cannot overwrite the latest dependent dirty state |
 | R02 | passed | Issue #4: unrelated revision retains a valid result; all queued recompute callers wait until the newest input has been evaluated |
 | R03 | passed | Issue #4: Undo/delete/Open during export cannot adopt the old result; add initialization cannot insert into a replaced document |

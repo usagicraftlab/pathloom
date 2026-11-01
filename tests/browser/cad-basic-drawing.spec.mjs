@@ -432,6 +432,13 @@ test("P1-05 constrained rectangle preserves lastValid through nonconvergence, Un
       page.evaluate(() => window.PathloomModel.store.document.sketches.length),
     )
     .toBe(1);
+  await expect(page.locator(".model-sketch-status")).toContainText("完全拘束");
+  await expect(page.locator(".model-sketch-status")).toHaveClass(
+    /is-fully-constrained/,
+  );
+  await expect(page.locator(".model-sketch-components")).toContainText(
+    "ソルバー成分",
+  );
   await page
     .getByRole("spinbutton", { name: "スケッチ 幅", exact: true })
     .fill("80");
@@ -470,6 +477,11 @@ test("P1-05 constrained rectangle preserves lastValid through nonconvergence, Un
       ),
     )
     .toBe("no-convergence");
+  await expect(
+    page
+      .locator(".model-sketch-diagnostic")
+      .filter({ hasText: "SKETCH_NO_CONVERGENCE" }),
+  ).toHaveCount(1);
   expect(
     await page.evaluate(
       () => window.PathloomModel.store.document.entities[0].geometry.assetHash,
