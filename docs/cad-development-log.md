@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 46817)
-Total output lines: 2241
-
 # 独立版Pathloom CAD 開発ログ
 
 方針・構成・監査結果は[cad-master-plan.md](cad-master-plan.md)、次の実装は[cad-roadmap.md](cad-roadmap.md)。
@@ -756,7 +753,857 @@ browserの環境は `CI=1 PATHLOOM_FRONTEND_DIR=desktop-dist
 PATHLOOM_BREP_PYTHON="$CODEX_PRIMARY_RUNTIME_PYTHON"
 PLAYWRIGHT_CHROMIUM_EXECUTABLE=/workspace/scratch/1318e0e6fc5b/pathloom/work/chromium-local/chromium`。
 既存playwright.config.mjsを継承したローカル計測用config
-`work/board-verification/003r/ma…16817 tokens truncated…and JSON・左側座標/snap/plane・右側preview/retry/generation/delete/suppressを露出しない。
+`work/board-verification/003r/main-tests.config.mjs`でJSON reporterを追加し、
+全体は`--output work/board-verification/003r/full-final-artifacts --max-failures=1`を指定した。
+テスト本体、timeout45秒、assertion待ち時間は同じで、retryは0のまま。JSONの25件成功も確認した。
+Python3.12.14/OCP7.8.1.1/Chromium153.0.8010.0で、Tauri transport・OSの保存/回復はfixture。
+実macOS GUI・実Tauri IPC・OS保存/回復ダイアログ、ローカルRust、実機プリンターは未実施である。
+known maintenanceのframe/通知待ちは今回のローカル全件では再発していないが、修正済みとはしない。
+
+本件は[Issue #31](https://github.com/usagicraftlab/pathloom/issues/31)を追跡先とし、
+`fix/31-browser-fixture-isolation`の1ブランチ・1PRで提出する。診断用コピーや計測用configは
+PRへ含めず、テスト1ファイルと台帳2件・本ログだけを含める。
+
+
+## 2026-10-27 JST — Issue #8 / P1-05 基本作図の操作経路
+
+契約は Issue #8 本文。先行の計画コメント
+<https://github.com/usagicraftlab/pathloom/issues/8#issuecomment-6429031348>
+に続き、ユーザー経由で「#7完了」の開始合図を受けた。
+#7 本文・Muse完了報告・PR #29 本文/コメントを再読し、main の merge
+`225e1774f2e2de7fb44a3db23ea9a16e5799fc6a` と CI run
+[40414667194](https://github.com/usagicraftlab/pathloom/actions/runs/40414667194)
+の全3ジョブ成功を確認して、同 main から `fix/8-basic-drawing` を作成した。
+同一headの別run 40414630011の失敗は成功扱いに置き換えず、今回の成功数にも含めない。
+PR #2 (`25170e43`) は #8 相当の input/session/UI/store の参考とし、
+丸ごとの取り込みや古い成功数の転記は行っていない。
+
+### 対象・入力モード・変更理由
+
+- C02 Line：始点→終点のクリック/座標欄、world XYZ・plane UV、相対指定。
+  直前に受理した点を相対起点にする。方向＋長さは未対応とUIに表示する。
+- C03 Polyline：連続クリック/座標欄、open/closed、相対XYZ、Backspace。
+  点を戻すと入力点順と相対起点も戻す。自由な負Z/非平面入力を維持する。
+- C04 Rectangle：中心＋幅/高さ、2コーナー、3点を専用UI/sessionで切り替える。
+  逆順2コーナーは指定平面のmin/maxへ正規化する。3点は既存adapter通り
+  A→Bを辺とし、CのABに垂直な成分を高さにする。零長/一直線/平面不一致を拒否。
+  modeの往復では形状を保ち、登録済みcommand定義を書き換えない。
+- C06 Circle：中心＋半径数値と中心→半径点。同一点/平面外/半径0を失敗表示。
+  直径/2端点/3点は追加しておらず、未対応をUIと台帳に残す。
+- Move（transform.move / shape.transform）：X/Y/Zを個別入力しmm/cm/mを処理する。
+  objectは既存通り1形状。複数の事前選択を暗黙に先頭へ切り詰めず、対象選択を求める。
+  事後選択、Shift追加/解除、重なり候補、ロック/非表示の除外を確認した。
+- 作業平面：クリックが現在のsession planeを参照し、半径/中心長方形の第2点は
+  中心を通る同方向の平面で取得する。UVの相対値にplane.originを重ねて足さない。
+  #7と同じ有限ベクトル・正規直交軸の契約（1e-6）で座標変換を検証する。
+  Offset固有の平面所属・設定診断は#7のnativeへ任せ、演算は変更しない。
+- snap：endpoint、Circle/Rectangle中心、OFF、ロック/非表示除外。
+  平面作図の第2点に平面外候補を渡さない。3点Rectangleや自由XYZ全体は平面に縛らない。
+- キー：座標欄Enterは点を入力、canvas側Enterは1回だけ確定、Escは中断。
+  formの暗黙submitを抑え、text編集中のDelete/Backspace/Ctrl+Z、IME Enterを奪わない。
+  入力途中の無効な値はその場の編集状態に保持し、前の値でプレビュー/確定しない。
+  有効なクリック/座標/平面選択で置き換えた欄だけ、その編集エラーを解除する。
+
+### 共通ファイルと互換性
+
+`cad/commands/input.js` は座標算術・有限値・作図frame検証、`session.js` は
+Rectangleモードと単一Moveの事前選択、`workspace-ui.js` は上記操作に限定した。
+`view-adapter.js` は画面に残るロック/非表示選択対象をpick候補から除く2箇所のみ。
+`store.js` は保存する `command.mode` を実際のRectangle modeにする **1行だけ**。
+#4の結果適用guardと#5の `validateDifference` を保持した。
+
+文書v2・command ID/version・native要求/正本形式は変更しない。
+既存centerのfeatureはそのまま読み込め、新規featureには実作図modeを記録する。
+編集中の無効値MapはこのUIだけの一時状態であり、raw draft保存/回復の新契約ではない。
+#9のbinding→ツールパス/G-code、#10のOpen/autosave/recovery基盤、Museのnative、
+`.github/workflows/ci.yml`、他担当ブランチ/PRは変更していない。
+
+### fixture・実行コマンドと結果（初回・#6反映前、Linuxローカル）
+
+Node **24.22.1 / 20.20.2**、Python **3.12.14**、OCP **7.8.1.1**。
+初期に実行環境との接続が途切れたが、復帰後に同じ作業treeを確認して実行した。
+Playwright通常downloadの不完全zipはテスト成功と扱わず、既存のChromium
+**153.0.8010.0** (`/tmp/pathloom-b-chrome-runtime/chromium`) を明示して実行した。
+
+| コマンド/条件 | 実測 |
+| --- | --- |
+| 変更前 main `225e1774` で `npm test` | 171成功、失敗/skip 0 |
+| 変更前 input.js に同じ相対UV assertionを適用（Node24） | 失敗を再現：期待[6,6,9]に対し[16,26,39]、exit 1 |
+| `node --test tests/cad-basic-drawing.test.mjs` | 新規7件成功（座標/単位/frame、Rectangleモード/退化、Move複数事前選択） |
+| `npm test`（Node24、初回製品コード） | 178成功、失敗/skip 0、約2.33秒 |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | 178成功、失敗/skip 0、約3.17秒 |
+| `python -B -m unittest discover -s native -p 'test*.py'` | 45検出、43成功・任意USD2skip、約2.06秒。#7の3件を含む |
+| `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/tmp/pathloom-b-chrome-runtime/chromium PATHLOOM_FRONTEND_DIR=desktop-dist PATHLOOM_BREP_PYTHON=python npm run test:browser` | packaged frontend準備後、全31件成功・失敗/skip 0、約1.3分（既存24＋#8新規7） |
+| 同環境で `npm run test:browser -- --grep 'preserve geometry, mode'` | plane保存の明示assertionを追加後、対象1件成功、約3.7秒 |
+| `git diff --check` | 成功 |
+
+browserは実mouse/keyboard・ray-plane・実Python/OCPで正本/bbox/点列を照合し、
+Tauri IPC・OS dialog・storageだけをfixtureで代替する。
+カメラ準備のみ既存view-cube actionを呼ぶ（軸方向では見えないfaceがあるため）。
+数値入力は正確なbbox、mouse入力は現在のworld/pixelに基づく量子化誤差で比較する。
+
+新規7シナリオは三モードの数値/クリック・mode/plane保存、相対Polyline、Circle/Move、
+Shift/事前事後選択/snap、XY/XZ/YZ/任意平面→Offset成功と不一致診断、
+拘束幅60→80→矛盾幅20のno-convergenceを含む。拘束では前回正本hashとbbox、
+Undo/Redo、通常Save/reopen後の未収束draftを実測した。
+T02の元の回転XY数値組は今回未実施でpartialを維持し、代わりの負Z/垂直3点fixtureを明記した。
+
+途中の失敗を成功へ書き換えない：途中の実行では重なり選択dialogを未選択、mouse座標を
+厳密一致で比較したassertion、非表示のcube face locator、solverの約1.4e-8の
+丸め差によるbbox厳密一致が失敗した。対象を選ぶ実操作・camera setup・pixel/数値許容差へ
+fixtureを修正し、対象7件と上記全31件を通した。固定sleepによる回避は入れていない。
+また有効点で無効な編集欄を置換してもエラーが残る経路を修正し、そのCircle/平面選択と
+プロパティ欄→相対座標の混在操作も初回全体browserで確認した。
+
+### 未実施・次の開始地点
+
+実macOS GUI、実Tauri→Rust IPC、OS Open/Save dialog、Cmdキー/VoiceOver、
+.app/.dmg build、全拘束/角丸/dragの組合せは未実施。ローカルRust全体は未実行。
+browserの通常Saveを#10の保存/回復全条件完了とはしない。
+
+次は同一headのpush/PR CIを確認し、jobごとの実測をPR本文とIssue #8へ追記する。
+CI設定変更が必要な場合も提案に留める。Draftのレビュー後、ユーザーの指示を待つ。
+mainへのマージ/Issue手動close、#9/#10の着手は行わない。
+
+### Issue #8 初回CIの失敗切り分けと、入力エラー表示の追加修正
+
+初回head `794942895ded425c8b228ab9a75274b340c8954c` の2runを直接照合した。
+両方とも Node20 JS178成功、native45検出/43成功/任意USD2skip、macOS arm64 Rust21成功。
+Chromium156の導入は両方とも完了し、browser工程まで到達した。
+
+| run/job | browserの実測と失敗箇所 |
+| --- | --- |
+| [PR 40418763620 / job121907569126](https://github.com/usagicraftlab/pathloom/actions/runs/40418763620/job/121907569126) | 30成功/1失敗。#8新規7件は成功。既存 `maintenance.spec.mjs:115` のidle viewportでaxis=top確認直後のframe数が0（期待>0） |
+| [push 40418688481 / job121907318530](https://github.com/usagicraftlab/pathloom/actions/runs/40418688481/job/121907318530) | 30成功/1失敗。新規Circleの平面外点エラーが、先行していたプレビューの成功メッセージに上書きされた。#8の6件と既存viewportは成功 |
+
+同じheadでも、この2runは異なる原因だった。JS/npm test失敗やChromium取得失敗とはしない。
+既存viewportは `app.js` のaxis同期更新とrAF予約に対し、fixtureがaxisだけ待って
+frame数を一度読む待機競合と推定する。#7の失敗runも直接確認し、
+[40414630011 / job121894327764](https://github.com/usagicraftlab/pathloom/actions/runs/40414630011/job/121894327764)
+はJS171成功・browser23成功/同じframe数0の1失敗だった。
+ローカルの既存idle fixtureを `--grep 'idle viewport stops frame polling' --repeat-each=10`
+で追加照合すると10成功（25.3秒）。CIの失敗を解消したとは記録しない。
+提案はframe数そのものをpollすること。既存maintenance/app/ci.ymlは今回変更しない。
+
+一方、Circleのエラー上書きは#8の操作契約に含まれるため修正した。
+座標欄/クリックで点を拒否した時、sessionのpreviewSequenceを進めて古い結果を破棄し、
+予約timerとpreviewAgainを解除する。#4のStore guardを利用し、Store自体の変更は増やさない。
+数値欄のエラーでも同じ無効化を使い、前の成功表示で入力エラーを消さない。
+
+新規7番目のbrowser fixtureで有効Circle previewを明示的に保留し、
+同一点/平面外点を拒否→元の実OCCT処理を解放→jobs完了を待つ順序を固定した。
+固定sleepや通知を見落とすassertionへの置換ではない。
+修正前はCIと同じ「同じ平面」対「プレビュー · まだ確定していません」で失敗を再現（exit1）。
+修正後、同環境の `npm run test:browser -- --grep 'mouse Polyline/three-point' --repeat-each=3`
+は3成功（16.2秒）。追加修正後の全体回帰と新headのCI結果はPR本文に追記する。
+
+### Issue #8：#6マージ後のmain統合と最終ローカル再検証
+
+作業中に #6 / PR #28 がmainへ入り、最新mainは
+`c3655574468cd8a299adf3b173eba4c021ab650c` になった。
+#8の追加修正を同じ専用ブランチへcommitし、このmainへrebaseした。
+競合は開発ログの末尾追記1箇所だけで、#6の全章と#8の章を両方残した。
+Store/UI/台帳の自動mergeも比較し、mainのDifference/Split/Offset・参照/binding修復を保持。
+mainとの差分で `store.js` は引き続きcommand.modeの1行だけ、native・ci.yml・
+Difference/Split専用module・既存browser specの変更はゼロである。
+
+追加修正後、#6反映前にもJS（Node20/24）各178成功、native43成功/2skip、
+browser31成功を再確認した。その後、rebase後に全件を改めて実行した結果は次の通り。
+
+| 実行コマンド（上記と同じLinux/Chromium環境） | rebase後の実測 |
+| --- | --- |
+| `npm test` / Node24.22.1 | 192成功・失敗/skip0、約2.69秒 |
+| `npm exec --yes --package=node@20.20.2 -- node --test tests/*.test.mjs` | 192成功・失敗/skip0、約5.20秒 |
+| `python -B -m unittest discover -s native -p 'test*.py'` | 51検出・49成功/任意USD2skip、約2.91秒 |
+| `PLAYWRIGHT_CHROMIUM_EXECUTABLE=/tmp/pathloom-b-chrome-runtime/chromium PATHLOOM_FRONTEND_DIR=desktop-dist PATHLOOM_BREP_PYTHON=python npm run test:browser` | 32成功・失敗/skip0、約2.1分（mainの25件＋#8の7件） |
+| `git diff --check origin/main...HEAD` と共通ファイル照合 | 成功。#4のrace、#5 Difference、#6 Split、#7 planeを保持 |
+
+古い成功数を新headへ転記したものではない。初回CIの2種類の失敗も前節に残す。
+新headのpush/PR CIは、この検証後に別runとして確認し、PR #30本文とIssue #8へ記録する。
+実macOS GUI/実Tauri/OS保存、ローカルRustなど未実施範囲は前節の通り。
+この#8作業ではDraft・未マージを維持し、#9/#10へ着手しない。
+
+## 2026-10-27 JST — 指示002（続き） / PR #30 の最新main統合とマージ仕上げ
+
+ボードに追加された続き指示に従い、実装・検証後に止まっていた既存PR #30を再開した。
+現行ボードはReady化と条件成立後のマージコミット方式によるmain反映まで許可している。
+上の旧作業時点の「Draft・未マージを維持」「ユーザーの指示を待つ」は過去の記録であり、
+今回の停止条件としては用いない。新規ブランチ/PRを作らず、fix/8-basic-drawingを継続する。
+
+照合した最新mainはPR #32マージ後の`4306305f459f3b903efd9d3cf452f15954810fc4`、
+treeは`9ae0c2a90f57f274181f9e799ba7ee956b636866`。再開前PR headは
+`793f1a4238c0ec93f828e413d62e90afbee1920f`、treeは
+`209fcc8036bcbf11aee78be89d764ed1766faad2`である。
+最新mainの4変更ファイルをblob SHAとtreeで照合したローカルsnapshotに#8を統合した。
+競合は開発ログ末尾への別々の追記1か所のみ。共通の元本文に、mainのIssue #31の章と
+PRのIssue #8の章をそれぞれ原文のまま連結して両方を保持した。
+製品コードと#8のテスト/fixtureは旧PR headとbyte単位で一致し、Differenceのspecは
+PR #32反映後mainと一致する。D02の機能台帳行もmainのまま保持した。
+今回新たな製品実装、assertion/timeout/retry、native、CI設定の変更はない。
+
+### 統合後の全検証（今回実行した結果）
+
+環境：Linux、Node24.22.1 / Node20.20.2、Python3.12.14、OCP7.8.1.1、
+Chromium153.0.8010.0。テスト対象の統合treeは
+`3c1d8f4bf13fff3b7bac52c5b8d79367632307b1`。
+この後の変更は本結果と検証台帳への追記だけで、実装・テストのblobは変えていない。
+
+| コマンド / 検証 | 結果 |
+| --- | --- |
+| `NODE_OPTIONS=--test-reporter=tap npm test` / Node24.22.1 | 192成功/0失敗/0skip、exit0、約3.44秒 |
+| Node20.20.2の`node --test tests/*.test.mjs`（全ファイルを展開） | 192成功/0失敗/0skip、exit0、npm起動含め約11.74秒、テスト自体約3.61秒 |
+| runtime Pythonの`-B -m unittest discover -s native -p 'test*.py'` | 51検出＝49成功/任意USD2skip、exit0、テスト約3.06秒 |
+| packaged frontendの`npm run test:browser`全件 | 32成功/0失敗/0skip/0flaky、exit0、約97.91秒。#8の7件・Difference3件・Split1件を含む |
+| 台帳 / 互換性 / `git diff --check` | 65機能・14列、D02保持、製品/テスト差分とnative/CI無変更を照合、成功 |
+
+Node20の初回呼出しは補助スクリプトがワイルドカードを展開せず、パス未検出でexit1、
+テストは未実行だった。ファイル一覧を展開した上記再実行の成功とは区別する。
+統合用の補助照合でも初回に共通空行の扱いと台帳ID抽出範囲でassertion停止があった。
+照合方法を修正し、追記原文を両方保持したことと65機能全行を再確認したものであり、
+製品コードやテストを緩めて成功させたものではない。
+
+browserは既存configのworker1・timeout45秒・retry0を維持し、ignoredの
+`work/board-verification/002cont/browser.config.mjs`でJSON reporterと専用出力先だけを追加。
+CI=1、PATHLOOM_FRONTEND_DIR=desktop-dist、runtime Python、既存Chromiumの実体を指定した。
+JSON集計もexpected32/unexpected0/skipped0/flaky0、errors=[]で一致する。
+生ログとJSONは`work/board-verification/002cont/`にある。
+実macOS GUI/Tauri IPC/OS dialog、Cmd/VoiceOver、.app/.dmg build、ローカルRust、
+実機プリンター、全拘束/角丸/dragの組合せ、T02元の回転XY数値組は未実施のままである。
+既知のmaintenance間欠失敗も、この全件成功で解消済みとは扱わない。
+
+再開前headの成功run40421181969/40421186808、初回headの失敗run40418688481/40418763620は
+別の履歴としてPR本文に保持する。最新mainへrebaseした新headの全CI、Ready化、
+マージコミットとIssue #8自動クローズの結果はPR本文とボードへ実際の確認後に記録する。
+この段階のログだけでCI成功やマージ完了とは扱わない。#9/#10へは先行着手しない。
+
+## 2026-10-27 JST — 指示004 / Issue #9 — 更新追従と失敗復旧（要判断）
+
+契約はIssue #9の3完了条件。指示004をrevision guard付きで未着手→作業中へ変更し、
+読戻し確認後に開始した。依存Issue #4〜#7はclosed。開始時mainは
+`5defb1778f2058940c0d54e91b747d7ef8b2a71c`、treeは
+`c302dc84bbca55e88bcce057a61bfc6bd906a8c1`。このtreeと照合した独立checkoutで
+専用branch `fix/9-cad-generation-recovery` を使用する。既存の#9用branch/PRはなかった。
+#10/#11は予約であり着手しない。
+
+### 修正前の証拠
+
+実OCPのRectangle→Extrude→FilletをUIで作成し、通常v2プロジェクトfixtureで
+そのbody binding→Slice STEP→Build Toolpathを配線する。断面計算もTauri transportだけを
+置換し、実際の`native/occt_brep_bridge.py`をRustのslice_step_brepと同じaction/引数で呼ぶ。
+生成worker、出力検証、G-codeはアプリの実装を実行する。
+
+- 最初の有効fixtureによる3件：1成功/2失敗、exit1、約65.51秒。
+  寸法60→80、Extrude体積60000→80000、semantic edgeを再選択しないFillet追従、
+  実断面とG-code幅60→80は成功した。1失敗はFilletがCAD_REFERENCE_MISSINGでfailedなのに
+  body-result bindingがreadyとなるもの。もう1失敗はテスト初期化で非表示の旧Newボタンを
+  クリックしたfixtureの45秒停止で、製品不具合には数えない。
+- 初期化を既存handler呼出しに直して対象2件を再診断：2失敗、exit1、約27.41秒。
+  失敗FilletにはlastValidが残っている一方、同じbodyのtipとbinding.resolvedProducerが
+  上流のExtrudeへ戻っていた。更新されたExtrudeをreadyとして渡し、下流の失敗を飛ばしていた。
+  添付JSONにはRectangle/Extrude/Filletの同じbodyIdと各slot、failed/readyの矛盾を記録した。
+  別の正常グラフには無関係なcad-* inputが自動追加され、非アクティブな更新グラフを
+  表示どおり選択しても再計算が始まらず、G-codeは`updated; select this graph to recalculate`
+  のまま停止した。
+
+証拠は`work/board-verification/004/baseline-product.json`、`baseline-details.json`と
+対応するartifact/trace。添付missing-reference-state/inactive-graphsはJSON reporterにも保持。
+失敗のassertionを削除せず、独立したグラフ状態の比較はsoft assertionで全て検査し、
+一つでも不一致があればcase自体を失敗とする。
+
+### 現在の修正範囲
+
+- Storeのbody tipを、再計算途中の上流ではなく有効な履歴末尾slotへ揃える。
+  末尾がdirty/running/blocked/failed/cancelledならlastValidをreadyへ昇格させない。
+  suppressedは除外し、missing/splitのbodyを旧slotから復活させず、Curve/B-rep両方向の
+  型不一致をtype-changedにする。G-code生成直前にもbindingを解決する。
+- CAD参照がpending等になった場合、生成/preview workerと予約を中断し、前回形状を
+  表示中のエラーにする。古い断面結果を保留→参照消失→結果解放するfixtureで検査する。
+- 自動通知と明示的な「生成で使用」を区別する。通常更新では別の正常グラフにinputを
+  勝手に追加しない。明示操作は既存bindingでも接続できる。
+- shared generatorの全出力について変更前の状態を採取してからinputを更新・無効化する。
+  非アクティブな更新グラフは前回pathsと停止状態を保持し、既存表示どおり選択時に再計算する。
+  背景自動再計算を新たに実装したものではない。
+- browser共通fixtureもDifferenceの既存対策と同様に、テストごとのchild/ID対応pendingと
+  終了待機にする。実section subprocessの取消と終了も管理する。テスト間のFIFO共有を避ける。
+
+製品の正本/native演算、文書version、CI設定、assertionのtimeout/retryは変更していない。
+S05/D05機能台帳とA/T/R台帳は、成功した範囲と未完了の下流生成を区別して記録する。
+
+### 実行結果と停止理由
+
+| 実行 | 実測 |
+| --- | --- |
+| `node --test tests/cad-generation.test.mjs` / Node24.22.1 | 追加6件成功/失敗・skip0 |
+| 製品/fixtureの`node --check`、`git diff --check` | 成功 |
+| 修正後の追加browser3件 | **2成功/1失敗**、exit1、約36.20秒、retry0。JSON expected2/unexpected1/skipped0/flaky0 |
+| Node24全JS / Node20.20.2全JS / native全件 / browser全件 | 未実行。部分検証を全件成功には転記しない |
+| ローカルRust、実macOS GUI/Tauri IPC/OS dialog、実機プリンター | 未実行 |
+
+修正後、寸法追従・G-code更新と、別グラフ/非アクティブ共有出力の選択再計算・明示的接続は
+成功した。参照消失ケースも、pending化・lastValid保持・旧worker取消・G-code停止、
+独立Rectangleの追加、edge再選択によるFilletのvalid復帰までは通る。
+ただし、その後の実断面の生成適用が **`Intersecting output curves at Z 0.6`** で失敗する。
+`fixed-target.json`とtraceのgeneration-error-detailsに実メッセージを保持している。
+選び直したのは丸角RectangleをExtrudeした形状の下端にある長さ30超の水平edge。
+CAD featureはvalidだが、断面/経路の実際の交差なのか出力検証なのかは原因未確定である。
+この1件を別のedgeや緩い判定へ置換して成功扱いにせず、指示004の未知失敗時ルールに従い
+マージせず要判断とし、連絡欄の@Museへ方針を確認する。失敗復旧の完了条件は未達。
+現在の差分を1つのDraft PRへ記録し、全検証/CI/Ready化/マージ/Issue自動クローズの未実施を
+明記する。CIが自動で開始された場合も、未確認のものを成功と記載しない。
+
+### 検証環境の復元とfixtureの先行エラー
+
+以前のChromium実体が作業領域整理で消えており、専用ignored領域に
+`@sparticuz/chromium@153.0.0`を取得した。offline cache missはテスト未実行。
+通常展開はfontsのchownでEINVALとなったため、Brotliの標準展開とtarのdata filterで復元。
+初回browser3件と診断1件は、付属のAWS向けフォント設定でSkiaがSIGTRAP終了し、
+製品テスト本体に到達しなかった。`FONTCONFIG_PATH=/etc/fonts`で起動を回復した。
+先行した1件はfixtureのpipeline.id指定誤りによりOpenできず失敗したが、fixtureを
+`id:pipeline`へ直しvalidateProjectで確認した後の結果を上記へ分けている。
+
+Linux、Node24.22.1、Python3.12.14/OCP7.8.1.1、Chromium153.0.8010.0。
+既存Playwright設定のworker1/timeout45秒/retry0/launch argsを維持し、ignored configで
+JSON reporterと専用出力先を追加した。追加のsingle-process等のflagは採用していない。
+ローカル実行は`python work/board-verification/004/run-browser.py <run-name> [Playwright args]`。
+package/binary/font設定は検証環境だけであり、製品依存やCI設定へ追加していない。
+
+
+## 2026-10-27 JST — 指示007 / Issue #34：既存断面交差問題の準備
+
+Issue #9 / Draft PR #33とは分け、変更なしmain
+`5defb1778f2058940c0d54e91b747d7ef8b2a71c`をbaseとする
+`fix/34-native-section-intersection`で既存問題を扱う。
+[Issue #34](https://github.com/usagicraftlab/pathloom/issues/34)に固定する再現条件、
+同一B-rep hash・同一42 paths、小数6桁化後の交差エラーの証拠と完了条件を記録した。
+詳細は`docs/cad-native-section-intersection.md`。
+
+ユーザーから「007だけを実行」「ちょこちょこ止めて報告」と指定されたため、
+Issue・専用branch・Draft PRと修正前の記録を用意した時点で一度停止する。
+指示004は再開せず、Issue #9の変更も取り込まない。
+
+今回の差分は再現記録とこの開発ログだけ。製品コード・テスト・交差判定・
+assertion・timeoutは変更していない。新しいローカル検証
+（Node24全JS、Node20.20.2全JS、native全件、browser全件）と実機確認は未実行。
+以前の指示004で取得した再現証拠を、今回実行した検証と混同しない。
+Draft PRのCI結果は確認後にPR本文とボードへ記録する。修正完了・Ready化・
+マージ・Issue自動クローズは未実施であり、この準備を完了条件の達成と扱わない。
+
+
+## 2026-10-27 JST — 指示007 / Issue #34：原因側の修正案と第2停止点
+
+ユーザーの「続けてください」で同じbranch/PR #35を再開。今回は原因特定・
+修正案と対象検証までで再び停止する。004の再開・Ready化・マージはしない。
+
+実測：Section右側直線の開始parameter=-5.999999999062311e-7、
+評価点Y=-17.0000006に対し、共有する位相頂点はY=-17、
+vertex toleranceは約1.0000000071e-6 mm。曲線のパラメータ端を別々に
+polylineへ足していたため、微小折返しが生成された。出力検証が不正な
+polylineを拒否しているので、検証側を緩めない。
+
+修正案：slice_brepの曲線サンプル列の両端だけを向き付きFirstVertex/LastVertexの
+座標へ揃える。内部サンプル、B-rep、断面高さ/許容差、dedup閾値、JS交差判定、
+丸め、assertion/timeoutは変更しない。B-rep hashは修正前後で
+3a68ff555efce4f349936b1a378c10d0129f600834cea730c659249c31a98ea5のまま。
+42 pathsを維持し、第1層41点→37点、全層最短segmentは約6e-7→0.40256835 mm。
+同じ既存validateOutputが生断面・小数6桁化後とも成功する。
+
+今回のローカル対象検証（Linux/Node24.22.1/Python3.12.14/OCP7.8.1.1）：
+
+| 実行 | 結果 |
+| --- | --- |
+| 追加native回帰2件、修正前 | 1成功/1失敗。約6e-7 mmの短いsegmentを再現、約0.877秒 |
+| 同じ2件、修正後 | 2成功、失敗/skip0、約1.095秒 |
+| native/test_occt_brep_bridge.py 全件 | 20成功、失敗/skip0、約1.573秒。native全件ではない |
+| node --test tests/open-print-output.test.mjs tests/print-intro.test.mjs tests/cad.test.mjs | 21成功、失敗/skip0、約0.507秒 |
+| 追加browser1件の初回 | 生成は成功したがZ0.600を文字列Z0.6で期待して失敗、約11.54秒 |
+| 同browserの数値表記訂正後 | 1成功、失敗/skip/retry0、約10.77秒（runner11.79秒） |
+| 生断面/小数6桁化後の出力検証 | 修正前はZero-length/Intersecting、修正案は両方成功 |
+| 構文・git diff --check | 成功 |
+
+Browserは旧fixtureのCAD daemonを使い、追加した当該テスト内だけで実native
+occt_brep_bridge.pyのslice IPCと取消を代替。normal v2 projectで生成配線だけを
+seedし、edge長64/bbox・同一B-rep hash・42 paths・全42層のG-codeを確認した。
+fixtureのedge条件、assertionの意味、timeout/retryを緩和していない。初回の
+表記失敗は数値で全層を比較する検証へ訂正し、成功結果と区別する。
+
+S05/D05の証拠欄とA/T/R台帳に対象結果と残件を追記し、既存partialや未実施を
+promoteしない。ローカルNode24全JS、Node20.20.2全JS、native全件、browser全件、
+実Mac GUI/Tauri IPC/OS dialog/実機プリンター、ローカルRustは未実施。
+全検証前の第2停止点として残し、Ready/merge/Issue自動closeは未実施。
+
+準備head46f7daedb7ac234baadbf63e1d22baca9901f87dのCIは、push40506774872・
+PR40506779845ともattempt1 success。各runのログでNode20.20.2 JS192成功、
+native51検出=49成功/2skip、Rust21成功、browser32成功を確認した。
+製品修正前の結果であり、修正headのCI結果は確認後にPR本文とボードへ別記する。
+
+生ログ/JSON/trace：work/board-verification/007/のnative-red.log、native-green.log、
+native-bridge.log、js-guards.log、endpoint-comparison.json、junctions.json、
+section-target.json/log/traceとsection-target-numeric.json/log。文書patchの初回は
+文脈行不一致で適用されず、実際の行を読み直して適用した。製品/検証失敗とは区別する。
+
+
+## 2026-10-27 JST — 指示007 / Issue #34：全件実行でのfixture初期化失敗
+
+ユーザーの「つづけてください」を受け、007だけの全件検証を再開。マージ前で停止する。
+ff19d401/tree2966b28dのローカル全件結果：Node24.22.1 npm testは192成功/失敗skip0
+（test3.143秒/runner3.409秒）、Node20.20.2は全28 JSファイル・192成功/失敗skip0
+（test4.546秒/npm起動含む36.052秒）、nativeは53検出=51成功/任意USD2skip
+（test4.580秒/runner6.346秒）。Node20はpackage指定と別途node --versionでも20.20.2を確認。
+Browserは33件中32成功/1失敗、skip/retry0（test100.03秒/runner101.42秒）。
+
+修正headのCI push40510652145/PR40510663843は各attempt1 failure。
+全3 jobの生ログを照合し、各runのNode20.20.2 JS192成功、native51成功/2skip、
+Rust21成功、browser32成功/1失敗を確認。追加native-section caseだけが開始直後の
+__TAURI__.core未定義で停止し、断面処理へ到達していない。失敗artifactは
+push12737426744、PR12738170023。未知の製品失敗や既知maintenanceと混同しない。
+
+原因は共有fixtureのbeforeEach登録をmodule importの副作用にしていたこと。
+単独実行では動くが、全件ではbasic-drawingが先に同じmoduleを読み込み、
+2番目のspecへhookが登録されない。ローカルtraceにgoto0/beforeEach0、空pageの
+ままExposeBinding/Evaluateして失敗することを確認。
+テストごとに実行されるtest.extendのpage fixtureへ変え、daemon/queue/serialを
+各testのclosureに置く。終了時はpending拒否/readline close/child終了待機を行う。
+製品native/JS・既存の全JS/nativeテスト・追加native-section spec・package/lockは
+ローカル全件実行時と同一blobで、fixtureだけを変更。assertion/timeout/retryは不変。
+Node/JS/nativeの成功をfixtureだけの変更で再実行したとは書かず、変更範囲と
+結果が適用されるsourceを区別する。browser全件を再実行し、結果を続けて追記する。
+
+
+第3段階のbrowser再実行は全33件成功・失敗/skip/retry0、test103.673秒・
+runner104.64秒。先に同じfixtureを使うbasic-drawing7件が走った後でも、
+追加native-section caseが起動し同じB-rep/edgeからG-codeまで成功する。
+既存Difference3件、Split/Library/寸法追従・修復、maintenanceもこのrunで成功。
+既知のframe数/保存通知の間欠失敗を恒久解決したとは扱わない。
+
+製品native/JS、JS/nativeテスト、追加native-section spec、package/lockは
+Node24/20/nativeの全件検証時と同一blob。テスト実行コードの変更はfixtureのみで、
+それを含めてbrowser全件を再実行した。8ファイルのPR範囲と台帳65行/14列を
+確認し、全結果と初回CI2 failureをPR/ボードへ残す。新しいfixture修正headの
+CI結果はPR本文とボードに確認後追記する。未確定を成功と書かない。
+実macOS GUI/IPC/OS dialog、ローカルRust、実プリンターは未実施を維持。
+ユーザー指定のマージ前停止点とし、Ready/merge/Issue自動close・004再開はしない。
+
+
+## 2026-10-28 JST — Issue #11 / 指示006の先行実施
+
+ユーザーの再開指示とボード06:54の範囲確認に従い、006を取得して作業中への変更・
+読戻しを済ませた。旧007限定・確認のみという制限の解消も既存3時間タスクへ反映した。
+main5defb177から専用branch `fix/11-regression-verification` を作成した。
+007/PR35のnative修正は含めず、007は要判断・006完了待ちを維持する。
+
+frameはaxisの同期更新とRAF callback実行の非同期境界を区別する。既存の
+`frames > 0` をexpect.pollで待ち、idle `<4`、axis=top、timeout45秒・retry0を維持。
+実appの描画callbackを保留し、axis=top/frames=0の中間状態を検証してから解放する
+追加回帰も入れた。単に閾値やtimeoutを緩めたり、失敗をretryで隠したりしない。
+
+保存側は初期command libraryのreplyを保留する回帰で、未完の初期読込と登録が
+並行することを製品修正前に確認した（追加2ケース中1成功/1失敗、24.520秒）。
+workspaceの初期化全体を進行中promiseへ集約し、登録は初期library/recovery確認まで待つ。
+共有保存失敗時には失敗通知・project内定義保持・共有保存先未更新を確認する。
+修正後は従来のA04/R06とframeを含む対象5ケースすべて成功（15.186秒、retry0）。
+
+全件実測：Node24.22.1 npm testは192成功/失敗・skip0（test6.333秒/runner6.715秒）。
+Node20.20.2 binaryで全28 JSファイルを明示展開した実行は192成功/失敗・skip0
+（test7.113秒/runner7.220秒）。先のnpm exec entrypointはexit0でもTAPが66件までで
+集計がなく全件未確認だったため、成功扱いせず直接binaryのversionと最終集計を照合した。
+Python3.12.14/OCP7.8.1.1のnative全51件は49成功/任意USD2skip
+（test5.016秒/runner6.756秒）。全browser35件は35成功/失敗・skip・retry・flaky0、errors[]
+（test145.509秒/runner147.606秒）。新headの全CIはこの記録時点では未実行。
+
+P1-01〜04の既存回帰への対応、全件の各結果、M01〜M07の未実施範囲は
+[cad-phase1-regression-verification.md](cad-phase1-regression-verification.md)へ集約した。
+A04/R06の証拠を追記し、A/T/R状態と65機能IDの状態は昇格しない。
+この環境はLinuxでcargoもなく、実macOS GUI/Tauri/OS保存回復・WebView/VoiceOver・
+.app/.dmg build・M07は実施できていない。既存CIのRust成功でそれらを代替しない。
+Issue11の実機完了条件と、先行実施時点では#9/#10が未完という残件を保持する。
+実施済みをPRへ保存して全CIを照合し、実機証拠/範囲決定なしに完了やmergeとしない。
+
+
+### 2026-10-28 08:15 JST方針後 — Issue #11の範囲整理と再開
+
+ユーザーの「次進めて」とボード08:15回答に従い、006を作業中へ戻して読戻し確認。
+未実施macOS M01〜M07、実Tauri/OS保存回復、M07とPhase 1最終照合を
+[Issue #37](https://github.com/usagicraftlab/pathloom/issues/37)へ移した。
+元の完了条件、各Mの操作/証拠、#34/#9/#10の完成後に扱う依存を引き継いだ。
+新Issue本文を読み返して一致を確認し、Issue #11を自動対策の先行範囲へ整理した。
+移管先は「Phase 1 完了後の実機検証フェーズ」であり、M各項目は未実施のまま。
+実機の合格や成功に置き換えず、元の停止記録も履歴として保持する。
+
+source head f6d85208204e632d46be9717fcbc58a19adeba82のCIは
+push40592375358 / PR40592463574の各attempt1がsuccess。
+全6 jobのログで各JS192成功、native49成功/任意USD2skip、macOS Rust21成功、
+browser35成功（元frame/追加保留frame/保存競合と拒否caseを含む）を確認。
+対象5ケース×5巡のNode20.20.2実測も25成功/失敗・skip・retry・flaky0、errors[]
+（test84.238秒/runner85.096秒）。CI再実行なし。
+
+今回の追加変更は移管先・範囲・履歴を示す文書のみで、製品/JS/native/browser test・
+package/lockはf6d85208から不変。前段階のNode24/20各192、native49+2skip、
+browser35の全件実測は同じ実行コードに対するものとして保持し、再実行したとは書かない。
+文書追加後の最終headの全CIはPR #36とボードへ追記する。全条件が成立してから
+Ready化・merge commit・Issue #11自動closeを実際に確認し、006を完了へ進める。
+Issue #37はopenで残し、006完了前に007/004を再開しない。
+
+
+## 2026-10-28 JST — Issue #34 / 指示007、006完了による再開
+
+006/PR36のmerge aa4338d7・Issue11自動close・ボード完了を確認し、007を作業中へ
+戻したことをreadback確認。既存branch fix/34-native-section-intersection / PR35へ
+最新main aa4338d7を取り込む。競合は本ログ末尾の追記だけで、両側がbase5defb177の
+全文をprefixとして保持していることを検証し、旧007追記8346 bytesと006追記4628 bytesを
+byte単位でそのまま連結した。コード競合や仕様の推測での採用/破棄はない。
+台帳の006 A04/R06証拠、65 ID/状態、007 S05/D05証拠の双方を保持する。
+
+同じ実行コードで全件を再実行：Node24.22.1 npm test192成功/失敗・skip0
+（test2.744秒/runner2.995秒）、Node20.20.2全28 JS192成功/失敗・skip0
+（test4.160秒/runner4.233秒）、native全53検出＝51成功/任意USD2skip
+（test4.673秒/runner6.348秒）、Node20/Chromium156のbrowser全36件は36成功/
+失敗・skip・retry・flaky0/errors[]（test103.178秒/runner104.552秒）。
+同じ下端edge長64、同じB-rep hash、42 paths/G-codeのattachmentも照合。
+
+環境履歴を区別：最初のNode20/ブラウザーentrypointは旧npm cache binaryの欠落で
+本体未到達。ignored work/toolchainへNode20.20.2を準備し、versionを確認して再実行。
+nativeの非verbose初回はexit0でもlogに最終集計がなく全件未確認で、成功数に含めず
+verboseで全53件/OK skipped2まで確認した。これらをアプリのassertion failureと混同しない。
+rawはwork/board-verification/007-resume-006/に置いた。
+
+実機macOS/Tauri/OSダイアログ・ローカルRust・実プリンターは未実施。Mac条件は
+未実施のまま後段Issue #37へ移管済みで、本Issue #34の完了に置き換えない。
+main aa4338d7のpost-merge checks40601895904とPages40602176848はsuccessを確認。
+旧headのCI失敗/再実行をすべて保持し、新headで全CI（frame成功を含む）を確認後に
+PR35/ボードへ記録し、通常条件でReady→merge commit→Issue34自動closeへ進める。
+
+
+## 2026-10-28 JST — 指示004 / Issue #9、007完了後の再開と回帰修正
+
+PR35のmerge77ff814b・Issue34自動close・ボード007完了を確認し、004を作業中へ
+戻してreadback確認。既存branch fix/9-cad-generation-recovery / PR33を継続する。
+最新main77ff814bを取り込み、開発ログはbase全文への追記と検証して旧004追記7228 bytesと
+main追記15140 bytesを保持。A/T/R追記の両方を保持し、S05/D05の14列中、異なる証拠列
+だけを併記した。65 ID/状態を昇格しない。共有fixtureは007のtest.extend per-test lifetimeを
+保持し、#9のID-keyed routing/実native slice/workerと保存の観測・終了待機のtransport bodyを
+そのまま内側へ移した。import-time hookやglobal teardown変数には戻さない。
+
+統合後の修正前compiled Storeをhash保存し、Difference3＋generation3を実行：
+3成功/3失敗（test51.655秒/runner52.350秒）。生成3件は007修正で復旧し、
+Difference3件は旧CIと同じ工具/replacementのvisible assertionで失敗した。
+原因は#9のresolveBindingsがready bodyにfeature slotを再代入し、Difference/replaceが
+意図的にtip=nullへ消費した工具を古いentityへ戻すこと。追加JS回帰は6成功/1失敗で
+これを固定した（test0.119秒/runner0.190秒）。tipのないbodyは補正対象にせず、
+末端pending/failed/lastValidの保持は残した。修正後は同7ケース7成功
+（test0.105秒/runner0.169秒）、browser対象6件すべて成功・skip/retry/flaky0・errors[]
+（test42.804秒/runner44.176秒）。assertion/数値閾値/timeout45秒/retry0は不変。
+
+全JSはNode24.22.1 npm test199成功/失敗・skip0（test4.329秒/runner4.740秒）、
+Node20.20.2全29 JSファイル199成功/失敗・skip0（test5.324秒/runner5.388秒）。
+native53検出は51成功/任意USD2skip（test5.393秒/runner7.343秒）。
+全browser39件も39成功/失敗・skip・retry・flaky0、errors[]
+（test126.139秒/runner126.780秒）。最終head CIは未実行で、全run/jobの結果を
+PR33とボードへ実際の確認後に追記する。
+
+Issue9の3完了条件をcad-generation.spec.mjs:121/150/197へ対応付け、
+[cad-generation-recovery.md](cad-generation-recovery.md)に実測と原因・旧失敗履歴をまとめた。
+実形状/OCP断面/worker/strict出力検証/G-codeを使い、元の丸角Rectangle下端水平edge条件を
+変更していない。単体のtransport stubと実geometryを区別する。
+raw JSON/log/attachment/失敗traceはwork/board-verification/004-resume-007/。
+旧0f265ffのpush40500847035/PR40501038537のfailureと全job結果、旧local部分検証の
+失敗もPR本文に保持し、今回の成功で置換しない。実macOS/Tauri/OS操作、local Rust、
+実プリンターは未実施。実機M項目はIssue37の後段範囲で合格にしない。
+
+## 2026-10-28 JST — 指示005 / Issue #10 再開と保存・回復
+
+main6622cf3から既存local branch fix/10-project-recoveryを継続。ボード09:21回答を確認し、
+候補Aは回復/明示破棄まで保持、Bのautosaveは保留・理由表示、破棄後に再開という
+仕様25.4の解釈を採用した。複数候補は追加せず実機#37に先行着手しない。
+
+回復候補の読取/選択完了をautosaveの前提にし、保留理由と再確認buttonを表示。
+破損候補や失敗回復/破棄で旧候補を解放せず、回復にもOpenのcommand版衝突検証を適用。
+文書identityごとのautosave判定と古いtimer解除、保存待ちの新編集表示を追加。
+
+Issue本文の4条件は[証拠文書](cad-project-recovery.md)へ対応付けた。
+初回target2成功/2fixture失敗、再実行4成功ログ（最終集計未出力）、
+save-red1製品失敗→修正後target5成功/失敗・skip・retry・flaky0を区別して保持する。
+別プロセスは新Python Runtimeへ実正本をimportし、browserは再読込した新Storeで
+failed/lastValid/command版/draft復元を検査。実OS/Tauri/実機再起動は未実施。
+機能65ID・A/T/R62件の状態を保持し、共有基盤証拠だけ追記した。
+
+最終ローカル結果：Node24.22.1 npm test199成功/失敗・skip0（test3.006秒/runner3.283秒）、
+Node20.20.2全29 JS199成功/失敗・skip0（test4.039秒/runner4.120秒）、
+native53件＝51成功/任意NVIDIA USD2skip（test3.177秒/runner4.222秒）、
+browser全45成功/失敗・skip・retry・flaky0、errors[]（test161.626秒/runner162.198秒）。
+全件後、テストだけを強化してOpen各失敗のtoast完了待ちと、別プロセス復元の
+開Line長20/非閉鎖、Plane非体積・面積1200、NURBS exactness/非閉鎖を追加照合。
+製品コードは不変で、この2件を改めて実行し成功を確認した。
+先行失敗traceは標準出力先が後続runに置換されており、初回全trace保持とはしない。
+失敗ログと今回のJSON集計/別プロセス正本attachmentは保持する。最終CIはpush/PR後に照合する。
+
+## 2026-10-28 JST — 指示008 / Issue #12 実装前の具体化
+
+基準main a8c51d3、既存#12用branch/PRなし。main checks40622549025 attempt1 success確認。
+[実装前対応表](cad-curve-editing-plan.md)でIssue12の2完了条件をE01〜E11の
+明示入力、正常/不成立/曖昧候補、全出力/正本/履歴保持へ対応付けた。
+Trimの削除区間/保持区間、Extendの端点/方式/到達候補、平面2曲線Fillet/Chamferの側/trim/保持、
+G1/G2 Blend、固定次数/制御点数Rebuildの近似表示、Seam、制御点編集を含む。
+この時点で実装/全検証は未実施。実機#37/予約009〜011へは先行着手しない。
+
+### 指示008：E05 NURBS継続延長の未解決失敗
+
+Issue12/PR39の実装前対応表を記録後、native曲線編集の試作に着手した。
+E05の4ケースはLine tangent/continuation・NURBS tangentが成功、NURBS continuationが
+CAD_KERNEL_FAILED/出力0で失敗。回帰4件は3成功1失敗、再照合exit1/test0.009秒/runner1.000秒。
+変更なしmain a8c51d3はcurve.extend自体が未実装であり、既存合格や間欠失敗として除外しない。
+mainと試作側のOCP API単独probeはJSON完全一致。元/trimmed変換後のBSpline双方で
+ExtendCurveToPoint_sはNoneを返し、元端点/次数/制御点数/domainが変わらず目標との距離5mm。
+C++側の原因・安全な代替は未確定で、接線延長へ置換して完了とせず要判断で停止する。
+[scripts/probe-curve-extension.py](../scripts/probe-curve-extension.py)とnative回帰、
+[実測と残件](cad-curve-editing-plan.md)を保存する。試作の他機能/UI/全出力/Undo/保存/
+全ローカル検証は未完了、台帳の既存状態は昇格しない。実機#37/予約009〜011は未取得。
+
+## 2026-10-28 JST — 指示008 / Issue #12 ユーザー判断後の曲線編集
+
+16:13 @codexのユーザー判断に従い、仕様22.2のNURBS continuationを正本保持＋接線延長へ
+置換して再開。仕様・機能台帳・PRに日付/根拠を残す。旧APIの原因確定や自動fallbackとはしない。
+同じPR39/branch feat/12-curve-editingを継続し、E05だけに範囲縮小せずE01〜E11を接続した。
+
+[契約と実測](cad-curve-editing-plan.md)に演算別の正常/不成立/曖昧、型/平面/次数等の境界、
+端点/交点/保持側/距離、全出力/未選択edge保持、近似偏差の意味を記載した。
+UIには端点/方式/側/G1・G2/制御点モードを明示。正本parameterとpole一覧、診断候補を提示し、
+Trim mouse/XYZ、cornerの点/候補番号、到達targetParameterを記録する。
+E01/E04はcommand v2を追加し保存済みv1を不変にした。Rebuildはpreview偏差確認と
+acceptApproximation=trueの明示確定が必要で、元正本を保持。knot削減も偏差warning付き。
+Storeはcutters/到達targetを消費せず、cornerのkeepInputs切替を他consumer/lastValidと整合させる。
+
+機能台帳65行のうちE01〜E11だけを記載fixture範囲で更新、他54行は保持。
+A/T/R62行の既存状態も保持し追加証拠を追記した。Constraints/一般mapping/実Mac合格へ広げない。
+
+再開後の失敗・修正：
+- 12モード初回11成功/1失敗。knot挿入の既定長さ差4.403828988586156e-6mmを検出。
+  正本257点一致・独立適応長さ差1e-10mm未満で形状不変を検証し、受入許容差を緩和しない。
+- native全件で閉clamped曲線Seamの既定長さ差0.0062561693378135885mmを検出し67成功/1失敗/2skip。
+  curve lengthMmの製品集計を正本の適応積分へ変更、同じSeam受入を保って68成功/2skipへ回復。
+- browser初回全51件は48成功/3失敗（300.337秒）。Lineのend配列が新Extendのenumになる退行を修正。
+  Joinの旧単一連鎖fixtureはv2複数groupを明示OFFにして従来gap/許容差受入を維持。
+  v1 Open直後Saveはtraceで生成中拒否を確認。cad-ui.jsの保存拒否経路は変更なし。
+  独立した変更なしmain a8c51d3（tracked diff空）の同test3反復は3成功で、main失敗再現とはしない。
+  fixtureが既存busy状態の終了を待つようにし、製品の保存禁止を緩めない。対象9件は9成功。
+- 別entityのedge混入を拒否する所属検査の初回はコピーshapeの位相を誤照合し67成功/1失敗/2skip。
+  コピー前の元位相で照合して正当edge/別edge拒否の両受入を保ち、全件68成功/2skip。
+
+raw log/JSON/失敗traceはwork/board-verification/008/（main比較は../pathloom-008-main-compare/work/board-verification/008/）。
+失敗をskip/xfail化しておらず、任意USDの既存2skipだけを区別する。
+Python3.12.14/OCP7.8.1.1、Node24.22.1/20.20.2、Playwright1.64.1/Chromium156で実行。
+browserは実Python/OCP・実mouse入力、Tauri/OSダイアログ/storage transportはfixture代替。
+実Mac M01〜M07/OS保存回復/実プリンター、local Rustは未実施。macOS RustはCI結果を別途確認。
+#37未実施、009〜011予約/未取得、Phase3は新規指示まで進めない。
+
+### 18:32 JST 最終ローカル検証
+
+| 実行 | 結果 | test秒 / runner秒 |
+| --- | --- | --- |
+| Node24.22.1 `npm test` | 全202成功、失敗/skip/todo0 | 5.401952 / 5.610 |
+| Node20.20.2 `node --test tests/*.test.mjs` | 全30 JSファイル202成功、失敗/skip/todo0 | 6.204283 / 6.352 |
+| Python3.12.14/OCP7.8.1.1 `python -B -m unittest discover -v -s native -p 'test*.py'` | 全70件68成功・任意USD2skip、失敗0 | 5.008 / 6.581 |
+| packaged browser全件（最終所属検査/accuracy保存照合を含む） | 全51成功、失敗/skip/retry/flaky0、errors[] | 228.755435 / 229.383 |
+
+browser実行前に`npm run desktop:prepare`、CI=1/PATHLOOM_FRONTEND_DIR=desktop-dist、
+PATHLOOM_BREP_PYTHON=上記Python、PLAYWRIGHT_CHROMIUM_EXECUTABLE=Chromium156を指定。
+標準playwright.configのtimeout45000/workers1/retry0を継承するfull.config.mjsを使用。
+最終全件はsource凍結後に実行し、保持する全entity.accuracyと全feature/command版/正本hashの
+新ページv2復元一致、別entity edge拒否を含む。git diff --check成功。
+local Rust/実OS操作は未実施。push/PR最終headの全CIは公開後に照合し、PR/Codexログへ追記する。
+
+### ローカル実行履歴（旧失敗を保持）
+
+| label（work/board-verification/008） | exit | runner秒 |
+| --- | --- | --- |
+| browser-final-identity | 0 | 229.383 |
+| browser-final | 0 | 198.756 |
+| browser-full | 1 | 300.337 |
+| curve-browser-first | 0 | 22.550 |
+| curve-browser-second | 0 | 26.379 |
+| editing-js | 0 | 0.212 |
+| extend-approved | 0 | 2.555 |
+| extend-regression-confirmed | 1 | 1.000 |
+| modes-first | 1 | 1.342 |
+| modes-retained | 0 | 1.110 |
+| modes-second | 0 | 1.068 |
+| native-final-identity | 0 | 6.581 |
+| native-final-metrics | 0 | 4.322 |
+| native-final | 1 | 7.345 |
+| native-final-scope | 1 | 4.986 |
+| native-full | 0 | 4.924 |
+| node20-final | 0 | 6.352 |
+| node20-full | 0 | 4.581 |
+| node24-final | 0 | 5.610 |
+| node24-full | 0 | 4.151 |
+| regression-target | 0 | 34.984 |
+
+旧計画head2bad91fのpush40641285516/PR40641291766は各attempt1 success
+（JS199/native51+USD2skip/Rust21/browser45）。旧試作a07003cのpush40642322179/PR40642329084は
+各attempt1 failure（JS199/Rust21/browser45成功、native54成功1失敗2skip）。旧全6jobずつは照合済み。
+旧失敗は当時のNURBS continuationであり、ユーザー決定後の新契約成功へ書き換えない。
+CI再実行で隠さず、同branchの最終head push/PR CIと分けてPRへ保持する。
+
+## 2026-10-28 JST — 指示009 / Issue #13 実装前の具体化
+
+008のmerge f7f69e7後main checks40666332968はattempt1 success、全3job生ログで
+JS202/native68+USD2skip/macOS Rust21/browser51を確認。ボード18:53の有効化とIssue13を読み、
+009だけ未着手→作業中をrequiredRevisionId付き更新/全文保持読戻し確認。
+既存#13用branch/PRなしを確認し、feat/13-regions-and-solidsをmainから作成。
+[対応表](cad-regions-solids-plan.md)でS03/B01〜B08/D01〜D07とIssue3完了条件を具体化。
+穴/複数領域、Box作図/ellipsoid/開閉primitive、Pipe/Cap/assemble、面押出、Boolean全結果、
+Fillet連鎖/2距離Chamfer/隣接面、Shell失敗診断を含む。具体化をDraft PRへ記録してから実装する。
+この時点は製品変更/009検証未実施。010/011予約と実機#37を取得しない。
+
+## 2026-10-28 JST — 指示009 / Issue #13 閉領域と基本立体
+
+既存PR40/feat/13-regions-and-solidsを継続し、実装前対応表とIssue13の3条件を照合した。
+S03は同一平面の閉loop群の交差・包含を検査し、穴/島/独立領域を全face出力。
+B01は旧v1保持のv2作図モード、B02は正確なellipsoid、B06は円断面Pipe、B07は穴付き面押出、
+B08は平面開口Cap/面群assemble/独立Solid全出力/開面保持を接続した。
+D01/D03は複数入力と非接触/接触の次元を区別。体積Commonが空でも正本境界のCommon/Sectionと
+集合Cutで面/edge/点を重複なく保持し、近傍による参照付替えやmesh近似はしない。
+D02/D04の既存複数対象/全結果/正本由来を維持。D05新v2は連鎖selected/tangentを明示し、
+旧v1のkernel連鎖挙動を維持。D06新v2は2距離と距離1側の隣接face、D07は除去面所属と
+内外/厚さ/失敗詳細を記録し、元形状のまま成功した内側Shellを拒否する。
+
+S03/B01/D05/D06は保存済みv1を変えずv2追加。B02.ellipsoid/B06/B07/B08/assembleは新規登録。
+機能台帳65行のうち対象16ID中14行を証拠範囲で更新し、D02/D04と他49行は保持。
+A/T/R62行は既存状態を維持し証拠を追記。仕様/対応表/PR/Issue本文に契約・境界を記録する。
+
+### 失敗と修正・再実行
+
+- native既存初回70件67成功1失敗2skip：新しい連鎖制限が旧Fillet v1の基準を壊した。
+  v2明示契約と旧保存挙動を分け、同じ丸角Rectangle下端基準を維持して回復。
+- 追加native初回24件21成功3失敗（12件はhelper classの重複収集、後にimport方法を修正）。
+  楕円体volumeの既定積分誤差0.04396687183499637mm³を検出、Surface/Volumeを適応積分へ修正。
+  非平面faceの自由境界を拾えない問題は位相版FreeBoundsへ、過大厚さShellが元Box体積1000の
+  まま成功する問題は内側体積減少を検査して修正。追加12件再実行12成功、連鎖受入を加え13件。
+- 接触fallbackの初回Fuseは異次元の重複除去で不成立。集合Cutへ変更し面area100/周長40、
+  edge長10、点、非接触emptyを独立実測。検証をskip/xfail化せず全nativeへ取り込んだ。
+- 追加browser初回4成功2失敗は中心Rectangle adapterのfixture座標とfingerprint bbox参照を修正。
+  次5成功1失敗はRedo再計算前のassertionで、同じ開閉条件のpollへ修正して6成功。
+- browser初回全57件54成功3失敗はBox v2 anchorMode selectへ旧Difference fixtureがfillした停止。
+  同じcorner値と全assertionを保ちselectOptionへ変更。旧基準Filletは新v2でtangentを明示し、
+  元のedge/断面/G-code/参照修復条件を維持。接触UIを加えた最終全58件は成功。
+
+### 最終ローカル検証（2026-10-28 19:39 JST）
+
+| 実行 | 結果 | test秒 / runner秒 |
+| --- | --- | --- |
+| Node24.22.1 npm test | 204成功、失敗/skip/todo0 | 3.425038 / 3.661 |
+| Node20.20.2 全31 JSファイル | 204成功、失敗/skip/todo0 | 4.246299 / 4.347 |
+| Python3.12.14/OCP7.8.1.1 native全件 | 83件81成功/任意NVIDIA USD2skip、失敗0 | 6.873 / 8.140 |
+| packaged browser全件 | 58成功、失敗/skip/retry/flaky0、errors[] | 230.684139 / 231.314 |
+
+コマンドはnpm test、Node20.20.2 node --test tests/*.test.mjs、
+python -B -m unittest discover -v -s native -p 'test*.py'。
+browserはnpm run desktop:prepare後、CI=1/PATHLOOM_FRONTEND_DIR=desktop-dist、上記Python、
+Chromium156を指定し標準config継承（timeout45000/workers1/retry0）で全件実行。
+実OCCT/実画面入力で、全feature/command版/正本hash/accuracyの新ページv2復元を照合。
+Tauri/OSダイアログ/storage transportはfixture。local Rust/実Mac GUI/OS保存回復/実プリンターは未実施。
+実機#37、010/011予約、Phase3へは先行着手しない。
+
+### 全ローカル実行履歴
+
+| label (work/board-verification/009) | exit | runner秒 |
+| --- | --- | --- |
+| browser-final | 0 | 231.314 |
+| browser-full-first | 1 | 228.390 |
+| modes-first | 1 | 1.687 |
+| modes-second | 0 | 1.881 |
+| native-all-contact | 0 | 7.915 |
+| native-all-third | 0 | 7.928 |
+| native-existing-first | 1 | 3.552 |
+| native-existing-second | 0 | 5.567 |
+| native-final | 0 | 8.140 |
+| node20-final | 0 | 4.347 |
+| node20-full | 0 | 4.698 |
+| node24-final | 0 | 3.661 |
+| node24-full | 0 | 2.993 |
+| solids-target-first | 1 | 30.788 |
+| solids-target-second | 1 | 30.066 |
+| solids-target-third | 0 | 29.937 |
+
+raw log/JSON/失敗traceはwork/board-verification/009/に保持。
+計画head a880d202（docsだけ）のpush40669634225/PR40669640655各attempt1 successを全6job生ログで確認。
+各JS202/native68成功USD2skip/macOS Rust21/browser51。この成功を製品変更headへ転用しない。
+最終head公開後のpush/PR全CIは別に確認してPR/Codexログへ記録する。
+
+## 2026-10-28 JST — 指示010 / Issue #14 実装前の具体化
+
+009のmerge 7075be3後main checks40675529462はattempt1 success。全3job生ログで
+JS204、native83件81成功/任意USD2skip、macOS Rust21、browser58を確認した。
+ボード20:22の有効化を読み、指示010だけをrequiredRevisionId付きで未着手→作業中へ更新し、
+読戻し確認した。既存#14用branch/PRがないことを確認してfeat/14-step-connectionを作成。
+
+[対応表](cad-step-connection-plan.md)で、既存`importedShapes`のうち埋込exact B-repを
+`cadDocument`の明示的`import.step`履歴へ取り込むadapter、mm単位・placement・正本hash・
+由来保持、OCCT STEP書出しと別runtime再読込数値比較をIssueの3条件へ対応づけた。
+display-only meshから形状を捏造せず、既存v1入力/保存を変更しない。実Macのdialog/保存は
+Issue37の未実施範囲として残し、011予約と#37へ先行着手しない。この時点で製品変更と
+010の全ローカル検証は未実施。Draft PRとIssue本文へ同じ契約を記録してから実装する。
+
+## 2026-10-28 JST — 指示010 / Issue #14 実装・ローカル検証
+
+埋込exact B-repを持つ既存`importedShapes`へだけ「CAD履歴へ取り込む」を表示し、
+`import.step` feature/body/entityへ原子的に追加した。mm単位、配置行列、source shape
+ID/name/kernel、source/original hashをfeatureとasset provenanceへ保存し、同じshapeの重複取込を拒否。
+display-only STEPは既存表示を維持し「CAD履歴化には正確なB-repが必要」と明示する。
+
+現在bodyのexact handleをOCCT `STEPControl_Writer`へ渡し、100 MB上限・STEP header/footer・
+`.step`/`.stp`保存名を検査してTauriのatomic writeへ接続。fresh `Runtime`のreaderでbbox、
+area、volume、closure、validityを比較した。browserは既存cube→履歴取込→Move→v2保存・再Open→
+STEP書出し→実OCP再読込を確認し、legacy importedShapesとcadDocumentの両方を保持した。
+
+### 最終ローカル検証
+
+| 実行 | 結果 |
+| --- | --- |
+| Node24.22.1 `npm test` | 206成功、失敗/skip/todo 0 |
+| Node20.20.2 全JS | 206成功、失敗/skip/todo 0 |
+| Python3.12.14/OCP7.8.1.1 native全件 | 85件中83成功、任意NVIDIA USD 2skip、失敗0 |
+| packaged browser全件 | 初回最終source 60成功。表示文言追加後の再実行は59成功1失敗、A19/A20/R08のRectangle確定が5秒内に履歴化せず失敗。直後の同一test単独再実行は1成功。今回のSTEP接続2件は各run成功、retry設定0 |
+
+browserはTauri IPC/OS保存/storageだけfixtureで、Python/OCPは実daemon。ローカルのPlaywright
+browserがなくCDN取得も0 byteで失敗したため、ignored領域へ展開したChromium153を標準config
+（workers1/retries0/timeout45000）で使用した。初期診断では、実行ファイル欠落、fixtureのfile fetch、
+非表示Save/Open/buttonのactionability、回復dialog、期待filename、`--single-process`終了を順に検出し、
+製品条件を緩めずfixture操作と環境configを修正した。native初回はPYTHONPATHなしでimport失敗、
+次に古いBox parameter fixtureで失敗し、製品schemaへ合わせた後2件成功。これらを最終成功へ置換しない。
+
+ローカルRustは`cargo`不在で未実行。計画だけのhead `4ca12c0`のpush
+[40683356270](https://github.com/usagicraftlab/pathloom/actions/runs/40683356270)とPR
+[40683447913](https://github.com/usagicraftlab/pathloom/actions/runs/40683447913)は各attempt1 success。
+全6job生ログで各JS204、native83件81成功/任意USD2skip、macOS Rust21、browser58を確認。
+計画CIを製品変更の合格へ転用せず、最終headのpush/PR CIを別に確認する。実Mac GUI/Tauri IPC/
+OS dialog、実機Issue #37、指示011は未実施・未着手。
+
+## 2026-10-29 Issue #15 共通操作・再利用（実装前）
+
+- 指示011を取得し、Issue #15をC01〜C04 / L01〜L05 / V01〜V06へ具体化した。
+- main `31910e62baa6fb5c0743db764fada41ab83555f4` のpost-merge checks run `40761465408` attempt 1 successを生ログまで照合した（JS 206、native 83成功/任意NVIDIA USD 2 skip、macOS Rust 22、browser 60）。
+- 既存実装を確認し、native `shape.transform` はmove/rotate/scale/mirrorをOCCT B-repへ適用済みだが、registry/UIはMoveだけを公開していること、Libraryは上流closureとtyped ID再写像を持つ一方で挿入配置を履歴化していないことを確認した。
+- 実装契約と検証範囲は `docs/cad-common-operations-plan.md` に固定した。実Macの照合はIssue #37の未実施範囲として分離し、自動検証の成功へ置換しない。
+
+## 2026-10-29 Issue #15 実装・ローカル検証
+
+- 既存のOCCT `shape.transform`へRotate / Scale / Mirror commandを接続した。4変換はいずれも形状1件を明示選択し、曖昧な複数preselectionを採用しない。Scale倍率は正数に制限した。
+- Shape Library挿入へ有限XYZ配置を追加した。依存closureとtyped IDを挿入ごとに再発行した後、選択rootごとのMove featureを末尾へ追加し、body tipと選択IDを正本出力へ更新する。ゼロ配置と既存schemaVersion 1 entryは従来互換。
+- JS対象回帰21件は成功。新規native回帰2件は成功。全ローカル検証はNode24.22.1 208成功、Node20.20.2 208成功、Python3.12.14/OCP7.8.1.1 native全87件中85成功・任意NVIDIA USD2skip。
+- browser対象2件の初回ローカル実行は、製品test開始前にChromium実行ファイル欠落で2件とも失敗した。Playwright Chromium取得はCDN応答が0 byteでzip展開不能。製品失敗へ分類せず、成功にも置換しない。最終headのCI browserを含む全jobと、ローカルbrowser実行可否を別に記録する。
+- 実装head `91696ddd` のPR checks run 40787882931 attempt 1はnative 85成功/任意USD2skipとmacOS Rust 22が成功、JS208も成功したがbrowserは61件中60成功1失敗。新規変換testがMirror確定直後、履歴表示は4件になった一方で非同期recompute完了前にentityを読んだtest raceで、製品診断/演算失敗ではなかった。各変換後に最後の履歴が`valid`になることを待ってから次へ進むようtestを修正し、旧runを成功へ置換せず最終headで全件再実行する。
+- 修正後の実装head `27bacdc450ebf621175a809b3b8949d6004fdcf2` は、push run [40788651265](https://github.com/usagicraftlab/pathloom/actions/runs/40788651265) とPR run [40788660019](https://github.com/usagicraftlab/pathloom/actions/runs/40788660019) が各attempt 1で成功した。両runの全6 job生ログを照合し、Node20.20.2 JS 208、native 87件中85成功・任意NVIDIA USD 2 skip、macOS Rust 22、browser 61成功（失敗/skip/retry/flaky 0）を確認した。CI browser成功をローカルbrowser成功とは記載せず、ローカルは上記の実行不能のまま区別する。
+- この記録追記だけの最終文書headは、実行コードを変更しない。ただし最終headとしてpush/PR双方の全CIを改めて確認し、結果はPR本文とボードのCodexログへ記録する。
+
+## 2026-10-30 JST — 指示018 UIレビュー反映（実装・ローカル検証途中）
+
+- main `5f609964` から `feat/18-ui-review` を作成。既存の4領域、アイコンcommand、
+  outliner表示/lock/context actions、履歴編集、既存面作業平面、mouse作図、occlusion pickingを
+  実装済みとして確認し、未達項目だけをボードへ記録した。
+- 上部からUndo/Redo/searchを除き、分類展開を縦並びにした。透明アウトライナー、編集中だけの
+  右設定、右下の確定/キャンセル、下部履歴アイコンと抑制/削除context menuへ整理した。
+  Library/生成/削除はアウトライナーcontext menuに残し、プロパティ入口・STEP書出し・
+  custom command JSON・左側座標/snap/plane・右側preview/retry/generation/delete/suppressを露出しない。
 - `cad/view-adapter.js`へXY/XZ/YZの半透明参照平面を原点中心に追加し、平面clickを現在の
   作図sessionのplane選択と最初のpoint入力へ接続した。hidden shapeの非選択とface/edge overlayは
   既存実装を保持する。CAD演算、正本、保存schema、generation bindingは変更していない。
