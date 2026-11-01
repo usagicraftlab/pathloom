@@ -2108,4 +2108,8 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   local Rustはcargo不在で未実行。実Mac GUI/Tauri/OS dialog/Issue #37も未実施であり、
   自動テストやCIを実機合格へ置換しない。
 - Issue #21へ対象拘束、支持面、診断、証拠、非対象範囲をコメントとして記録した。
-  PR、CI、Ready、merge、Issue自動closeはこの時点では未実施である。
+  直接`git push`は認証情報不在で失敗し、成功へ置換しない。同一tree
+  `d2e6a32c752620af17f0caa28de4ce28a3f671d6`をGitHub Git Data APIで
+  `feat/21-sketch-solver`へ反映し、remote commit
+  `43a6124d6cafa76ed646e207dbfa3626c779710c`、Draft PR #52を作成した。
+  このPR/CI情報を含む最終文書commitのCIを確認するまでReady、merge、Issue自動closeを行わない。
