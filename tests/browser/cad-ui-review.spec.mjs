@@ -11,9 +11,9 @@ test("P3 UI review: icon workspace keeps editing in the contextual right panel",
     "#modelExportStep",
   ]) await expect(page.locator(id)).toBeHidden();
 
-  const curveGroup = page.locator(".model-command-group").filter({ hasText: "カーブをつくる" });
-  await expect(curveGroup).toHaveAttribute("open", "");
-  await expect(curveGroup.locator(".model-command-group-buttons")).toHaveCSS("flex-direction", "column");
+  const sketchTab = page.getByRole("tab", { name: "スケッチ", exact: true });
+  await expect(sketchTab).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".model-command-tab-panel")).toBeVisible();
   await expect(page.locator(".model-left")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await page.screenshot({ path: info.outputPath("workspace-idle.png") });
 
@@ -75,6 +75,11 @@ test("P3 reference planes highlight under the mouse and select the drawing plane
 
 test("P3 review additions expose view, panel, command and outliner controls", async ({ page }) => {
   await expect(page.getByRole("button", { name: "top view", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "home view", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "top view", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.Pathloom.viewState().projection)).toBe("orthographic");
+  await page.getByRole("button", { name: "home view", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.Pathloom.viewState().projection)).toBe("perspective");
   await page.evaluate(() => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })));
   await expect(page.locator("body")).toHaveClass(/model-panels-hidden/);
   await page.evaluate(() => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true })));
@@ -101,6 +106,8 @@ test("P3 review additions expose view, panel, command and outliner controls", as
   await expect(color).toHaveValue("#cc5500");
   await page.getByRole("button", { name: "サムネイル表示切替" }).click();
   await expect(page.locator(".model-outline-thumbnail")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "生成で使用", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "配列コピー", exact: true })).toHaveCount(0);
 });
 
 test("P3 automatic extrusion composes existing boolean commands as one Undo unit", async ({ page }) => {

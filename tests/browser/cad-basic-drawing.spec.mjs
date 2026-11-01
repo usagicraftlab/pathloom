@@ -52,14 +52,7 @@ async function axis(page, name = "top") {
       };
     }
   });
-  // Some cube faces are hidden in an exactly axial view. Use the existing cube
-  // action to set up the camera; drawing and picking below use actual mouse IO.
-  await page.evaluate((name) => {
-    const cube = document.querySelector(".view-cube");
-    cube.dataset.view = name;
-    cube.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    delete cube.dataset.view;
-  }, name);
+  await page.locator(`.axis-orbit [data-view="${name}"]`).click();
   await expect
     .poll(() => page.evaluate(() => window.Pathloom.viewState().axis))
     .toBe(name);

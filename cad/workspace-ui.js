@@ -84,7 +84,8 @@ const labels = {
   poleIndex:"制御点番号（1始まり）",position:"移動先XYZ",knot:"挿入するknot",knotIndex:"削除するknot番号",multiplicity:"knot多重度",toleranceMm:"削除許容差 mm",
 };
 const commandGroupDefinitions = [
-  { id: "curve-create", label: "カーブをつくる" },
+  { id: "sketch", label: "スケッチ" },
+  { id: "curve-create", label: "カーブを編集" },
   { id: "solid-create", label: "立体をつくる" },
   { id: "solid-edit", label: "立体を加工する" },
   { id: "surface-create", label: "サーフェスをつくる" },
@@ -174,6 +175,10 @@ const operationIconFamilies = {
 };
 function commandGroup(command) {
   const operationId = command.baseOperation.id;
+  // C01-C12 keep their command contracts and behavior, but are presented as
+  // tools inside Sketch rather than as a separate drawing-command family.
+  if (/^C(?:0[1-9]|1[0-2])$/.test(command.id))
+    return "sketch";
   if (operationId === "shape.transform")
     return "transform";
   if (operationId === "shape.extrude" && command.displayName === "Extrude Surface")
@@ -651,15 +656,12 @@ export function initModelWorkspace(api) {
   const outliner = document.createElement("div");
   outliner.id = "modelOutliner";
   outliner.setAttribute("role", "tree");
-  const generationDrop = document.createElement("div");
-  generationDrop.className = "model-generation-drop";
-  generationDrop.textContent = "生成パネルへ形状をドロップ";
-  generationDrop.setAttribute("role", "region");
-  generationDrop.setAttribute("aria-label", "生成で使用");
-  leftPanel.append(outliner, generationDrop);
+  // Generation registration is deliberately available only from the
+  // outliner context menu.  A drop target here made accidental wiring too easy.
+  leftPanel.append(outliner);
   const inspector = panel.querySelector(".model-inspector");
   inspector.prepend(commandSearch, workplaneControls);
-  inspector.append(commandSession, modelStatus, diagnosticsPanel);
+  inspector.append(commandSession, diagnosticsPanel);
   libraryDialog.append(libraryDetails);
   actionControls.querySelector("#modelPreview").hidden = true;
   panel.querySelector("#modelRetry").hidden = true;
@@ -695,7 +697,8 @@ export function initModelWorkspace(api) {
     frozenHistoryStage = null;
     view.clearStage();
   });
-  // Playhead overlays the entire history strip rather than occupying the header.\n  panel.querySelector(".model-history").append(historyScrubber);
+  // Playhead overlays the entire history strip rather than occupying the header.
+  panel.querySelector(".model-history").append(historyScrubber);
   const viewportOverlay = document.createElement("div");
   viewportOverlay.className = "model-viewport-overlay";
   const cursorReadout = document.createElement("output");
@@ -714,6 +717,10 @@ export function initModelWorkspace(api) {
   const dimensions = document.createElement("output");
   dimensions.className = "model-selection-dimensions";
   dimensions.hidden = true;
+  const viewportStatus = document.createElement("div");
+  viewportStatus.className = "model-viewport-status";
+  viewportStatus.setAttribute("role", "status");
+  viewportStatus.setAttribute("aria-live", "polite");
   const projectedDimensions = document.createElement("div");
   projectedDimensions.className = "model-projected-dimensions";
   projectedDimensions.hidden = true;
@@ -738,16 +745,27 @@ export function initModelWorkspace(api) {
   gizmo.className = "model-transform-gizmo";
   gizmo.hidden = true;
   gizmo.setAttribute("aria-label", "移動・回転ギズモ");
+  const axisArrow = (axis) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 36 36");
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = `<path d="M6 30 29 7m-9 1h10v10"/><circle cx="6" cy="30" r="2.3"/><text x="24" y="30">${axis}</text>`;
+    return svg;
+  };
   for (const axis of ["X", "Y", "Z"]) {
-    const move = makeToolButton(`${axis}→`, `${axis}軸へ移動`);
+    const move = makeToolButton("", `${axis}軸へ移動`);
     move.dataset.gizmo = "move";
     move.dataset.axis = axis;
-    const rotate = makeToolButton(`↻${axis}`, `${axis}軸で回転`);
+    move.className = "model-axis-arrow";
+    move.append(axisArrow(axis));
+    const rotate = makeToolButton("", `${axis}軸で回転`);
     rotate.dataset.gizmo = "rotate";
     rotate.dataset.axis = axis;
-    const scale = makeToolButton(`□${axis}`, `${axis}軸だけ伸縮`);
+    rotate.append(createCommandIcon({ baseOperation: { id: "shape.transform" }, defaults: { mode: "rotate" } }));
+    const scale = makeToolButton("", `${axis}軸だけ伸縮`);
     scale.dataset.gizmo = "scale";
     scale.dataset.axis = axis;
+    scale.append(createCommandIcon({ baseOperation: { id: "shape.transform" }, defaults: { mode: "scale" } }));
     rotate.className = "model-rotation-ring";
     gizmo.append(move, rotate, scale);
   }
@@ -765,7 +783,8 @@ export function initModelWorkspace(api) {
   const boxSelection = document.createElement("div");
   boxSelection.className = "model-box-selection";
   boxSelection.hidden = true;
-  viewportOverlay.append(cursorReadout, snapGuide, measurementLine, measurementLabel, dimensions, projectedDimensions, inlineDimensionInput, distanceHandle, gizmo, boxSelection);
+  viewportStatus.append(modelStatus, dimensions, cursorReadout);
+  viewportOverlay.append(viewportStatus, snapGuide, measurementLine, measurementLabel, projectedDimensions, inlineDimensionInput, distanceHandle, gizmo, boxSelection);
   document.body.append(viewportOverlay);
   const libraryPlacementLabel = document.createElement("label"),
     libraryPlacementInput = document.createElement("input");
@@ -1306,7 +1325,6 @@ export function initModelWorkspace(api) {
       group.addEventListener("dragstart", (event) => {
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("application/x-pathloom-body", body.id);
-        event.dataTransfer.setData("application/x-pathloom-entity", entity.id);
       });
       group.addEventListener("dragover", (event) => {
         if (!event.dataTransfer.types.includes("application/x-pathloom-body")) return;
@@ -1330,18 +1348,6 @@ export function initModelWorkspace(api) {
       (folderHosts.get(folder?.id) || outliner).append(group);
     }
   }
-  generationDrop.addEventListener("dragover", (event) => {
-    if (!event.dataTransfer.types.includes("application/x-pathloom-entity")) return;
-    event.preventDefault();
-    generationDrop.classList.add("is-drop-target");
-  });
-  generationDrop.addEventListener("dragleave", () => generationDrop.classList.remove("is-drop-target"));
-  generationDrop.addEventListener("drop", (event) => {
-    event.preventDefault();
-    generationDrop.classList.remove("is-drop-target");
-    const entity = store.getEntity(event.dataTransfer.getData("application/x-pathloom-entity"));
-    if (entity) useEntityForGeneration(entity);
-  });
   document.addEventListener("pointerdown", (event) => {
     if (!objectMenu.contains(event.target)) closeObjectMenu();
     if (!historyMenu.contains(event.target)) closeHistoryMenu();
@@ -2252,18 +2258,9 @@ export function initModelWorkspace(api) {
         gizmo.style.left = `${screen.x + 18}px`;
         gizmo.style.top = `${screen.y - 42}px`;
       }
-      projectedDimensions.hidden = !!session || !!selection[0]?.kind || !screen?.visible;
-      for (const [axis, label] of [...projectedDimensions.children].entries()) {
-        const point = [...entity.bbox.max];
-        point[axis] = center[axis];
-        const projected = view.project(point);
-        label.hidden = !projected?.visible;
-        if (projected) {
-          label.style.left = `${Math.min(projected.x - 12, screen.x - 18)}px`;
-          label.style.top = `${projected.y + 8 + axis * 15}px`;
-          label.textContent = `${["W", "D", "H"][axis]} ${(entity.bbox.max[axis] - entity.bbox.min[axis]).toFixed(2)} mm`;
-        }
-      }
+      // Selection dimensions live in the single bottom-left status area.
+      // Do not duplicate them as floating labels over the model.
+      projectedDimensions.hidden = true;
     } else projectedDimensions.hidden = true;
     if (session && !distanceHandle.hidden) {
       const source = Object.values(session.inputs).flat().map((reference) => store.getEntity(reference.entityId)).find(Boolean);
@@ -2494,13 +2491,13 @@ export function initModelWorkspace(api) {
     if (selectedEntity?.bbox) {
       const size = selectedEntity.bbox.max.map((value, index) => value - selectedEntity.bbox.min[index]);
       dimensions.replaceChildren();
-      for (const [index, label] of ["W", "D", "H"].entries()) {
-        const item = document.createElement("span");
-        item.dataset.dimension = ["widthMm", "depthMm", "heightMm"][index];
-        item.textContent = `${index ? " × " : ""}${label} ${size[index].toFixed(2)}`;
-        dimensions.append(item);
+      const sizeText = document.createElement("span");
+      sizeText.dataset.dimension = "widthMm";
+      sizeText.textContent = `W ${size[0].toFixed(2)} × D ${size[1].toFixed(2)} × H ${size[2].toFixed(2)} mm`;
+      dimensions.append(sizeText);
+      if (selectedEntity.kind === "solid") {
+        dimensions.append(` · 面積 ${(selectedEntity.displayCache?.areaMm2 || 0).toFixed(2)} mm² · 体積 ${(selectedEntity.displayCache?.volumeMm3 || 0).toFixed(2)} mm³`);
       }
-      dimensions.append(" mm");
       dimensions.hidden = false;
       const center = selectedEntity.bbox.min.map((value, index) => (value + selectedEntity.bbox.max[index]) / 2);
       const screen = view.project(center);

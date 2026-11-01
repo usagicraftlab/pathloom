@@ -408,3 +408,14 @@ packaged-manifest smokeでdaemonを起動し、protocol 1・77 operationのhello
 `app_cache_dir()/native`へ配置してSTEP face操作時に起動する経路を確認した。
 ローカルではcargo不在のためRust test自体は未実行で、CI結果と区別する。実Mac GUI、
 Tauri transport、OS dialog、Issue #37も未実施であり、この自動証拠で合格へ昇格しない。
+
+## 2026-11-02 — 指示026 UI統合のA/T/R証拠
+
+既存A/T/R 62行の状態は保持する。browser fixtureは横タブとSketch内C01〜C12、
+配列コピー不在、生成D&D不在とcontext menu登録、type-only数値、単一bottom-left status、
+共通円形方向widget、SVG transform gizmo、CAD grid/plane、全幅history/playheadを照合する。
+Node 24.22.1と厳密なNode 20.20.2の全JSは各239成功、native全105件は103成功・
+任意NVIDIA USD 2skip。ローカルbrowserはChromium実行体不在でtest body前に失敗し、
+installerも0 MiB/truncated ZIPを5回返して失敗したため未実行として区別する。
+local Rustもcargo不在で未実行。CI、実Mac GUI/Tauri/OS dialog、Issue #37は別証拠であり、
+この記録時点では成功へ置換しない。

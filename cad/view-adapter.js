@@ -6,6 +6,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
     previewGroup = null;
   let referencePlaneGroup = null;
   let originGroup = null;
+  let cadGridGroup = null;
   let selectedReferencePlane = "XY";
   let stageFeatureId = null;
   let hoverSelection = null;
@@ -39,7 +40,9 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       for (const [axis, color, label] of [
         [[1,0,0], 0xc4544b, "X"], [[0,1,0], 0x39985a, "Y"], [[0,0,1], 0x416cc1, "Z"],
       ]) {
-        originGroup.add(new THREE.ArrowHelper(new THREE.Vector3(...axis), new THREE.Vector3(), 42, color, 4, 2));
+        // CAD-local axes stay distinct from the screen-space direction widget.
+        // Keep them deliberately small and thin so they do not read as geometry.
+        originGroup.add(new THREE.ArrowHelper(new THREE.Vector3(...axis), new THREE.Vector3(), 18, color, 2.5, 1.2));
         const canvas = document.createElement("canvas");
         canvas.width = 64; canvas.height = 64;
         const context = canvas.getContext("2d");
@@ -48,12 +51,34 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
         context.fillStyle = `#${color.toString(16).padStart(6,"0")}`;
         context.fillText(label, 32, 45);
         const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), depthTest: false }));
-        sprite.position.set(...axis.map((value) => value * 47));
-        sprite.scale.set(7, 7, 1);
+        sprite.position.set(...axis.map((value) => value * 22));
+        sprite.scale.set(4, 4, 1);
         originGroup.add(sprite);
       }
       originGroup.add(new THREE.Mesh(new THREE.SphereGeometry(1.2, 10, 8), new THREE.MeshBasicMaterial({color:0x40515c})));
       scene.add(originGroup);
+      cadGridGroup = new THREE.Group();
+      cadGridGroup.name = "CAD z=0 millimetre grid";
+      const addGrid = (step, color, opacity) => {
+        const extent = 400, half = extent / 2, positions = [];
+        for (let value = -half; value <= half; value += step) {
+          positions.push(-half, value, 0, half, value, 0, value, -half, 0, value, half, 0);
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+        cadGridGroup.add(new THREE.LineSegments(geometry, material));
+      };
+      // One millimetre minor lines with a stronger ten millimetre cadence.
+      addGrid(1, 0x87979e, 0.10);
+      addGrid(10, 0x62757f, 0.30);
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(400, 400),
+        new THREE.MeshBasicMaterial({ color: 0xb8c7cb, transparent: true, opacity: 0.035, side: THREE.DoubleSide, depthWrite: false }),
+      );
+      plane.position.z = -0.002;
+      cadGridGroup.add(plane);
+      scene.add(cadGridGroup);
     }
     return true;
   }
@@ -284,6 +309,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       group.visible = document.body.dataset.workspaceMode === "model";
       previewGroup.visible = group.visible;
       originGroup.visible = group.visible;
+      cadGridGroup.visible = group.visible;
       const visible = stageEntities(doc, stageFeatureId);
       const visibleStage = stageFeatureId == null;
       for (const feature of doc.features.filter((item) => item.status === "suppressed")) {
@@ -624,6 +650,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       if (previewGroup) dispose(previewGroup);
       if (referencePlaneGroup) dispose(referencePlaneGroup);
       if (originGroup) dispose(originGroup);
+      if (cadGridGroup) dispose(cadGridGroup);
       shown.clear();
     },
   };

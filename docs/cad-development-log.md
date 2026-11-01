@@ -2250,3 +2250,22 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   macOS Rust 24成功、browser 89成功（retryなし）を確認した。ローカルbrowserはChromium取得不能のため
   test body未実行のままであり、このCI成功へ置換しない。このCI証拠を含む最終文書commitにも同じ
   push／PR両CIを要求し、その全job生ログ確認前はReady／mergeしない。
+
+## 2026-11-02 — 指示026 UI統合
+
+- PR #55 merge `93d9a0d60ee38323271558e3300be925d8b58fe3`とpost-merge main run
+  `41350723951` attempt 1全3job successを確認済みの最新mainから、既存Draft PR #56
+  `feat/26-ui-integration`を継続した。旧head `597c45c1cfb9e9cc81e56891dbd1c3ed652bc66c`までの
+  数値type-only、メニュー入口、横タブ、配列撤去、全幅history/playheadを保持した。
+- 残項目としてC01〜C12のSketch集約、最終形状中心outliner、W/D/H・面積・体積・cursorの
+  単一bottom-left status、共通円形方向widget、SVG transform gizmo、CAD専用z=0 planeと
+  1 mm/10 mm grid、小型XYZ、生成D&D撤去、context menu小型化を実装した。
+  CAD model modeではprinter bed/origin/heightを非表示にし、command/native/schemaは変更していない。
+- 初回target browser実行は`@playwright/test`未導入で起動前失敗。`npm ci`成功後の再実行は
+  Chromium実行体不在により20件すべてtest body前に失敗した。`npx playwright install chromium`は
+  0 MiB/truncated ZIPを5回返して失敗した。この環境準備失敗を製品test失敗または成功へ置換しない。
+- Node 24.22.1 `npm test`と厳密なNode 20.20.2全JSは各239成功（失敗/skip 0）。native全105件は
+  system Pythonへ既存OCP site-packagesを明示して103成功・任意NVIDIA USD 2skip。既存runtime venvの
+  `python`/`python3` symlink切れによる先行2回の起動失敗も成功へ置換しない。local Rustはcargo不在で未実行。
+- ローカルbrowser全件が未実行のため、この記録時点ではDraft維持、未Ready/未merge。CI結果も未確認で、
+  実Mac GUI/Tauri/OS dialog、Issue #37、Draft PR #43、予約中の指示027には着手していない。
