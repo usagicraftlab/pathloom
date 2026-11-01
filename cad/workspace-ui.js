@@ -832,7 +832,7 @@ export function initModelWorkspace(api) {
   }
   dimensions.addEventListener("dblclick", editDisplayedDimension);
   projectedDimensions.addEventListener("dblclick", editDisplayedDimension);
-  // 旧配列コピーのドラッグ処理を無効化するための非表示状態。\n  const arrayDialog = { open: false };\n  const arrayPreviewPromise = Promise.resolve();\n  gizmo.addEventListener("pointerdown", async (event) => {
+  gizmo.addEventListener("pointerdown", async (event) => {
     const handle = event.target.closest("button[data-gizmo]");
     if (!handle || session) return;
     const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
@@ -1484,10 +1484,6 @@ export function initModelWorkspace(api) {
     render();
   }
   async function begin(command) {
-    if (arrayDialog.open) {
-      arrayDialog.close("cancel");
-      await arrayPreviewPromise;
-    }
     curvePointPicking=false;
     closePolylineAsFace = false;
     frozenHistoryStage = null;
@@ -2256,7 +2252,7 @@ export function initModelWorkspace(api) {
         gizmo.style.left = `${screen.x + 18}px`;
         gizmo.style.top = `${screen.y - 42}px`;
       }
-      projectedDimensions.hidden = !!session || arrayDialog.open || !!selection[0]?.kind || !screen?.visible;
+      projectedDimensions.hidden = !!session || !!selection[0]?.kind || !screen?.visible;
       for (const [axis, label] of [...projectedDimensions.children].entries()) {
         const point = [...entity.bbox.max];
         point[axis] = center[axis];
@@ -2508,7 +2504,7 @@ export function initModelWorkspace(api) {
       dimensions.hidden = false;
       const center = selectedEntity.bbox.min.map((value, index) => (value + selectedEntity.bbox.max[index]) / 2);
       const screen = view.project(center);
-      if (!activeDrag) gizmo.hidden = !screen?.visible || !!selection[0]?.kind || arrayDialog.open || (!!session && session.command.baseOperation.id !== "shape.transform") || featureEditActive;
+      if (!activeDrag) gizmo.hidden = !screen?.visible || !!selection[0]?.kind || (!!session && session.command.baseOperation.id !== "shape.transform") || featureEditActive;
       if (!activeDrag) for (const handle of gizmo.querySelectorAll("[data-gizmo]")) handle.disabled = !!session;
     } else {
       dimensions.hidden = true;
@@ -3423,24 +3419,6 @@ export function initModelWorkspace(api) {
         boxDragged = false;
         event.stopImmediatePropagation();
         if (session || pivotPicking || measureMode) return;
-        if (arrayDialog.open) {
-          const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
-          const hit = view.hit(event, "object")[0];
-          if (!entity || hit?.entityId !== entity.id) return;
-          const plane = { ...clone(store.document.uiState.workPlane), origin: centerOf(entity) };
-          const start = view.pointAt(event, plane);
-          if (!start) return;
-          trackDrag(canvas, event, (moveEvent) => {
-            const point = view.pointAt(moveEvent, plane);
-            if (!point) return;
-            const translation = point.map((value, axis) => value - start[axis]);
-            const spacing = moveEvent.altKey || !$("modelSnap").checked ? translation : translation.map(Math.round);
-            const field = arrayDialog.querySelector('[name="spacing"]');
-            field.value = spacing.join(",");
-            field.dispatchEvent(new Event("input", {bubbles:true}));
-          }, () => { arrayPreviewPromise = previewArrayCopies(); }, () => arrayDialog.close("cancel"));
-          return;
-        }
         const edge = view.hit(event, "edge")[0];
         if (edge && store.getEntity(edge.entityId)?.kind === "solid" && selection.some((reference) => reference.entityId === edge.entityId && reference.topologyId === edge.topologyId)) {
           const entity = store.getEntity(edge.entityId);
@@ -3507,7 +3485,7 @@ export function initModelWorkspace(api) {
   canvas.addEventListener(
     "pointerup",
     (event) => {
-      if (!active() || arrayDialog.open || event.button !== 0 || !down || !boxDragged || session) return;
+      if (!active() || event.button !== 0 || !down || !boxDragged || session) return;
       const rect = {
         left: Math.min(down[0], event.clientX),
         right: Math.max(down[0], event.clientX),
@@ -3529,7 +3507,7 @@ export function initModelWorkspace(api) {
   canvas.addEventListener(
     "dblclick",
     (event) => {
-      if (!active() || arrayDialog.open || session || event.button !== 0) return;
+      if (!active() || session || event.button !== 0) return;
       const hit = view.hit(event, "object")[0];
       if (!hit) return;
       event.preventDefault();
@@ -3542,7 +3520,7 @@ export function initModelWorkspace(api) {
   canvas.addEventListener(
     "contextmenu",
     (event) => {
-      if (!active() || arrayDialog.open || session) return;
+      if (!active() || session) return;
         const hit = view.hit(event, "edge")[0] || view.hit(event, "face")[0];
       if (hit) showSubshapeMenu(hit, event);
     },
@@ -3554,7 +3532,6 @@ export function initModelWorkspace(api) {
       if (!active() || event.button !== 0) return;
       planeTooltip.hidden = true;
       event.stopImmediatePropagation();
-      if (arrayDialog.open) return;
       if (
         down &&
         Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 3
@@ -3719,12 +3696,6 @@ export function initModelWorkspace(api) {
     "keydown",
     (event) => {
       const eventTarget = event.target instanceof Element ? event.target : document.body;
-      if (active() && event.key === "Escape" && arrayDialog.open) {
-        event.preventDefault(); event.stopImmediatePropagation();
-        if (activeDrag) activeDrag.abort();
-        else arrayDialog.close("cancel");
-        return;
-      }
       if (active() && event.key === "Escape" && activeDrag) {
         event.preventDefault(); event.stopImmediatePropagation(); activeDrag.abort(); return;
       }
