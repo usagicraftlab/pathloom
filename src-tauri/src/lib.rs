@@ -740,6 +740,7 @@ pub fn run() {
             project_files::cad_shape_library,
             project_files::cad_command_library,
             project_files::cad_recovery,
+            project_files::project_recovery,
             codex_bridge::codex_status,
             codex_bridge::codex_login,
             codex_bridge::codex_cancel,

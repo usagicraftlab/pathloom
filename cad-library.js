@@ -1,6 +1,8 @@
 import {validateDefinition,DEFAULT_DEFINITION} from './cad-kernel.js';
 import {acceptsGeometryType,recipeFingerprint,componentGroup,operationSpec,OPERATIONS,inputReferences,curveInputReferences,uniqueId,detachComponent,validatePipeline,migrateDefinition} from './cad-pipeline.js';
+import {readLibraryContainer} from './recovery-migration.js';
 export function normalizeLibrary(raw){
+  raw=readLibraryContainer(raw,'component').entries;
   if(!Array.isArray(raw)||raw.length>500)throw new Error('Invalid library');
   const ids=new Set();
   return raw.map(entry=>{

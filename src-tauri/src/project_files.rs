@@ -196,6 +196,14 @@ pub async fn open_pathloom_project(app: AppHandle) -> Result<Option<Value>, Stri
     .map_err(|e| e.to_string())?
 }
 
+fn valid_library_payload(value: &Value, library_type: &str) -> bool {
+    value.is_array()
+        || (value["format"] == "pathloom-library"
+            && value["schemaVersion"] == 1
+            && value["libraryType"] == library_type
+            && value["entries"].is_array())
+}
+
 #[tauri::command]
 pub async fn cad_library(app: AppHandle, content: Option<String>) -> Result<String, String> {
     let directory = app.path().app_data_dir().map_err(|e| e.to_string())?;
@@ -209,7 +217,7 @@ pub async fn cad_library(app: AppHandle, content: Option<String>) -> Result<Stri
                 return Err("Component library exceeds 200 MB".into());
             }
             let parsed: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-            if !parsed.is_array() {
+            if !valid_library_payload(&parsed, "component") {
                 return Err("Invalid library".into());
             }
             std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
@@ -256,6 +264,28 @@ mod gcode_tests {
         assert_eq!(step_save_path("/tmp/part".into()), std::path::PathBuf::from("/tmp/part.step"));
         assert_eq!(step_save_path("/tmp/part.STP".into()), std::path::PathBuf::from("/tmp/part.STP"));
     }
+    #[test]
+    fn library_payload_accepts_legacy_arrays_and_typed_containers() {
+        assert!(valid_library_payload(&serde_json::json!([]), "component"));
+        assert!(valid_library_payload(
+            &serde_json::json!({
+                "format":"pathloom-library",
+                "schemaVersion":1,
+                "libraryType":"shape",
+                "entries":[{"future":true}]
+            }),
+            "shape"
+        ));
+        assert!(!valid_library_payload(
+            &serde_json::json!({
+                "format":"pathloom-library",
+                "schemaVersion":1,
+                "libraryType":"command",
+                "entries":[]
+            }),
+            "shape"
+        ));
+    }
 }
 
 #[tauri::command]
@@ -269,7 +299,7 @@ pub async fn cad_shape_library(app: AppHandle, content: Option<String>) -> Resul
                 return Err("CAD_RESOURCE_LIMIT: library exceeds 200 MB".into());
             }
             let value: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-            if !value.is_array() {
+            if !valid_library_payload(&value, "shape") {
                 return Err("Invalid shape library".into());
             }
             write_atomic(&path, &content)?;
@@ -297,7 +327,7 @@ pub async fn cad_command_library(
                 return Err("CAD_RESOURCE_LIMIT: library exceeds 200 MB".into());
             }
             let value: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-            if !value.is_array() {
+            if !valid_library_payload(&value, "command") {
                 return Err("Invalid shape library".into());
             }
             write_atomic(&path, &content)?;
@@ -334,6 +364,48 @@ pub async fn cad_recovery(
             let value: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
             if value["format"] != "pathloom-cad-document" || value["schemaVersion"] != 1 {
                 return Err("Invalid recovery document".into());
+            }
+            write_atomic(&path, &content)?;
+            Ok(Some(content))
+        } else if path.exists() {
+            std::fs::read_to_string(path)
+                .map(Some)
+                .map_err(|e| e.to_string())
+        } else {
+            Ok(None)
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn project_recovery(
+    app: AppHandle,
+    content: Option<String>,
+    discard: Option<bool>,
+) -> Result<Option<String>, String> {
+    let root = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    let path = root.join("pathloom-project-recovery-v1.json");
+    tauri::async_runtime::spawn_blocking(move || {
+        if discard == Some(true) {
+            if path.exists() {
+                std::fs::remove_file(path).map_err(|e| e.to_string())?
+            }
+            return Ok(None);
+        }
+        if let Some(content) = content {
+            if content.len() > 200_000_000 {
+                return Err("Project recovery exceeds 200 MB".into());
+            }
+            let value: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+            if value["format"] != "pathloom-project-recovery"
+                || value["schemaVersion"] != 1
+                || !value["savedAt"].is_string()
+                || !value["project"].is_object()
+            {
+                return Err("Invalid project recovery".into());
             }
             write_atomic(&path, &content)?;
             Ok(Some(content))

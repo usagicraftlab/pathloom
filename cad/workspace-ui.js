@@ -1,4 +1,5 @@
 import { packageShapes } from "./shape-library.js";
+import { readLibraryContainer, writeLibraryContainer } from "../recovery-migration.js";
 import { constrainedRectangle } from "./sketch/model.js";
 import { SketchSolverClient } from "./sketch/worker-client.js";
 import { bindBody, generationInput } from "./generation-adapter.js";
@@ -2920,7 +2921,15 @@ export function initModelWorkspace(api) {
   }
   async function loadCommands() {
     try {
-      globalCommands = JSON.parse(await native.invoke("cad_command_library"));
+      const read = readLibraryContainer(
+        JSON.parse(await native.invoke("cad_command_library")),
+        "command",
+      );
+      globalCommands = read.entries;
+      if (read.migrated)
+        await native.invoke("cad_command_library", {
+          content: JSON.stringify(writeLibraryContainer(globalCommands, "command")),
+        });
       for (const raw of globalCommands) {
         const d = validateCommandDefinition(raw),
           existing = commandById(d.id, d.version);
@@ -2936,7 +2945,15 @@ export function initModelWorkspace(api) {
   }
   async function loadLibrary() {
     try {
-      library = JSON.parse(await native.invoke("cad_shape_library"));
+      const read = readLibraryContainer(
+        JSON.parse(await native.invoke("cad_shape_library")),
+        "shape",
+      );
+      library = read.entries;
+      if (read.migrated)
+        await native.invoke("cad_shape_library", {
+          content: JSON.stringify(writeLibraryContainer(library, "shape")),
+        });
       const host = $("modelShapeEntries");
       host.replaceChildren();
       for (const entry of library) {
@@ -2973,7 +2990,7 @@ export function initModelWorkspace(api) {
         });
       library.push(entry);
       await native.invoke("cad_shape_library", {
-        content: JSON.stringify(library),
+        content: JSON.stringify(writeLibraryContainer(library, "shape")),
       });
       await loadLibrary();
       setStatus("正確な形状をLibraryへ保存しました。");

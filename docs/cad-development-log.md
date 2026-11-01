@@ -2118,3 +2118,19 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   `41306173848`とPR run `41306178277`はいずれもattempt 1で全3job成功した。各runの
   生ログはJS 229成功、native 105件中103成功・任意2skip、macOS Rust 23成功、browser
   87成功（retryなし）を示した。このCI証拠を追記する文書専用commitにも同じ全CIを要求する。
+
+## 2026-11-01 — 指示022 / Issue #22 全体回復・未知版・Library移行
+
+- 最新ボードで指示022が`未着手`へ有効化され、@codex返信がmain/PR #52/post-merge CI確認を
+  要求していることを確認した。main `ea4ce7dd4c5bfe271ba06d5e7e16b1643855a702`、
+  PR #52のmerge commit、post-merge run `41308110600` attempt 1 successのhead SHA一致を
+  確認し、`requiredRevisionId`付きで022だけを`作業中`へ変更・読戻し後、
+  `feat/22-recovery-migration`を作成した。023/024、Issue #37、Draft PR #43は触っていない。
+- 対象を全project回復候補、未知project/CAD schema/operation版の原文保持読取専用経路、
+  Component/Shape/Command Libraryのlegacy配列からtyped schema 1 containerへの無損失移行とし、
+  着手前にCodexログとIssue #22へ記録した。既存CAD単体候補と既知版validatorは維持する。
+- 初回Node24全JSは233成功（失敗/skip 0）。追加browser 2件の最初の実行はPlaywright実行体が
+  未配置でtest body前に2失敗、`npx playwright install chromium`も5回とも0 MiBの破損ZIPで
+  失敗した。この環境準備失敗を成功へ置換しない。既存の所有権変更不要Chromium実行体と
+  runtime同梱OCP Pythonを明示した再実行は追加2件成功（失敗/skip/retry 0）。
+- 最終ローカル全件、native、Rust、browser全件、PR/CI/mergeは未実施であり、後続結果をここへ追記する。

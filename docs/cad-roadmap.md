@@ -105,6 +105,9 @@ M01の残りとM02以降のGUI/OS実利用は未実施。インストールし�
   支持面追従/消失警告、Point/Line/Circle、拘束・駆動/参照寸法、drag、成分別診断を実装する。
   C系65 commandの一括UI再配置とE系契約変更はこのIssueに含めない。
 - CAD以外を含む回復、未知schema/operation版の読取専用回復、Library移行を仕上げる。
+  Issue #22は[実装境界と証拠](cad-recovery-migration.md)に従い、全project候補、原文保持の
+  読取専用経路、Component/Shape/Command Libraryの版付き無損失移行を扱う。
+  実Tauri/OS dialog/app-dataの最終実機合格はIssue #37へ残す。
 - 代表モデルで表示/再計算/転送/起動/メモリを測り、handle・表示cacheのGCを改善する。
   合成モデルのLinux値をMac性能の達成根拠にしない。
 - Python/OCPの配備と探索、配布物の依存版・第三者表示・source/rebuild手順を確認する。

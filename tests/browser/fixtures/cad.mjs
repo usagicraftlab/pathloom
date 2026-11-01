@@ -189,6 +189,8 @@ const test = base.extend({
                 return window.__cadStorage({ key: "library", ...args });
               if (name === "cad_recovery")
                 return window.__cadStorage({ key: "recovery", ...args });
+              if (name === "project_recovery")
+                return window.__cadStorage({ key: "project-recovery", ...args });
               if (name === "runtime_info")
                 return {
                   platform: "macos",
