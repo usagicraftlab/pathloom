@@ -1,4 +1,4 @@
-import { test, expect, selectCadCommand, selectCadMenuItem } from "./fixtures/cad.mjs";
+import { test, expect, selectCadCommand, selectCadMenuItem, clickCadPoint } from "./fixtures/cad.mjs";
 
 async function add(page, commandId, parameters = {}, selection = []) {
   return page.evaluate(async ({ commandId, parameters, selection }) => {
@@ -41,7 +41,7 @@ async function last(page) {
 async function clickWorld(page, point) {
   const projected = await page.evaluate((point) => window.PathloomModel.projectPoint(point), point);
   await page.mouse.move(projected.x, projected.y);
-  await page.mouse.click(projected.x, projected.y);
+  await clickCadPoint(page, projected);
 }
 async function input(page, key, entityId) {
   const field = page.getByLabel(`CAD input ${key}`, {exact:true});

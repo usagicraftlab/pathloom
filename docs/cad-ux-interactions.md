@@ -24,6 +24,8 @@ B〜Eは後続指示待ち。5のXYZ方向ボールと20の再計算ghostは既�
 
 暗黙単位は長さ欄でmm、既存angleRad欄でrad。通常のangle parserは従来どおりdeg。
 例えば`2.5cm+5`は30 mm、angleRad欄の`90deg+0.5`はπ/2+0.5 radになる。
+未指定を許すdistance2Mm/targetParameter/solutionIndexも四則入力を受け、`null`による既定値へ戻せる。
+nullableなvector/point列は既存のJSON入力を保持する。
 式は256文字・128 token・括弧深度16まで。二つの寸法の積と逆寸法は受け付けない。
 
 exact topologyの表示summaryに`edgeLoops`と頂点/edge/faceの接続索引を付ける。
@@ -32,6 +34,8 @@ B-repや保存正本は変更せず、fresh runtimeへのimportでも同じwire�
 遠方gridのmajor線は描画数を抑えるため10倍刻みで間引くが、snapのstepを変更しない。
 orbit targetの適用はクリック処理後にまとめ、drag中は保留する。基準面選択と同じクリックを
 最初の作図点として受ける途中や、Ctrlコピーの移動量計測中にカメラを動かさない。
+sessionで点を集めている間も、遅れたpreviewによる自動retargetを保留する。右buttonで回転を
+始めた時に最新の選択/クリック点を中心へ反映し、コマンド終了後は通常の追従へ戻す。
 previewの非同期初期化後にもcontrolsのchange購読を接続し、wheel時のgrid更新を保証する。
 CADメニューは項目選択後に閉じ、outlinerを覆って操作を妨げない。
 

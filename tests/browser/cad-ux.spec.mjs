@@ -1,4 +1,4 @@
-import { test, expect, selectCadCommand, selectCadMenuItem } from "./fixtures/cad.mjs";
+import { test, expect, selectCadCommand, selectCadMenuItem, clickCadPoint } from "./fixtures/cad.mjs";
 
 async function add(page, commandId, parameters = {}) {
   return page.evaluate(async ({commandId,parameters}) => {
@@ -20,7 +20,7 @@ async function select(page,entity,options={}) {
 const project=(page,point)=>page.evaluate(point=>window.PathloomModel.projectPoint(point),point);
 async function clickWorld(page,point,options={}) {
   const screen=await project(page,point);
-  await page.mouse.click(screen.x,screen.y,options);
+  await clickCadPoint(page,screen,options);
 }
 
 test("027 A multi-selection shows only union WDH, follows orbit target and marks generation registration",async({page})=>{
@@ -109,6 +109,21 @@ test("027 A Alt edge click selects one exact loop and preserves ordinary and dou
   // Browser pointer positions are rounded to screen pixels before ray casting.
   expect(Math.hypot(target[0]-30,target[1]-15)).toBeLessThan(0.5);
   expect(target[2]).toBeCloseTo(0,6);
+});
+
+test("027 A a completed drawing preview keeps the view steady until the user orbits",async({page})=>{
+  await page.getByRole("button",{name:"top view",exact:true}).click();
+  await selectCadCommand(page,"Rectangle");
+  const before=await page.evaluate(()=>window.Pathloom.viewState().target);
+  await clickWorld(page,[10,10,0]);
+  await expect(page.locator("#modelStatus")).toContainText("プレビュー");
+  expect(await page.evaluate(()=>window.Pathloom.viewState().target)).toEqual(before);
+  const anchor=JSON.parse(await page.getByRole("textbox",{name:"基準点 XYZ",exact:true}).inputValue());
+  const point=await project(page,[20,20,0]);
+  await page.mouse.move(point.x,point.y);await page.mouse.down({button:"right"});
+  await page.mouse.move(point.x+15,point.y+8,{steps:5});await page.mouse.up({button:"right"});
+  const target=await page.evaluate(()=>window.Pathloom.viewState().target);
+  for(const [axis,value] of anchor.entries()) expect(target[axis]).toBeCloseTo(value,6);
 });
 
 test("027 A move origin clears on cancel and commit; Shift rotation has ticks only while held",async({page},info)=>{

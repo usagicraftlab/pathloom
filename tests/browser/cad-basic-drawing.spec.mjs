@@ -1,4 +1,4 @@
-import { test, expect, selectCadCommand } from "./fixtures/cad.mjs";
+import { test, expect, selectCadCommand, clickCadPoint } from "./fixtures/cad.mjs";
 
 async function commit(page, count) {
   await page.getByRole("button", { name: "確定", exact: true }).click();
@@ -75,7 +75,7 @@ async function screen(page, point) {
 async function clickWorld(page, point, offset = 0) {
   const p = await screen(page, point);
   await page.mouse.move(p.x + offset, p.y);
-  await page.mouse.click(p.x + offset, p.y);
+  await clickCadPoint(page, {x:p.x+offset,y:p.y});
   return p;
 }
 const lastFeature = (page) =>

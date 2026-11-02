@@ -2087,6 +2087,8 @@ export function initModelWorkspace(api) {
       if(enumValues)for(const value of enumValues){const option=document.createElement('option');option.value=value;option.textContent=solidEnums?({selected:'選択edgeのみ',tangent:'接線でつながる連鎖',dimensions:'幅・奥行・高さ',twoCorners:'底面2点',threePoints:'底面3点',rightCorner:'角を交差で接続',roundCorner:'角を丸く接続',transformed:'フレーム変換','corrected-frame':'補正フレーム',frenet:'Frenet',inward:'内側',outward:'外側'}[value]||value):value;input.append(option);}
       input.dataset.parameter = key;
       input.setAttribute("aria-label", parameterLabel);
+      const nullableScalar = (value === null || typeof value === "number") &&
+        ["distance2Mm", "targetParameter", "solutionIndex"].includes(key);
       const operation = session?.command.baseOperation.id || f?.operation.id;
       if (
         key === "tangentChain" ||
@@ -2114,8 +2116,9 @@ export function initModelWorkspace(api) {
           const v =
             typeof value === "boolean"
               ? input.checked
-              : typeof value === "number"
-                ? key.toLowerCase().includes("anglerad")
+              : typeof value === "number" || nullableScalar
+                ? nullableScalar && input.value.trim() === "null" ? null
+                  : key.toLowerCase().includes("anglerad")
                   ? parseScalar(input.value, "angle", { defaultUnit: "rad" })
                   : parseScalar(input.value)
                 : typeof value === "object"
@@ -2354,10 +2357,13 @@ export function initModelWorkspace(api) {
       bindingStamps.set(b.id, stamp);
     }
   }
+  function orbitCenter() {
+    const bounds = selectionBounds(store.document, selection);
+    return bounds ? bounds.min.map((value, axis) => (value + bounds.max[axis]) / 2) : lastOrbitPoint;
+  }
   function updateView() {
     observeCameraControls();
-    const bounds = selectionBounds(store.document, selection);
-    const target = bounds ? bounds.min.map((value, axis) => (value + bounds.max[axis]) / 2) : lastOrbitPoint;
+    const target = orbitCenter();
     pendingOrbitTarget = target && [...target];
     if (!orbitUpdateQueued) {
       orbitUpdateQueued = true;
@@ -2365,7 +2371,7 @@ export function initModelWorkspace(api) {
       // drawing point. Keep that ray's camera fixed until the event finishes.
       queueMicrotask(() => {
         orbitUpdateQueued = false;
-        if (!pendingOrbitTarget || activeDrag || orbitGesture) return;
+        if (!pendingOrbitTarget || activeDrag || orbitGesture || session) return;
         view.setOrbitTarget(pendingOrbitTarget);
         positionViewportControls();
       });
@@ -3567,6 +3573,13 @@ export function initModelWorkspace(api) {
   canvas.addEventListener(
     "pointerdown",
     async (event) => {
+      if (active() && event.button === 2) {
+        // A late drawing preview must not reframe the next point under the
+        // cursor. Apply its latest pivot when the user actually starts orbiting.
+        const target = orbitCenter();
+        if (target) view.setOrbitTarget(target);
+        positionViewportControls();
+      }
       if (active() && event.button === 0) {
         down = [event.clientX, event.clientY];
         boxDragged = false;

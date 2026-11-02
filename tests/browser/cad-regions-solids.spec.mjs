@@ -128,7 +128,11 @@ test('P2 D05/D06: tangent-chain permission and two-distance adjacent-face Chamfe
   const edge=body.displayCache.topology.find(t=>t.kind==='edge'&&Math.abs(t.fingerprint.bbox.min[1]+20)<1e-5&&Math.abs(t.fingerprint.bbox.max[1]+20)<1e-5&&Math.abs(t.fingerprint.bbox.min[2])<1e-5&&Math.abs(t.fingerprint.bbox.max[2])<1e-5&&t.fingerprint.bbox.max[0]-t.fingerprint.bbox.min[0]>40);expect(edge).toBeTruthy();
   await selectCadCommand(page, "Fillet Edges");await input(page,'body',[body.id]);await input(page,'edges',[{entityId:body.id,topologyId:edge.topologyId}]);await page.locator('#modelCommit').click();await expect(page.locator('#modelDiagnostics')).toContainText('CAD_REFERENCE_AMBIGUOUS');await param(page,'chainPolicy','tangent');const fillet=await commit(page);expect(fillet.command.version).toBe(2);
   const b=await add(page,'B01',{widthMm:10,depthMm:10,heightMm:10});const e=b.summary.topology.find(t=>t.kind==='edge');const f=b.summary.topology.find(t=>t.kind==='face'&&t.fingerprint.bbox.min.every((v,i)=>v<=e.fingerprint.bbox.min[i]+1e-7)&&t.fingerprint.bbox.max.every((v,i)=>v>=e.fingerprint.bbox.max[i]-1e-7));
-  await selectCadCommand(page, "Chamfer Edges");await input(page,'body',[b.entity]);await input(page,'edges',[{entityId:b.entity,topologyId:e.topologyId}]);await param(page,'distance2Mm',2);await input(page,'distance1Faces',[{entityId:b.entity,topologyId:f.topologyId}]);const chamfer=await commit(page);expect((await entity(page,chamfer)).displayCache.volumeMm3).toBeCloseTo(990,5);await roundTrip(page);
+  await selectCadCommand(page, "Chamfer Edges");await input(page,'body',[b.entity]);await input(page,'edges',[{entityId:b.entity,topologyId:e.topologyId}]);
+  await param(page,'distance2Mm','(4/2)mm');await param(page,'distance2Mm',null);
+  expect(await page.locator('[data-parameter="distance2Mm"]').evaluate(field=>field.validity.valid)).toBe(true);
+  await param(page,'distance2Mm','0.2cm');await input(page,'distance1Faces',[{entityId:b.entity,topologyId:f.topologyId}]);const chamfer=await commit(page);
+  expect(chamfer.parameters.distance2Mm).toBe(2);expect((await entity(page,chamfer)).displayCache.volumeMm3).toBeCloseTo(990,5);await roundTrip(page);
 });
 
 test('P2 D07: Shell failure retains lastValid and thickness diagnostics through Undo/Redo/v2',async({page})=>{

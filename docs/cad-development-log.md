@@ -2342,3 +2342,50 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   menuのpointer遮蔽、生成印render、text property期待、zoom購読、非同期commit待ちへ分類した。
 - 修正後のNode24/20全JS各245成功。nativeは変更しておらず全107件105成功/任意2skipを保持。
   local browser全件の最終結果、修正head CI、Ready/mergeはこの追記時点では未完了。
+
+### 固定したdesktop assetsでの全件再検証
+
+- 修正中のlocal全件初回は90成功/6失敗（9.7分）。run中にも修正を反映したため、単一headの
+  合格証拠には使わない。失敗6件は実click/中心snap、mouse Polyline/three-point Rectangle、
+  Polyline閉鎖/測定、command reorder、Ctrl canvas copy、UI review additionsで、上記の製品修正へ対応する。
+- head `04eb167`に固定したprepared desktop assetsでlocal browser全96件が成功（7.6分、retryなし）。
+  Node24.22.1/20.20.2全JSも各245成功、native全107件105成功/任意USD2skipは変更なし。
+- 最終レビューでnullableな数値3欄（distance2Mm/targetParameter/solutionIndex）がJSON数値専用のまま
+  だったため、四則/単位入力とnullへの復帰を同じ入力経路へ接続した。nullable vector/point列はJSONのまま。
+  D06 browserで`(4/2)mm`→null→`0.2cm`、distance2Mm=2、実体積990とSave/Openを照合し1件成功。
+  この小差分後のNode24/20全JSは各245成功。prepared assetsを再作成しbrowser全96件を再実行中。
+  04eb167のCIと最終差分のCIは別に記録する。
+
+### 任意作業面の負荷診断とlate preview時の視点安定化
+
+- nullable補完後のlocal全96件も成功（7.6分、retryなし）。04eb167のPR run `41393892421` attempt1は
+  全3job成功（JS245/native105+任意2skip/macOS Rust24/browser96、browser12.1分）。一方push run
+  `41393887896` attempt1はnative/Rust成功、JS245成功後のbrowserが86成功/任意作業面1失敗/9未完了で
+  15分cancelledとなった。全6job生ログを照合。残9件は実行中を含み最終集計なし。artifactは0件で、
+  CI失敗の詳細は欠落したまま保持し、PR成功をそのrunの成功へ置き換えない。
+- 同じ任意作業面testは通常の単独8回では全成功。CDPのCPU throttling rate4で3回全失敗し、
+  XYの幅20期待に対し23.132168933、許容差2.628655561を超えることを再現した。frame1回待ちでも
+  3回全失敗。投影/カメラ状態を追加観測した単独1回は成功したが、観測の追加でタイミングが変わるため
+  解決とは扱わない。実DOM click完了＋frame待ちへ直した3回も1成功/2失敗で、XZで幅がほぼ0になる
+  typed failureを含んだ。この各失敗と再実行を保持する。
+- traceで、最初の点の処理後に180ms待ちのnative previewがrenderを呼び、次点の画面投影と実clickの
+  間にorbit targetを動かしていたことを確認した。点入力session中は自動retargetを保留し、実際の右button
+  回転開始時とコマンド終了後に最新の中心を反映する製品修正を追加した。CPU制限3回は全成功
+  （20.6/21.8/18.3秒）。preview完了でも視点が動かず、回転開始で直前の点を中心にするbrowser回帰を追加。
+  新規UI対象8件は全成功（53.8秒）。CIの元失敗の詳細欠落と、このローカル再現で得た原因を区別する。
+- 3つのworld click helperを実DOM click後のframe待ちへ統一し、CAD fixtureのafterEachで失敗内容を
+  即座に`BROWSER_FAILURE` JSONとして生ログへ出す。assertion/許容差/timeout/skip/retryは緩和しない。
+  最終製品差分のNode24.22.1/20.20.2全JSは各245成功。nativeは同一実装の107件105成功/任意2skip。
+  prepared assetsで全97件を確認中。local Rustはcargo不在で未実行、最終head CI/Ready/mergeは未実施。
+
+### 最終ローカル結果
+
+- 製品差分を固定してdesktop assetsを再作成し、全browser97件が成功（7.8分、retryなし）。
+  Node24.22.1と厳密Node20.20.2の全JSは各245成功、失敗/skipなし。native実装は先行の全107件実行から
+  変更しておらず105成功/任意NVIDIA USD2skipを保持。local Rustはcargo不在で未実行。
+- 先行のlocal全件90成功/6失敗、96件成功2回、負荷診断の失敗と成功、旧2headのpush/PR CIは上記に保持する。
+  旧pushの個別job metadata GETはconnector未対応で400となったため、run/jobs collectionと専用job logsで
+  確認し直した。全job生ログを確認できた結果と、cancelledで失われたfailure detail/traceを区別する。
+- 14項目の実装/対象回帰は[cad-ux-interactions.md](cad-ux-interactions.md)。B〜E/#37/PR43は対象外。
+  最終差分のCIはこの記録後に実行するため、Ready/mergeはまだ行わない。最終runとマージ結果はPR #57と
+  指示ボードのCodexログで照合する。実Mac GUI/Tauri/OS dialogを合格にはしない。
