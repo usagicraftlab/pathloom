@@ -2466,3 +2466,9 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
 - 失敗は製品処理へ到達する前、非同期のsketch attach完了を待たずにテストが`sketches[0].support`を
   書いたraceだった。attach後のsketch数をpollしてからsupportを設定するようテストを修正する。
   初回2runの失敗を後続成功へ置換せず、修正headで全CIを再確認する。Ready/mergeは未実施。
+- 修正head `9033b36`のpush run41529790635/PR run41529801659は、attach raceを解消した後に同テストの
+  最終「複数候補」表示で各99成功/1失敗（15.5分/15.8分、retryなし）。faceへ重なるcopy curveが
+  pointer hitを遮り、face menu自体を再度開けていないtest setup問題だった。候補集合の契約を変えず、
+  最終候補確認前だけcurve表示を隠して同じfaceをhitする。push Rust job125566700903はrunner待ちのまま
+  step実行前cancelled、PR同一head Rust24成功と区別して保持する。全job生ログを確認し、再修正headで
+  browser全件を再確認する。Ready/mergeは未実施。
