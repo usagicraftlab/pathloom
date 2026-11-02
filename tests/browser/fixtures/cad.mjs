@@ -238,6 +238,32 @@ async function selectCadCommand(page, name) {
     await command().click();
     return;
   }
+  const groupId = await page.evaluate(async (displayName) => {
+    const { resolveAlias } = await import("/cad/commands/registry.js");
+    const definition = resolveAlias(displayName);
+    if (!definition) return null;
+    const operationId = definition.baseOperation.id;
+    if (/^C(?:0[1-9]|1[0-2])$/.test(definition.id)) return "sketch";
+    if (operationId === "shape.transform") return "transform";
+    if (operationId === "shape.extrude" && definition.displayName === "Extrude Surface")
+      return "surface-create";
+    if (["solid.union", "solid.difference", "solid.intersection", "solid.fillet", "solid.chamfer", "solid.shell", "solid.split"].includes(operationId))
+      return "solid-edit";
+    if (operationId === "shape.cap") return "surface-edit";
+    if (["surface.plane", "surface.planarRegion", "surface.sweep1", "surface.loft"].includes(operationId))
+      return "surface-create";
+    if (operationId.startsWith("surface.")) return "surface-edit";
+    if (operationId.startsWith("solid.") || ["shape.extrude", "shape.revolve", "shape.cylinder", "shape.cone", "shape.pipe"].includes(operationId))
+      return "solid-create";
+    return "curve-create";
+  }, name);
+  if (groupId) {
+    await page.locator(`.model-command-tabs > [data-group-id="${groupId}"]`).click();
+    if (await command().count()) {
+      await command().click();
+      return;
+    }
+  }
   const tabs = page.locator('.model-command-tabs > [role="tab"]');
   for (let index = 0; index < await tabs.count(); index++) {
     await tabs.nth(index).click();
