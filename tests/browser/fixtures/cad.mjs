@@ -238,7 +238,7 @@ async function selectCadCommand(page, name) {
     await command().click();
     return;
   }
-  const tabs = page.getByRole("tab");
+  const tabs = page.locator('.model-command-tabs > [role="tab"]');
   for (let index = 0; index < await tabs.count(); index++) {
     await tabs.nth(index).click();
     if (await command().count()) {
@@ -252,7 +252,7 @@ async function selectCadCommand(page, name) {
 async function selectCadMenuItem(page, selector) {
   const item = page.locator(selector);
   if (!(await item.isVisible()))
-    await page.getByRole("button", { name: "CADメニュー", exact: true }).click();
+    await page.locator('summary[aria-label="CADメニュー"]').click();
   await item.click();
 }
 

@@ -174,7 +174,7 @@ test.afterEach(() => {
 async function selectCadCommand(page, name) {
   const command = () => page.getByRole("button", { name, exact: true });
   if (await command().count()) return command().click();
-  const tabs = page.getByRole("tab");
+  const tabs = page.locator('.model-command-tabs > [role="tab"]');
   for (let index = 0; index < await tabs.count(); index++) {
     await tabs.nth(index).click();
     if (await command().count()) return command().click();
