@@ -419,3 +419,10 @@ Node 24.22.1と厳密なNode 20.20.2の全JSは各239成功、native全105件は
 installerも0 MiB/truncated ZIPを5回返して失敗したため未実行として区別する。
 local Rustもcargo不在で未実行。CI、実Mac GUI/Tauri/OS dialog、Issue #37は別証拠であり、
 この記録時点では成功へ置換しない。
+
+CIの初回browserは89件中12成功・17件timeout・60件未実行で15分cancelとなったが、変更前mainは
+同じsuiteが89件全成功だったため指示026差分の回帰と分類した。横command tabと折り畳みCADメニューに
+fixtureを追従させ、方向widgetとcommand barの重なりを製品側で修正し、registryから対象tabを直接選ぶ。
+最終製品headのPR CIはbrowser 89件全成功（retryなし）まで完走した。途中の49成功/40失敗、
+87成功/2失敗、およびpush attempt 1の既存project recovery 1件の間欠失敗は開発ログに保持し、
+後続再実行やPR成功で置換しない。

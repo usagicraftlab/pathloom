@@ -2269,3 +2269,34 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   `python`/`python3` symlink切れによる先行2回の起動失敗も成功へ置換しない。local Rustはcargo不在で未実行。
 - ローカルbrowser全件が未実行のため、この記録時点ではDraft維持、未Ready/未merge。CI結果も未確認で、
   実Mac GUI/Tauri/OS dialog、Issue #37、Draft PR #43、予約中の指示027には着手していない。
+- 最初の製品headのpush run `41364387708`はJS 239成功後、browser 89件中12成功、17件が
+  各45.1秒timeout、残り60件未実行のまま15分上限でcancelされた。timeoutは基本作図4件
+  （Line/Polyline、real click/snap、arbitrary plane、postselection）、command DSL 2件、
+  曲線編集6件（E03、E04、E07、E05/E10/E11、E01/E02/E08/E09、E06）、Difference 3件、
+  direct manipulation 2件（Extrude direction、numeric input）である。変更前mainの同一SHA
+  `93d9a0d60ee38323271558e3300be925d8b58fe3`のrun `41350723951`はbrowser 89件全成功だったため、
+  systemicな15分上限問題ではなく指示026差分による回帰と分類した。
+- 原因は、横command tab化で非選択tabのcommandがDOMから外れ、CAD DSL、layout、thumbnailも
+  折り畳みCADメニューへ移動した一方、既存browser fixtureが旧入口を直接待っていたことだった。
+  command/menu選択helperを追加して対象specを更新した最初のhead `357c8f06`ではPR CIが
+  49成功・40失敗だった。helperがworkspace mode tabまで巡回してCAD画面を離れることと、
+  menuの`summary`をbutton roleとして探していたことが原因で、この失敗を成功へ置換しない。
+- tab探索を`.model-command-tabs`へ限定し、CADメニューを`summary[aria-label="CADメニュー"]`で
+  開くhead `26a4c47`ではpush／PR両CIが各87成功・2失敗まで回復した。残る2件は、上部の
+  command barがTop方向buttonを覆う製品UI回帰と、E03 Trimで全tabを順に描画するhelperが
+  45秒を消費するtest側の待ち方だった。前者は方向widgetをbar下へ移し、後者はcommand registryから
+  対象groupを解決して1 tabだけ開くよう修正した。
+- 最終製品head `6a2fea41d1ab2f1effeaea156bd96ef9a4416c48`（tree
+  `5c16860d71f186623964e019b0b1d60a5d141542`）のPR run `41369626556` attempt 1は全3job成功。
+  生ログでJS 239成功、native 105件中103成功・任意NVIDIA USD 2skip、macOS Rust 24成功、
+  browser 89成功（retryなし、10.6分）を確認した。push run `41369621172` attempt 1はJS／native／
+  Rust成功、修正対象のarbitrary plane 7.9秒とE03 Trim 7.3秒も成功したが、最後の既存project
+  recovery testがread-only dialogの表示待ち5秒で1失敗し、88成功・1失敗だった。同一headのPR
+  runと直前headでは同testが成功しているため、指示026と無関係な既存非同期表示の間欠失敗と分類し、
+  pushのfailed browser jobだけをattempt 2として再実行した。attempt 1の失敗は保持する。
+- Muse判断後の最終ローカル再検証はNode 24.22.1と厳密なNode 20.20.2の全JSが各239成功
+  （失敗／skip 0）、native全105件は103成功・任意NVIDIA USD 2skip。local browserはChromium
+  不在のため未実行、local Rustもcargo不在で未実行であり、CI成功へ置換しない。push run
+  `41369621172`のfailed job再実行attempt 2はJS 239成功・browser 89成功（retryなし、6.4分）で
+  完走し、生ログを確認した。attempt 1の88成功・1失敗をattempt 2で置換しない。証拠文書commitの
+  push／PR両CI、Ready、mergeはこの追記時点では未完了である。
