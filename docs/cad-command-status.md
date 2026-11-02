@@ -250,3 +250,13 @@ v1定義/他演算/保存schema/bindingは保持する。scrubは表示、配列
 65機能IDの実装状態は変更しない。自動Extrude＋Unionなど既存featureを複合する確定処理中は、
 button/keyboardのUndo/Redoを確定完了後へ入力順で保留し、既存の1単位transactionを崩さない。
 CAD演算、command定義、保存schema、bindingの能力・状態は変更しない。
+
+## 2026-11-02 — 指示026 UI統合
+
+正規65 command IDと実装状態は変更しない。C01〜C12の入口だけを横タブの
+「スケッチ」へ集約し、既存command ID・登録・履歴・保存互換を維持する。
+配列コピーはUI入口、dialog、生成loop、残存event handlerを撤去し、生成への登録は
+アウトライナー右クリックの「生成で使用」だけに限定する。数値欄はtype入力だけとし、
+wheel/drag増減を行わない。CAD演算、native正本、command DSL、保存schemaは変更しない。
+メニュー入口、status、共通方向widget、gizmo、grid、historyの変更を65機能の能力昇格や
+実Mac GUI合格へ広げない。

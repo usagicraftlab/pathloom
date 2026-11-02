@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures/cad.mjs";
+import { test, expect, selectCadCommand } from "./fixtures/cad.mjs";
 
 async function commit(page, count) {
   await page.getByRole("button", { name: "確定", exact: true }).click();
@@ -52,14 +52,7 @@ async function axis(page, name = "top") {
       };
     }
   });
-  // Some cube faces are hidden in an exactly axial view. Use the existing cube
-  // action to set up the camera; drawing and picking below use actual mouse IO.
-  await page.evaluate((name) => {
-    const cube = document.querySelector(".view-cube");
-    cube.dataset.view = name;
-    cube.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    delete cube.dataset.view;
-  }, name);
+  await page.locator(`.axis-orbit [data-view="${name}"]`).click();
   await expect
     .poll(() => page.evaluate(() => window.Pathloom.viewState().axis))
     .toBe(name);
@@ -100,7 +93,7 @@ async function setSnap(page, checked) {
 test("P1-05 Rectangle center/two-corner/three-point modes preserve geometry, mode, Undo and Save", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page
     .getByRole("textbox", { name: "基準点 XYZ", exact: true })
     .fill("[10,20,0]");
@@ -110,7 +103,7 @@ test("P1-05 Rectangle center/two-corner/three-point modes preserve geometry, mod
       () => window.PathloomModel.store.document.entities[0].bbox,
     ),
   ).toEqual({ min: [-20, 0, 0], max: [40, 40, 0] });
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page.getByLabel("長方形の作図モード").selectOption("twoCorners");
   await page.getByLabel("作図点 1 XYZ").fill("[40,30,0]");
   await page.getByLabel("作図点 2 XYZ").fill("[10,10,0]");
@@ -120,7 +113,7 @@ test("P1-05 Rectangle center/two-corner/three-point modes preserve geometry, mod
       () => window.PathloomModel.store.document.entities.at(-1).bbox,
     ),
   ).toEqual({ min: [10, 10, 0], max: [40, 30, 0] });
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page.getByLabel("長方形の作図モード").selectOption("threePoints");
   for (const [i, p] of [
     [0, 0, -10],
@@ -159,7 +152,7 @@ test("P1-05 Rectangle center/two-corner/three-point modes preserve geometry, mod
 test("P1-05 Line/Polyline relative XYZ, Circle radius, Move units and focused keys", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await selectCadCommand(page, "Line");
   await page.locator("#modelCoordinate").evaluate((input) => {
     input.value = "999,0,0";
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }));
@@ -171,7 +164,7 @@ test("P1-05 Line/Polyline relative XYZ, Circle radius, Move units and focused ke
     start: [-5, 0, -5],
     end: [5, 0, -3],
   });
-  await page.getByRole("button", { name: "Polyline", exact: true }).click();
+  await selectCadCommand(page, "Polyline");
   for (const text of ["0,0,-5", "@10,0,2", "@0,10,0"])
     await coordinate(page, text);
   await page.locator("#modelCoordinate").evaluate((input) => input.blur());
@@ -183,13 +176,13 @@ test("P1-05 Line/Polyline relative XYZ, Circle radius, Move units and focused ke
     [10, 0, -3],
     [10, 8, -3],
   ]);
-  await page.getByRole("button", { name: "Circle", exact: true }).click();
+  await selectCadCommand(page, "Circle");
   await coordinate(page, "-10,5,2");
   await coordinate(page, "@4,0,0");
   await commit(page, 3);
   expect((await lastFeature(page)).parameters.radiusMm).toBe(4);
   await page.locator(".model-history-entry").last().click();
-  await page.getByRole("button", { name: "Move", exact: true }).click();
+  await selectCadCommand(page, "Move");
   await page.getByLabel("移動 X mm", { exact: true }).fill("1cm");
   await page.getByLabel("移動 X mm", { exact: true }).fill("10c");
   await page.getByRole("button", { name: "確定", exact: true }).click();
@@ -214,7 +207,7 @@ test("P1-05 Line/Polyline relative XYZ, Circle radius, Move units and focused ke
     expect(bbox.min[i]).toBeCloseTo(v, 5);
   for (const [i, v] of [4, 9, 0].entries())
     expect(bbox.max[i]).toBeCloseTo(v, 5);
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await selectCadCommand(page, "Line");
   await page.locator("#modelCoordinate").evaluate((input) => input.blur());
   await page.keyboard.press("Escape");
   await expect(page.locator(".model-right")).toBeHidden();
@@ -225,7 +218,7 @@ test("P1-05 real clicks, endpoint/center snap, Shift selection and single-object
   page,
 }) => {
   await axis(page);
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await selectCadCommand(page, "Line");
   await clickWorld(page, [-35, -15, 0]);
   await clickWorld(page, [-15, -15, 0]);
   await page.keyboard.press("Enter");
@@ -234,14 +227,14 @@ test("P1-05 real clicks, endpoint/center snap, Shift selection and single-object
     "形状を確定しました",
   );
   const line = await lastFeature(page);
-  await page.getByRole("button", { name: "Circle", exact: true }).click();
+  await selectCadCommand(page, "Circle");
   await clickWorld(page, line.parameters.end, 3);
   await clickWorld(page, [-8, -15, 0]);
   await commit(page, 2);
   expect((await lastFeature(page)).parameters.center).toEqual(
     line.parameters.end,
   );
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page.getByLabel("長方形の作図モード").selectOption("twoCorners");
   await clickWorld(page, [0, -5, 0]);
   await clickWorld(page, [20, 15, 0]);
@@ -252,12 +245,12 @@ test("P1-05 real clicks, endpoint/center snap, Shift selection and single-object
     (v, i) =>
       v + (p.widthMm * p.plane.xAxis[i] + p.heightMm * p.plane.yAxis[i]) / 2,
   );
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await selectCadCommand(page, "Line");
   await clickWorld(page, center, 3);
   await clickWorld(page, [30, 5, 0]);
   await commit(page, 4);
   expect((await lastFeature(page)).parameters.start).toEqual(center);
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await selectCadCommand(page, "Line");
   await setSnap(page, false);
   await clickWorld(page, center, 3);
   await clickWorld(page, [30, 25, 0]);
@@ -315,7 +308,7 @@ test("P1-05 real clicks, endpoint/center snap, Shift selection and single-object
       () => window.PathloomModel.store.document.uiState.selection.length,
     ),
   ).toBe(2);
-  await page.getByRole("button", { name: "Move", exact: true }).click();
+  await selectCadCommand(page, "Move");
   await expect(page.locator("#modelStatus")).toContainText("1件");
   await expect(
     page.getByLabel("CAD input object", { exact: true }),
@@ -352,7 +345,7 @@ test("P1-05 arbitrary work planes drive real clicks and feed the E06 plane contr
         select.value = value;
         select.dispatchEvent(new Event("change", { bubbles: true }));
       }, ["XY", "XZ", "YZ"][i]);
-    await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+    await selectCadCommand(page, "Rectangle");
     if (i < 3) {
       const initial = JSON.parse(
         await page
@@ -388,7 +381,7 @@ test("P1-05 arbitrary work planes drive real clicks and feed the E06 plane contr
     () =>
       window.PathloomModel.store.document.entities.at(-1).displayCache.lengthMm,
   );
-  await page.getByRole("button", { name: "Offset Curve", exact: true }).click();
+  await selectCadCommand(page, "Offset Curve");
   const plane = planes.at(-1);
   await page
     .getByRole("textbox", { name: "作業平面", exact: true })
@@ -402,7 +395,7 @@ test("P1-05 arbitrary work planes drive real clicks and feed the E06 plane contr
     ),
   ).toBeCloseTo(source + 2 * Math.PI, 4);
   await page.locator(".model-history-entry").first().click();
-  await page.getByRole("button", { name: "Offset Curve", exact: true }).click();
+  await selectCadCommand(page, "Offset Curve");
   await page
     .getByRole("textbox", { name: "作業平面", exact: true })
     .fill(
@@ -418,7 +411,7 @@ test("P1-05 arbitrary work planes drive real clicks and feed the E06 plane contr
 test("P1-05 constrained rectangle preserves lastValid through nonconvergence, Undo and Save", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page
     .getByRole("textbox", { name: "基準点 XYZ", exact: true })
     .fill("[10,20,0]");
@@ -545,10 +538,10 @@ test("P1-05 postselection, hidden/locked objects and snap exclusion", async ({
   page,
 }) => {
   await axis(page);
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await commit(page, 1);
   const rectangle = await lastFeature(page);
-  await page.getByRole("button", { name: "Circle", exact: true }).click();
+  await selectCadCommand(page, "Circle");
   await coordinate(page, "45,0,0");
   await coordinate(page, "@5,0,0");
   await commit(page, 2);
@@ -561,12 +554,12 @@ test("P1-05 postselection, hidden/locked objects and snap exclusion", async ({
       rectangle.outputSlots[0].entityId,
     ),
   ).toBe(true);
-  await page.getByRole("button", { name: "Move", exact: true }).click();
+  await selectCadCommand(page, "Move");
   await expect(
     page.getByLabel("CAD input object", { exact: true }),
   ).toHaveValue("");
   await page.getByRole("button", { name: "キャンセル", exact: true }).click();
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await selectCadCommand(page, "Line");
   await clickWorld(page, [0, 0, 0], 3);
   await clickWorld(page, [5, 10, 0]);
   await commit(page, 3);
@@ -581,7 +574,7 @@ test("P1-05 postselection, hidden/locked objects and snap exclusion", async ({
       circle.outputSlots[0].entityId,
     ),
   ).toBe("hidden");
-  await page.getByRole("button", { name: "Move", exact: true }).click();
+  await selectCadCommand(page, "Move");
   await expect(
     page.getByLabel("CAD input object", { exact: true }),
   ).toHaveValue("");
@@ -592,7 +585,7 @@ test("P1-05 postselection, hidden/locked objects and snap exclusion", async ({
       () => window.PathloomModel.store.document.uiState.selection,
     ),
   ).toEqual([]);
-  await page.getByRole("button", { name: "Move", exact: true }).click();
+  await selectCadCommand(page, "Move");
   await clickWorld(page, [3, 6, 0]);
   const input = page.getByLabel("CAD input object", { exact: true });
   await expect(input).not.toHaveValue("");
@@ -605,7 +598,7 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
 }) => {
   await axis(page);
   await setSnap(page, false);
-  await page.getByRole("button", { name: "Polyline", exact: true }).click();
+  await selectCadCommand(page, "Polyline");
   for (const point of [
     [-60, 30, 0],
     [-45, 30, 0],
@@ -616,7 +609,7 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
   await commit(page, 1);
   expect((await lastFeature(page)).parameters.points).toHaveLength(3);
   expect((await lastFeature(page)).parameters.closed).toBe(true);
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page.getByLabel("長方形の作図モード").selectOption("threePoints");
   const pixel = await clickWorld(page, [10, -30, 0]);
   await clickWorld(page, [30, -30, 0]);
@@ -630,7 +623,7 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
   expect(Math.abs(rectangle.parameters.heightMm - 20)).toBeLessThan(
     2 * pixel.worldPerPixel,
   );
-  await page.getByRole("button", { name: "Circle", exact: true }).click();
+  await selectCadCommand(page, "Circle");
   await page.getByRole("textbox", { name: "中心 XYZ", exact: true }).fill("[");
   // Hold an older, valid preview across rejected point input. It must not
   // replace the error with a success message when its real OCCT reply arrives.
@@ -682,12 +675,12 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
   await page.getByRole("textbox", { name: "半径 mm", exact: true }).fill("4");
   await commit(page, 3);
   await setSnap(page, true);
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await selectCadCommand(page, "Line");
   await clickWorld(page, [-20, 0, 0], 3);
   await clickWorld(page, [-5, 10, 0]);
   await commit(page, 4);
   expect((await lastFeature(page)).parameters.start).toEqual([-20, 0, 0]);
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page.getByLabel("長方形の作図モード").selectOption("threePoints");
   for (const [i, p] of [
     [0, 0, 0],
@@ -699,7 +692,7 @@ test("P1-05 mouse Polyline/three-point Rectangle and invalid Circle/plane input"
   await expect(page.locator("#modelStatus")).toContainText("一直線");
   await expect(page.locator(".model-history-entry")).toHaveCount(4);
   await page.getByRole("button", { name: "キャンセル", exact: true }).click();
-  await page.getByRole("button", { name: "Circle", exact: true }).click();
+  await selectCadCommand(page, "Circle");
   await page
     .getByRole("textbox", { name: "作業平面", exact: true })
     .fill(

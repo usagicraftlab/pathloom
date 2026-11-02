@@ -524,17 +524,17 @@ function generateGcode(){window.PathloomModel?.store.resolveBindings();for(const
 window.Pathloom={viewState:()=>({projection:camera?.isOrthographicCamera?'orthographic':'perspective',axis:axisView,position:camera?.position.toArray(),target:controls?.target.toArray()}),getImportedStep:id=>structuredClone(importedShapes.find(shape=>shape.id===id)),addImportedStep:shape=>{importedShapes.push(shape);renderImportedShapes()},generateGcode,upsertLiveToolpath,loadUkigaraSample,addImportedBrepInspection,applyImportedBrepEdit};
 function downloadText(name,text){const blob=new Blob([text],{type:'text/plain'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),500)}
 function restorePerspective(){
-  if(!camera?.isOrthographicCamera)return;const previous=camera,height=(previous.top-previous.bottom)/previous.zoom,distance=height/(2*Math.tan(Math.PI/10));camera=new THREE.PerspectiveCamera(36,viewport.clientWidth/viewport.clientHeight,.1,previous.far);camera.up.set(0,0,1);camera.position.copy(controls.target).add(previous.position.clone().sub(controls.target).normalize().multiplyScalar(distance));camera.quaternion.copy(previous.quaternion);controls.object=camera;axisView=null;axisDirection=null;document.querySelectorAll('.view-axis-button').forEach(button=>button.setAttribute('aria-pressed','false'));requestPreviewRender();document.dispatchEvent(new Event('pathloom:camera-changed'));
+  if(!camera?.isOrthographicCamera)return;const previous=camera,height=(previous.top-previous.bottom)/previous.zoom,distance=height/(2*Math.tan(Math.PI/10));camera=new THREE.PerspectiveCamera(36,viewport.clientWidth/viewport.clientHeight,.1,previous.far);camera.up.set(0,0,1);camera.position.copy(controls.target).add(previous.position.clone().sub(controls.target).normalize().multiplyScalar(distance));camera.quaternion.copy(previous.quaternion);controls.object=camera;axisView=null;axisDirection=null;requestPreviewRender();document.dispatchEvent(new Event('pathloom:camera-changed'));
+}
+function restoreHomeView(){
+  if(!THREE||!camera||!controls)return;
+  const distance=camera.position.distanceTo(controls.target)||480;
+  restorePerspective();
+  camera.position.copy(controls.target).add(new THREE.Vector3(180,-320,324).normalize().multiplyScalar(distance));
+  camera.up.set(0,0,1);camera.lookAt(controls.target);axisView=null;axisDirection=null;requestPreviewRender();document.dispatchEvent(new Event('pathloom:camera-changed'));
 }
 function updateViewCube(){
-  const host=$('#viewCube');if(!host||!THREE||!camera)return;
-  const NS='http://www.w3.org/2000/svg',inverse=camera.quaternion.clone().invert(),project=p=>new THREE.Vector3(...p).applyQuaternion(inverse);
-  const faces=[['top','上',[0,0,1],[[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]]],['bottom','下',[0,0,-1],[[-1,-1,-1],[-1,1,-1],[1,1,-1],[1,-1,-1]]],['front','前',[0,-1,0],[[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]]],['back','後',[0,1,0],[[-1,1,-1],[-1,1,1],[1,1,1],[1,1,-1]]],['right','右',[1,0,0],[[1,-1,-1],[1,1,-1],[1,1,1],[1,-1,1]]],['left','左',[-1,0,0],[[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1]]]];
-  const focused=host.contains(document.activeElement)?document.activeElement.dataset.view:null;host.replaceChildren();
-  for(const [name,label,normal,corners]of faces.filter(face=>project(face[2]).z>1e-5).sort((a,b)=>project(a[2]).z-project(b[2]).z)){
-    const group=document.createElementNS(NS,'g'),polygon=document.createElementNS(NS,'polygon'),text=document.createElementNS(NS,'text'),center=project(normal);group.classList.add('cube-face');group.dataset.view=name;group.setAttribute('role','button');group.setAttribute('tabindex','0');group.setAttribute('aria-label',`${name} view`);group.setAttribute('aria-pressed',String(axisView===name));
-    polygon.setAttribute('points',corners.map(point=>{const p=project(point);return `${50+p.x*23},${50-p.y*23}`}).join(' '));text.setAttribute('x',50+center.x*23);text.setAttribute('y',50-center.y*23);text.textContent=label;group.append(polygon,text);host.append(group);if(focused===name)group.focus?.({preventScroll:true});
-  }
+  document.querySelectorAll('.axis-orbit [data-view]').forEach(button=>button.setAttribute('aria-pressed',String(axisView===button.dataset.view)));
 }
 function setAxisView(name){
   if(!THREE||!camera||!controls)return;const directions={top:[0,0,1],bottom:[0,0,-1],front:[0,-1,0],back:[0,1,0],left:[-1,0,0],right:[1,0,0]};const direction=directions[name];if(!direction)return;const distance=camera.position.distanceTo(controls.target),height=camera.isOrthographicCamera?(camera.top-camera.bottom)/camera.zoom:2*distance*Math.tan(Math.PI/10),aspect=viewport.clientWidth/viewport.clientHeight;
@@ -544,7 +544,7 @@ let axisRotationStart=null;
 canvas.addEventListener('pointerdown',event=>{axisRotationStart=event.button===2&&axisView&&controls?.enabled?[event.clientX,event.clientY]:null},true);
 canvas.addEventListener('pointermove',event=>{if(axisRotationStart&&axisView&&Math.hypot(event.clientX-axisRotationStart[0],event.clientY-axisRotationStart[1])>3)restorePerspective()},true);
 canvas.addEventListener('pointerup',()=>{axisRotationStart=null},true);canvas.addEventListener('pointercancel',()=>{axisRotationStart=null},true);
-document.querySelector('.view-cube').addEventListener('click',event=>{const target=event.target.closest('[data-view]');if(target)setAxisView(target.dataset.view)});document.querySelector('.view-cube').addEventListener('keydown',event=>{if(!['Enter',' '].includes(event.key)||event.target.tagName==='BUTTON')return;const target=event.target.closest('[data-view]');if(target){event.preventDefault();setAxisView(target.dataset.view)}});
+document.querySelector('.axis-orbit').addEventListener('click',event=>{const target=event.target.closest('[data-view]');if(!target)return;if(target.dataset.view==='home')restoreHomeView();else setAxisView(target.dataset.view)});
 function resize(){if(!renderer)return;const w=viewport.clientWidth,h=viewport.clientHeight;renderer.setSize(w,h,false);toolpathGroup?.traverse(child=>child.material?.uniforms?.resolution?.value.set(w,h));if(camera.isOrthographicCamera){const half=(camera.top-camera.bottom)/2;camera.left=-half*w/h;camera.right=half*w/h}else camera.aspect=w/h;camera.updateProjectionMatrix();requestPreviewRender()}
 new ResizeObserver(resize).observe(viewport);function animate(){previewFrame=null;if(!camera||!renderer)return;if(!camera.isOrthographicCamera)controls.update();const plate=buildVolumeGroup?.children.find(node=>node.userData.buildPlate);if(plate&&plate.visible!==(camera.position.z>=0)){plate.visible=camera.position.z>=0;requestPreviewRender()}if(previewDirty){renderer.render(scene,camera);updatePrintOrderMarkers();updateViewCube();previewDirty=false}}
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)requestPreviewRender()});
@@ -701,4 +701,4 @@ initCad({
 modelWorkspace=initModelWorkspace({preview:()=>({THREE,scene,camera,controls,canvas,dirty:requestPreviewRender})});
 window.PathloomModel=modelWorkspace;
 
-new MutationObserver(()=>{if(toolpathGroup)toolpathGroup.visible=document.body.dataset.workspaceMode!=='model';requestPreviewRender()}).observe(document.body,{attributes:true,attributeFilter:['data-workspace-mode']});
+new MutationObserver(()=>{const model=document.body.dataset.workspaceMode==='model';if(toolpathGroup)toolpathGroup.visible=!model;if(buildVolumeGroup)buildVolumeGroup.visible=!model;requestPreviewRender()}).observe(document.body,{attributes:true,attributeFilter:['data-workspace-mode']});

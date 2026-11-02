@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures/cad.mjs";
+import { test, expect, selectCadCommand, selectCadMenuItem } from "./fixtures/cad.mjs";
 
 async function add(page, commandId, parameters = {}, selection = []) {
   return page.evaluate(async ({ commandId, parameters, selection }) => {
@@ -91,19 +91,10 @@ test("P3 axis/uniform scale handles, pivot, Move copy and drag-Esc preserve exac
   await expect(page.locator(".model-outline-body")).toHaveCount(2);
 });
 
-test("P3 array preview/commit retains original and returns all copies in one Undo", async ({page}) => {
-  const box = await add(page, "B01", {widthMm:10,depthMm:10,heightMm:10});
-  await select(page, box);
-  await page.getByRole("button", {name:"配列コピー",exact:true}).click();
-  await expect.poll(() => page.evaluate(() => window.PathloomModel.displayState().addedPreviewCount)).toBe(2);
-  await page.getByRole("button", {name:"作成",exact:true}).click();
-  await expect(page.locator(".model-history-entry")).toHaveCount(3);
-  await last(page);
-  await expect(page.locator(".model-outline-body")).toHaveCount(3);
-  await page.keyboard.press("Control+z");
-  await expect(page.locator(".model-history-entry")).toHaveCount(1);
-  await page.keyboard.press("Control+Shift+z");
-  await expect(page.locator(".model-history-entry")).toHaveCount(3);
+test("P3 array copy is not exposed", async ({page}) => {
+  await add(page, "B01", {widthMm:10,depthMm:10,heightMm:10});
+  await expect(page.getByRole("button", {name:"配列コピー",exact:true})).toHaveCount(0);
+  await expect(page.locator(".model-array-dialog")).toHaveCount(0);
 });
 
 test("P3 visibility/isolate, folders, inline dimension and shortcut help remain usable", async ({page}) => {
@@ -119,7 +110,7 @@ test("P3 visibility/isolate, folders, inline dimension and shortcut help remain 
   await page.keyboard.press("Shift+H");
   await page.getByRole("button", {name:"選択形状をグループ化",exact:true}).click();
   await expect(page.locator(".model-outline-folder .model-outline-body")).toHaveCount(1);
-  await page.locator('.model-projected-dimensions [data-dimension="widthMm"]').dblclick();
+  await page.locator('.model-selection-dimensions [data-dimension="widthMm"]').dblclick();
   const dimension = page.getByRole("textbox", {name:"3D寸法を編集",exact:true});
   await dimension.fill("15"); await dimension.press("Enter");
   await expect.poll(() => page.evaluate((id) => window.PathloomModel.store.getEntity(id).bbox.max[0], first.id)).toBe(15);
@@ -144,7 +135,7 @@ test("P3 history hover/scrub shows consumed earlier geometry without changing sa
 
 test("P3 Polyline closes by start snap into a real planar face; two-click measurement shows distance", async ({page}) => {
   await page.getByRole("button", {name:"top view",exact:true}).click();
-  await page.getByRole("button", {name:"Polyline",exact:true}).click();
+  await selectCadCommand(page, "Polyline");
   for (const point of [[-20,-15,0],[-10,-15,0],[-10,-5,0]]) await clickWorld(page, point);
   const start = await page.evaluate(() => window.PathloomModel.projectPoint([-20,-15,0]));
   await page.mouse.move(start.x,start.y);
@@ -164,7 +155,7 @@ test("P3 Extrude direction switches to exact Difference and multiple body overla
   const body = await add(page,"B01",{widthMm:10,depthMm:10,heightMm:10});
   const rectangle = await add(page,"C04",{anchorMode:"corner",anchor:[2,2,10],widthMm:4,heightMm:4});
   const region = await add(page,"S03",{},[{entityId:rectangle.id,entityKind:rectangle.kind}]);
-  await page.getByRole("button",{name:"Extrude Surface",exact:true}).click(); await input(page,"profile",region.id);
+  await selectCadCommand(page, "Extrude Surface"); await input(page,"profile",region.id);
   await page.locator('[data-parameter="distanceMm"]').fill("-5");
   await page.getByRole("button",{name:"確定",exact:true}).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(5);
@@ -175,7 +166,7 @@ test("P3 Extrude direction switches to exact Difference and multiple body overla
   await add(page,"B01",{anchor:[4,0,0],widthMm:10,depthMm:10,heightMm:10});
   const wide = await add(page,"C04",{anchorMode:"corner",anchor:[1,1,0],widthMm:10,heightMm:8});
   const face = await add(page,"S03",{},[{entityId:wide.id,entityKind:wide.kind}]);
-  await page.getByRole("button",{name:"Extrude Surface",exact:true}).click(); await input(page,"profile",face.id);
+  await selectCadCommand(page, "Extrude Surface"); await input(page,"profile",face.id);
   await page.locator('[data-parameter="distanceMm"]').fill("5");
   await page.getByRole("button",{name:"確定",exact:true}).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(9);
@@ -185,19 +176,19 @@ test("P3 Extrude direction switches to exact Difference and multiple body overla
   await expect(page.locator("#modelStatus")).toContainText("複数body");
 });
 
-test("P3 numeric wheel, Enter navigation, symmetric arrow and Esc keep draft separate", async ({page}) => {
+test("P3 numeric input ignores wheel, Enter navigates, and symmetric arrow keeps draft separate", async ({page}) => {
   const rectangle = await add(page,"C04",{widthMm:10,heightMm:10,anchor:[0,0,0]});
   const face = await add(page,"S03",{},[{entityId:rectangle.id,entityKind:rectangle.kind}]);
-  await page.getByRole("button",{name:"Extrude Surface",exact:true}).click(); await input(page,"profile",face.id);
+  await selectCadCommand(page, "Extrude Surface"); await input(page,"profile",face.id);
   const distance = page.locator('[data-parameter="distanceMm"]');
-  await distance.hover(); await page.mouse.wheel(0,-100); await expect(distance).toHaveValue("11");
+  await distance.hover(); await page.mouse.wheel(0,-100); await expect(distance).toHaveValue("10");
   await distance.press("Enter"); await expect(page.locator('[data-parameter="bothSides"]')).toBeFocused();
   await drag(page,page.getByRole("button",{name:"対称押し出しをドラッグ",exact:true}),9);
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
   const result = await last(page);
   expect(result.feature.parameters.bothSides).toBe(true);
-  expect(result.entity.bbox.min[2]).toBeCloseTo(-10,6);
-  expect(result.entity.bbox.max[2]).toBeCloseTo(10,6);
+  expect(result.entity.bbox.min[2]).toBeCloseTo(-9.5,6);
+  expect(result.entity.bbox.max[2]).toBeCloseTo(9.5,6);
 });
 
 test("P3 direction-based range selection uses enclosed versus touching projected geometry", async ({page}) => {
@@ -236,18 +227,20 @@ test("P3 adaptive face/edge click, whole-body double click, context action and d
   expect(result.entity.displayCache.volumeMm3).toBeLessThan(body.displayCache.volumeMm3);
 });
 
-test("P3 command reorder requires edit mode and object drag creates a ready generation binding", async ({page}) => {
+test("P3 command reorder requires edit mode and generation registration is context-menu only", async ({page}) => {
   const line = page.getByRole("button",{name:"Line",exact:true});
   const rectangle = page.getByRole("button",{name:"Rectangle",exact:true});
   await expect(line).toHaveAttribute("draggable","false");
-  await page.getByRole("button",{name:"配置編集",exact:true}).click();
+  await selectCadMenuItem(page, "#modelCommandEdit");
   await expect(line).toHaveAttribute("draggable","true");
   await rectangle.dragTo(line);
-  const ids=await page.locator(".model-command-group").first().locator("[data-command-id]").evaluateAll((elements)=>elements.map((element)=>element.dataset.commandId));
+  const ids=await page.locator(".model-command-tab-panel").locator("[data-command-id]").evaluateAll((elements)=>elements.map((element)=>element.dataset.commandId));
   expect(ids.indexOf("C04")).toBeLessThan(ids.indexOf("C02"));
-  await page.getByRole("button",{name:"配置編集",exact:true}).click();
+  await selectCadMenuItem(page, "#modelCommandEdit");
   const body=await add(page,"B01",{widthMm:10,depthMm:10,heightMm:10});
-  await page.locator(`.model-outline-body[data-body-id="${body.bodyId}"]`).dragTo(page.getByRole("region",{name:"生成で使用",exact:true}));
+  await expect(page.getByRole("region",{name:"生成で使用",exact:true})).toHaveCount(0);
+  await page.locator(`.model-outline-body[data-body-id="${body.bodyId}"] .model-outline-select`).click({button:"right"});
+  await page.getByRole("menuitem",{name:"生成で使用",exact:true}).click();
   await expect.poll(()=>page.evaluate(()=>window.PathloomModel.store.document.outputBindings.map((binding)=>binding.status))).toEqual(["ready"]);
 });
 
@@ -271,7 +264,7 @@ test("P3 pivot picking, uniform scale corner, rotation snap and mirror face prev
   result=await last(page);
   expect(result.feature.parameters.angleRad).toBeCloseTo(Math.PI/6,8);
   await select(page,result.entity);
-  await page.getByRole("button",{name:"Mirror",exact:true}).click();
+  await selectCadCommand(page, "Mirror");
   const top = result.entity.bbox.max[2];
   await clickWorld(page,[7.5,7.5,top]);
   const plane = JSON.parse(await page.getByRole("textbox",{name:"作業平面",exact:true}).inputValue());
@@ -315,7 +308,7 @@ test("P3 Move inference, Alt precision and Shift free rotation keep the requeste
   expect(result.entity.displayCache.volumeMm3).toBeCloseTo(1000,5);
 });
 
-test("P3 Ctrl canvas copy, array cancellation and outliner reorder preserve the source", async ({page}, info) => {
+test("P3 Ctrl canvas copy and outliner reorder preserve the source while array copy stays absent", async ({page}) => {
   const body = await add(page,"B01",{anchor:[-40,-40,0],widthMm:10,depthMm:10,heightMm:10});
   await page.getByRole("button",{name:"top view",exact:true}).click();
   const points=await page.evaluate(()=>[[-35,-35,10],[-15,-35,10]].map((point)=>window.PathloomModel.projectPoint(point)));
@@ -329,17 +322,7 @@ test("P3 Ctrl canvas copy, array cancellation and outliner reorder preserve the 
   expect(result.feature.parameters.translation).toEqual([20,0,0]);
   await expect(page.locator(".model-outline-body")).toHaveCount(2);
   await select(page,result.entity);
-  await page.getByRole("button",{name:"配列コピー",exact:true}).click();
-  await expect.poll(()=>page.evaluate(()=>window.PathloomModel.displayState().addedPreviewCount)).toBe(2);
-  await page.getByRole("dialog").getByLabel("個数",{exact:true}).fill("4");
-  const arrayPoints=await page.evaluate(()=>[[-15,-35,10],[-5,-35,10]].map((point)=>window.PathloomModel.projectPoint(point)));
-  await page.mouse.move(arrayPoints[0].x,arrayPoints[0].y); await page.mouse.down();
-  await page.mouse.move(arrayPoints[1].x,arrayPoints[1].y,{steps:8}); await page.mouse.up();
-  await expect(page.getByRole("dialog").getByLabel("間隔 XYZ mm",{exact:true})).toHaveValue("10,0,0");
-  await expect.poll(()=>page.evaluate(()=>window.PathloomModel.displayState().addedPreviewCount)).toBe(3);
-  await page.screenshot({path:info.outputPath("array-drag.png")});
-  await page.getByRole("dialog").getByRole("button",{name:"キャンセル",exact:true}).click();
-  await expect.poll(()=>page.evaluate(()=>window.PathloomModel.displayState().addedPreviewCount)).toBe(0);
+  await expect(page.getByRole("button",{name:"配列コピー",exact:true})).toHaveCount(0);
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
   const source=page.locator(`.model-outline-body[data-body-id="${body.bodyId}"]`);
   const copy=page.locator(`.model-outline-body[data-body-id="${result.entity.bodyId}"]`);

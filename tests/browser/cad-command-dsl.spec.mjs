@@ -1,7 +1,7 @@
-import { test, expect } from "./fixtures/cad.mjs";
+import { test, expect, selectCadCommand, selectCadMenuItem } from "./fixtures/cad.mjs";
 
 test("P4-01 command DSL exposes all canonical 65 registry IDs and pins a new immutable version", async ({ page }) => {
-  await page.locator("#modelCommandDsl").click();
+  await selectCadMenuItem(page, "#modelCommandDsl");
   const dialog = page.locator(".model-command-dsl-dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "正規65件を表示" }).click();
@@ -35,11 +35,11 @@ test("P4-01 command DSL exposes all canonical 65 registry IDs and pins a new imm
 });
 
 test("P4-01 alias collision is explicit and selected history can roll back and upgrade its pinned command version", async ({ page }) => {
-  await page.getByRole("button", { name: "Box", exact: true }).click();
+  await selectCadCommand(page, "Box");
   await page.locator("#modelCommit").click();
   await expect(page.locator(".model-history-entry").last()).toContainText("valid");
   await page.locator(".model-history-entry").last().click();
-  await page.locator("#modelCommandDsl").click();
+  await selectCadMenuItem(page, "#modelCommandDsl");
   const dialog = page.locator(".model-command-dsl-dialog");
   const versionPanel = dialog.locator(".model-command-dsl-version");
   await expect(versionPanel).toBeVisible();

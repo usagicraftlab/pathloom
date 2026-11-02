@@ -163,3 +163,12 @@ drag前復元、folder、suppressed表示、確認付き再開、H/Shift+H/I、�
 角/軸Scale、shortcutも018へ含める。08:35回答で軸Scaleだけnative変換/axisFactorsを拡張し、
 v1互換と他項目の機構境界を維持する。全採用項目は[UI受入対応](cad-ui-review-additions.md)。
 014〜017はMuse有効化待ち、#37とPR43は別枠。UI成功を65機能の最終照合に置換しない。
+
+## 2026-11-02 — 指示026 UI統合
+
+実機レビュー第15〜34弾を単一UI変更として扱い、横command tabs、最終形状中心outliner、
+単一status、type-only数値、統一SVG、全幅history、CAD plane/grid、共通方向widget、
+in-scene XYZ、context-menu生成登録、縦playhead、配列コピー撤去、メニュー入口、
+pivot/gizmo、Sketch内C01〜C12、小型context menuを横断整合させる。
+製品演算・保存schema・正規65 IDは増減しない。ローカルbrowserを実行できない環境では
+未実施として記録し、Museの明示判断または実行可能環境での全件成功なしにReady/mergeしない。

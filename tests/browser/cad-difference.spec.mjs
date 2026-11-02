@@ -172,10 +172,39 @@ test.beforeEach(async ({ page }) => {
 test.afterEach(async () => {
   await closeRuntime();
 });
+async function selectCadCommand(page, name) {
+  const command = () => page.getByRole("button", { name, exact: true });
+  if (await command().count()) return command().click();
+  const groupId = await page.evaluate(async (displayName) => {
+    const { resolveAlias } = await import("/cad/commands/registry.js");
+    const definition = resolveAlias(displayName);
+    if (!definition) return null;
+    const operationId = definition.baseOperation.id;
+    if (/^C(?:0[1-9]|1[0-2])$/.test(definition.id)) return "sketch";
+    if (operationId === "shape.transform") return "transform";
+    if (operationId === "shape.extrude" && definition.displayName === "Extrude Surface") return "surface-create";
+    if (["solid.union", "solid.difference", "solid.intersection", "solid.fillet", "solid.chamfer", "solid.shell", "solid.split"].includes(operationId)) return "solid-edit";
+    if (operationId === "shape.cap") return "surface-edit";
+    if (["surface.plane", "surface.planarRegion", "surface.sweep1", "surface.loft"].includes(operationId)) return "surface-create";
+    if (operationId.startsWith("surface.")) return "surface-edit";
+    if (operationId.startsWith("solid.") || ["shape.extrude", "shape.revolve", "shape.cylinder", "shape.cone", "shape.pipe"].includes(operationId)) return "solid-create";
+    return "curve-create";
+  }, name);
+  if (groupId) {
+    await page.locator(`.model-command-tabs > [data-group-id="${groupId}"]`).click();
+    if (await command().count()) return command().click();
+  }
+  const tabs = page.locator('.model-command-tabs > [role="tab"]');
+  for (let index = 0; index < await tabs.count(); index++) {
+    await tabs.nth(index).click();
+    if (await command().count()) return command().click();
+  }
+  throw new Error(`CAD command is not exposed in any tab: ${name}`);
+}
 async function boxes(page, positions = [0, 20, 5]) {
   for (const x of positions) {
     const count = await page.locator(".model-history-entry").count();
-    await page.getByRole("button", { name: "Box", exact: true }).click();
+    await selectCadCommand(page, "Box");
     await page
       .getByRole("textbox", { name: "基準点 XYZ", exact: true })
       .fill(JSON.stringify([x, 0, 0]));
@@ -213,7 +242,7 @@ async function selectRole(page, role, ids) {
 }
 async function beginDifference(page, targets, tools, keep = false) {
   const count = await page.locator(".model-history-entry").count();
-  await page.getByRole("button", { name: "Difference", exact: true }).click();
+  await selectCadCommand(page, "Difference");
   await selectRole(page, "arguments", targets);
   await selectRole(page, "tools", tools);
   await page

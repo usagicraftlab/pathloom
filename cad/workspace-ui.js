@@ -84,7 +84,8 @@ const labels = {
   poleIndex:"制御点番号（1始まり）",position:"移動先XYZ",knot:"挿入するknot",knotIndex:"削除するknot番号",multiplicity:"knot多重度",toleranceMm:"削除許容差 mm",
 };
 const commandGroupDefinitions = [
-  { id: "curve-create", label: "カーブをつくる" },
+  { id: "sketch", label: "スケッチ" },
+  { id: "curve-create", label: "カーブを編集" },
   { id: "solid-create", label: "立体をつくる" },
   { id: "solid-edit", label: "立体を加工する" },
   { id: "surface-create", label: "サーフェスをつくる" },
@@ -174,6 +175,10 @@ const operationIconFamilies = {
 };
 function commandGroup(command) {
   const operationId = command.baseOperation.id;
+  // C01-C12 keep their command contracts and behavior, but are presented as
+  // tools inside Sketch rather than as a separate drawing-command family.
+  if (/^C(?:0[1-9]|1[0-2])$/.test(command.id))
+    return "sketch";
   if (operationId === "shape.transform")
     return "transform";
   if (operationId === "shape.extrude" && command.displayName === "Extrude Surface")
@@ -288,13 +293,21 @@ export function initModelWorkspace(api) {
   const measureButton = makeToolButton("↔", "2点の距離を測定");
   measureButton.id = "modelMeasure";
   measureButton.setAttribute("aria-label", "2点の距離を測定");
-  const arrayButton = makeToolButton("⠿", "配列コピー");
-  arrayButton.id = "modelArrayCopy";
-  arrayButton.setAttribute("aria-label", "配列コピー");
   const thumbnailToggle = makeToolButton("▧", "アウトライナーのサムネイル表示");
   thumbnailToggle.id = "modelThumbnailToggle";
   thumbnailToggle.setAttribute("aria-label", "サムネイル表示切替");
-  commandBarTools.append(commandEditButton, commandDslButton, measureButton, arrayButton, thumbnailToggle);
+  // 補助機能はコマンドリボンではなくメニューバーにまとめる（指示026-13）。
+  const optionsMenu = document.createElement("details");
+  optionsMenu.className = "model-options-menu";
+  const optionsSummary = document.createElement("summary");
+  optionsSummary.textContent = "メニュー";
+  optionsSummary.setAttribute("aria-label", "CADメニュー");
+  const optionsItems = document.createElement("div");
+  optionsItems.className = "model-options-items";
+  optionsItems.append(thumbnailToggle, commandDslButton, commandEditButton);
+  optionsMenu.append(optionsSummary, optionsItems);
+  // 配列コピーは機能ごと不採用。旧ダイアログを起動する入口は置かない。
+  commandBarTools.append(measureButton);
   const commandSearch = panel.querySelector("#modelCommandSearch").closest("label");
   const commandList = panel.querySelector("#modelCommands");
   const commandSession = panel.querySelector("#modelSession");
@@ -643,15 +656,12 @@ export function initModelWorkspace(api) {
   const outliner = document.createElement("div");
   outliner.id = "modelOutliner";
   outliner.setAttribute("role", "tree");
-  const generationDrop = document.createElement("div");
-  generationDrop.className = "model-generation-drop";
-  generationDrop.textContent = "生成パネルへ形状をドロップ";
-  generationDrop.setAttribute("role", "region");
-  generationDrop.setAttribute("aria-label", "生成で使用");
-  leftPanel.append(outliner, generationDrop);
+  // Generation registration is deliberately available only from the
+  // outliner context menu.  A drop target here made accidental wiring too easy.
+  leftPanel.append(outliner);
   const inspector = panel.querySelector(".model-inspector");
   inspector.prepend(commandSearch, workplaneControls);
-  inspector.append(commandSession, modelStatus, diagnosticsPanel);
+  inspector.append(commandSession, diagnosticsPanel);
   libraryDialog.append(libraryDetails);
   actionControls.querySelector("#modelPreview").hidden = true;
   panel.querySelector("#modelRetry").hidden = true;
@@ -659,7 +669,7 @@ export function initModelWorkspace(api) {
   // expose Undo/Redo as command-bar controls in the reviewed layout.
   undoButton.hidden = true;
   redoButton.hidden = true;
-  commandBar.append(undoButton, redoButton, commandBarTools, commandList);
+  commandBar.append(undoButton, redoButton, commandBarTools, optionsMenu, commandList);
   panel.prepend(commandBar);
   const timeline = document.createElement("section");
   timeline.className = "model-timeline";
@@ -687,7 +697,8 @@ export function initModelWorkspace(api) {
     frozenHistoryStage = null;
     view.clearStage();
   });
-  panel.querySelector(".model-history header").append(historyScrubber);
+  // Playhead overlays the entire history strip rather than occupying the header.
+  panel.querySelector(".model-history").append(historyScrubber);
   const viewportOverlay = document.createElement("div");
   viewportOverlay.className = "model-viewport-overlay";
   const cursorReadout = document.createElement("output");
@@ -706,6 +717,10 @@ export function initModelWorkspace(api) {
   const dimensions = document.createElement("output");
   dimensions.className = "model-selection-dimensions";
   dimensions.hidden = true;
+  const viewportStatus = document.createElement("div");
+  viewportStatus.className = "model-viewport-status";
+  viewportStatus.setAttribute("role", "status");
+  viewportStatus.setAttribute("aria-live", "polite");
   const projectedDimensions = document.createElement("div");
   projectedDimensions.className = "model-projected-dimensions";
   projectedDimensions.hidden = true;
@@ -730,16 +745,27 @@ export function initModelWorkspace(api) {
   gizmo.className = "model-transform-gizmo";
   gizmo.hidden = true;
   gizmo.setAttribute("aria-label", "移動・回転ギズモ");
+  const axisArrow = (axis) => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 36 36");
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = `<path d="M6 30 29 7m-9 1h10v10"/><circle cx="6" cy="30" r="2.3"/><text x="24" y="30">${axis}</text>`;
+    return svg;
+  };
   for (const axis of ["X", "Y", "Z"]) {
-    const move = makeToolButton(`${axis}→`, `${axis}軸へ移動`);
+    const move = makeToolButton("", `${axis}軸へ移動`);
     move.dataset.gizmo = "move";
     move.dataset.axis = axis;
-    const rotate = makeToolButton(`↻${axis}`, `${axis}軸で回転`);
+    move.className = "model-axis-arrow";
+    move.append(axisArrow(axis));
+    const rotate = makeToolButton("", `${axis}軸で回転`);
     rotate.dataset.gizmo = "rotate";
     rotate.dataset.axis = axis;
-    const scale = makeToolButton(`□${axis}`, `${axis}軸だけ伸縮`);
+    rotate.append(createCommandIcon({ baseOperation: { id: "shape.transform" }, defaults: { mode: "rotate" } }));
+    const scale = makeToolButton("", `${axis}軸だけ伸縮`);
     scale.dataset.gizmo = "scale";
     scale.dataset.axis = axis;
+    scale.append(createCommandIcon({ baseOperation: { id: "shape.transform" }, defaults: { mode: "scale" } }));
     rotate.className = "model-rotation-ring";
     gizmo.append(move, rotate, scale);
   }
@@ -757,7 +783,8 @@ export function initModelWorkspace(api) {
   const boxSelection = document.createElement("div");
   boxSelection.className = "model-box-selection";
   boxSelection.hidden = true;
-  viewportOverlay.append(cursorReadout, snapGuide, measurementLine, measurementLabel, dimensions, projectedDimensions, inlineDimensionInput, distanceHandle, gizmo, boxSelection);
+  viewportStatus.append(modelStatus, dimensions, cursorReadout);
+  viewportOverlay.append(viewportStatus, snapGuide, measurementLine, measurementLabel, projectedDimensions, inlineDimensionInput, distanceHandle, gizmo, boxSelection);
   document.body.append(viewportOverlay);
   const libraryPlacementLabel = document.createElement("label"),
     libraryPlacementInput = document.createElement("input");
@@ -824,104 +851,6 @@ export function initModelWorkspace(api) {
   }
   dimensions.addEventListener("dblclick", editDisplayedDimension);
   projectedDimensions.addEventListener("dblclick", editDisplayedDimension);
-  const arrayDialog = document.createElement("dialog");
-  arrayDialog.className = "model-switch-dialog model-array-dialog";
-  arrayDialog.innerHTML = `<form method="dialog"><h3>配列コピー</h3><label>個数<input name="count" type="number" min="2" max="100" value="3"></label><label>間隔 XYZ mm<input name="spacing" value="20,0,0"></label><button value="cancel">キャンセル</button><button value="apply" class="primary">作成</button></form>`;
-  document.body.append(arrayDialog);
-  let arrayPreviewTimer = null, arrayPreviewSequence = 0, arrayPreviewPromise = Promise.resolve();
-  async function previewArrayCopies() {
-    clearTimeout(arrayPreviewTimer);
-    const sequence = ++arrayPreviewSequence;
-    const original = selection.length === 1 && store.getEntity(selection[0].entityId);
-    if (!original || !arrayDialog.open) return;
-    const document = store.document, outputs = [];
-    try {
-      await startRuntime();
-      const count = Number(arrayDialog.querySelector('[name="count"]').value);
-      const spacing = parseCoordinate(arrayDialog.querySelector('[name="spacing"]').value);
-      if (!Number.isSafeInteger(count) || count < 2 || count > 100) return;
-      native.release(previewHandles);
-      previewHandles = [];
-      for (let index = 1; index < count; index++) {
-        const command = clone(commandById("transform.move"));
-        command.resultPolicy = "independent";
-        const copySession = createCommandSession(command, {
-          selection: [{ entityId: original.id, entityKind: original.kind }],
-        });
-        copySession.parameters.translation = spacing.map((value) => value * index);
-        const result = await store.preview(copySession);
-        if (!result || !["ok", "warning"].includes(result.status))
-          throw new Error(result?.diagnostics?.[0]?.message || "配列のプレビューを作成できません。");
-        outputs.push(...result.outputs);
-        if (sequence !== arrayPreviewSequence || !arrayDialog.open || document !== store.document) {
-          native.release(outputs.map((output) => output.handle));
-          return;
-        }
-      }
-      previewHandles = outputs.map((output) => output.handle);
-      view.setPreview({ outputs }, { sourceEntityIds: [original.id] });
-      setStatus(`${count}個の等間隔配列をプレビューしています。`);
-    } catch (error) {
-      native.release(outputs.map((output) => output.handle));
-      if (sequence === arrayPreviewSequence && arrayDialog.open) report(error);
-    }
-  }
-  for (const input of arrayDialog.querySelectorAll("input"))
-    input.addEventListener("input", () => {
-      clearTimeout(arrayPreviewTimer);
-      arrayPreviewSequence++;
-      arrayPreviewTimer = setTimeout(() => { arrayPreviewPromise = previewArrayCopies(); }, 180);
-    });
-  arrayButton.addEventListener("click", () => {
-    const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
-    if (!entity) return setStatus("配列コピーする形状を1つ選択してください。");
-    arrayDialog.returnValue = "cancel";
-    arrayDialog.show();
-    setStatus("形状をドラッグして配列の間隔を決め、個数を調整してください。");
-    render({ keepProperties: true, keepHistory: true });
-    arrayPreviewPromise = previewArrayCopies();
-  });
-  arrayDialog.addEventListener("close", async () => {
-    clearTimeout(arrayPreviewTimer);
-    arrayPreviewSequence++;
-    await arrayPreviewPromise;
-    view.clearPreview();
-    native.release(previewHandles);
-    previewHandles = [];
-    if (arrayDialog.returnValue !== "apply") {
-      render({ keepProperties: true, keepHistory: true });
-      return;
-    }
-    try {
-      await startRuntime();
-      const original = selection.length === 1 && store.getEntity(selection[0].entityId);
-      if (!original) throw new Error("配列コピーする形状を1つ選択してください");
-      const count = Number(arrayDialog.querySelector('[name="count"]').value);
-      const spacing = parseCoordinate(arrayDialog.querySelector('[name="spacing"]').value);
-      if (!Number.isSafeInteger(count) || count < 2 || count > 100)
-        throw new Error("個数は2〜100の整数です");
-      let added = 0;
-      for (let index = 1; index < count; index++) {
-        const command = clone(commandById("transform.move"));
-        command.resultPolicy = "independent";
-        const copySession = createCommandSession(command, {
-          selection: [{ entityId: original.id, entityKind: original.kind }],
-        });
-        copySession.parameters.translation = spacing.map((value) => value * index);
-        if (await store.add(copySession)) added++;
-        else {
-          if (added > 1) store.transactions.squashLast(added, "配列コピー");
-          if (added) store.transactions.undo();
-          throw new Error("配列コピーを確定できませんでした。元形状を保持しました。");
-        }
-      }
-      if (added > 1) store.transactions.squashLast(added, "配列コピー");
-      setStatus(`${added + 1}個の等間隔配列を作成しました。`);
-      render();
-    } catch (error) {
-      report(error);
-    }
-  });
   gizmo.addEventListener("pointerdown", async (event) => {
     const handle = event.target.closest("button[data-gizmo]");
     if (!handle || session) return;
@@ -1396,7 +1325,6 @@ export function initModelWorkspace(api) {
       group.addEventListener("dragstart", (event) => {
         event.dataTransfer.effectAllowed = "move";
         event.dataTransfer.setData("application/x-pathloom-body", body.id);
-        event.dataTransfer.setData("application/x-pathloom-entity", entity.id);
       });
       group.addEventListener("dragover", (event) => {
         if (!event.dataTransfer.types.includes("application/x-pathloom-body")) return;
@@ -1420,18 +1348,6 @@ export function initModelWorkspace(api) {
       (folderHosts.get(folder?.id) || outliner).append(group);
     }
   }
-  generationDrop.addEventListener("dragover", (event) => {
-    if (!event.dataTransfer.types.includes("application/x-pathloom-entity")) return;
-    event.preventDefault();
-    generationDrop.classList.add("is-drop-target");
-  });
-  generationDrop.addEventListener("dragleave", () => generationDrop.classList.remove("is-drop-target"));
-  generationDrop.addEventListener("drop", (event) => {
-    event.preventDefault();
-    generationDrop.classList.remove("is-drop-target");
-    const entity = store.getEntity(event.dataTransfer.getData("application/x-pathloom-entity"));
-    if (entity) useEntityForGeneration(entity);
-  });
   document.addEventListener("pointerdown", (event) => {
     if (!objectMenu.contains(event.target)) closeObjectMenu();
     if (!historyMenu.contains(event.target)) closeHistoryMenu();
@@ -1574,10 +1490,6 @@ export function initModelWorkspace(api) {
     render();
   }
   async function begin(command) {
-    if (arrayDialog.open) {
-      arrayDialog.close("cancel");
-      await arrayPreviewPromise;
-    }
     curvePointPicking=false;
     closePolylineAsFace = false;
     frozenHistoryStage = null;
@@ -1633,51 +1545,15 @@ export function initModelWorkspace(api) {
     render();
     await startRuntime();
   }
+  // 指示026: 数値入力はタイピングのみ。wheel・ドラッグ操作で値を変更しない。
   function enhanceNumericFields(host) {
-    for (const input of host.querySelectorAll("input")) {
-      if (input.type === "checkbox" || input.dataset.numericEnhanced) continue;
-      const value = Number(input.value);
-      if (!Number.isFinite(value)) continue;
+    for (const input of host.querySelectorAll('input[type="number"]')) {
+      if (input.dataset.numericEnhanced) continue;
       input.dataset.numericEnhanced = "true";
       input.addEventListener("wheel", (event) => {
-        event.preventDefault();
-        input.focus({ preventScroll: true });
-        const angle = /角度|angle/i.test(input.getAttribute("aria-label") || "");
-        const step = angle ? (event.shiftKey ? Math.PI / 180 : Math.PI / 12) : event.altKey ? 0.1 : 1;
-        const next = Number(input.value) + (event.deltaY < 0 ? step : -step);
-        input.value = String(angle && !event.shiftKey ? Math.round(next / step) * step : next);
-        input.dispatchEvent(new Event("input", { bubbles: true }));
+        // フォーカス中の number input はブラウザ既定動作で値が変わるため抑止。
+        if (document.activeElement === input) event.preventDefault();
       }, { passive: false });
-      const handle = document.createElement("span");
-      handle.className = "model-parameter-drag";
-      handle.tabIndex = 0;
-      handle.setAttribute("role", "slider");
-      handle.setAttribute("aria-label", `${input.getAttribute("aria-label") || "数値"}をドラッグ`);
-      handle.addEventListener("pointerdown", (event) => {
-        event.preventDefault();
-        const startX = event.clientX;
-        const initial = Number(input.value);
-        const angle = /角度|angle/i.test(input.getAttribute("aria-label") || "");
-        const move = (moveEvent) => {
-          const raw = initial + (moveEvent.clientX - startX) * (angle ? Math.PI / 180 : moveEvent.altKey ? 0.1 : 1);
-          const step = angle && !moveEvent.shiftKey ? Math.PI / 12 : moveEvent.altKey ? 0.1 : 1;
-          input.value = String(Math.round(raw / step) * step);
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          cursorReadout.hidden = false;
-          cursorReadout.style.left = `${moveEvent.clientX}px`;
-          cursorReadout.style.top = `${moveEvent.clientY}px`;
-          cursorReadout.textContent = angle
-            ? `${(Number(input.value) * 180 / Math.PI).toFixed(1)}°${moveEvent.shiftKey ? " · 自由" : " · 15° snap"}`
-            : `${Number(input.value).toFixed(moveEvent.altKey ? 1 : 0)} mm${moveEvent.altKey ? " · 精密" : " · 1mm snap"}`;
-        };
-        trackDrag(handle, event, move, () => {}, () => {
-          input.value = String(initial);
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          if (session) cancel();
-          else { selectedFeature = null; featureEditActive = false; render(); }
-        });
-      });
-      input.insertAdjacentElement("afterend", handle);
     }
   }
   function properties() {
@@ -2382,18 +2258,9 @@ export function initModelWorkspace(api) {
         gizmo.style.left = `${screen.x + 18}px`;
         gizmo.style.top = `${screen.y - 42}px`;
       }
-      projectedDimensions.hidden = !!session || arrayDialog.open || !!selection[0]?.kind || !screen?.visible;
-      for (const [axis, label] of [...projectedDimensions.children].entries()) {
-        const point = [...entity.bbox.max];
-        point[axis] = center[axis];
-        const projected = view.project(point);
-        label.hidden = !projected?.visible;
-        if (projected) {
-          label.style.left = `${Math.min(projected.x - 12, screen.x - 18)}px`;
-          label.style.top = `${projected.y + 8 + axis * 15}px`;
-          label.textContent = `${["W", "D", "H"][axis]} ${(entity.bbox.max[axis] - entity.bbox.min[axis]).toFixed(2)} mm`;
-        }
-      }
+      // Selection dimensions live in the single bottom-left status area.
+      // Do not duplicate them as floating labels over the model.
+      projectedDimensions.hidden = true;
     } else projectedDimensions.hidden = true;
     if (session && !distanceHandle.hidden) {
       const source = Object.values(session.inputs).flat().map((reference) => store.getEntity(reference.entityId)).find(Boolean);
@@ -2405,6 +2272,7 @@ export function initModelWorkspace(api) {
       }
     }
   }
+  let activeCommandGroup = commandGroupDefinitions[0].id;
   function render({ keepProperties = false, keepHistory = false } = {}) {
     if (!panel.isConnected) return;
     $("modelStatus").textContent = status;
@@ -2477,28 +2345,28 @@ export function initModelWorkspace(api) {
       for (const command of pinned) pinnedSection.append(buildCommandButton(command));
       list.append(pinnedSection);
     }
-    for (const group of commandGroupDefinitions) {
-      const members = commands.filter((command) => commandGroup(command) === group.id);
-      if (!members.length) continue;
-      const section = document.createElement("details");
-      section.className = "model-command-group";
-      section.open = openCommandGroups.has(group.id) || !!q;
-      section.addEventListener("toggle", () => {
-        if (section.open) openCommandGroups.add(group.id);
-        else openCommandGroups.delete(group.id);
-      });
-      section.addEventListener("pointerenter", () => { section.open = true; });
-      const heading = document.createElement("summary");
-      heading.textContent = group.label;
-      heading.addEventListener("focus", () => { section.open = true; });
-      const buttons = document.createElement("div");
-      buttons.className = "model-command-group-buttons";
-      for (const command of members) {
-        buttons.append(buildCommandButton(command));
-      }
-      section.append(heading, buttons);
-      list.append(section);
+    // 指示026-1: グループは横並びタブで切り替え、選択中グループのアイコンだけを表示。
+    const tabs = document.createElement("div");
+    tabs.className = "model-command-tabs";
+    tabs.setAttribute("role", "tablist");
+    tabs.setAttribute("aria-label", "CADコマンドの分類");
+    const commandsPanel = document.createElement("div");
+    commandsPanel.className = "model-command-tab-panel";
+    const available = commandGroupDefinitions.filter((group) => commands.some((command) => commandGroup(command) === group.id));
+    if (!available.some((group) => group.id === activeCommandGroup)) activeCommandGroup = available[0]?.id || null;
+    for (const group of available) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "tab");
+      button.textContent = group.label;
+      button.dataset.groupId = group.id;
+      button.setAttribute("aria-selected", String(activeCommandGroup === group.id));
+      button.addEventListener("click", () => { activeCommandGroup = group.id; render({ keepProperties: true, keepHistory: true }); });
+      tabs.append(button);
     }
+    for (const command of commands.filter((candidate) => commandGroup(candidate) === activeCommandGroup))
+      commandsPanel.append(buildCommandButton(command));
+    list.append(tabs, commandsPanel);
     $("modelSession").textContent = session
       ? `${session.command.displayName} · ${session.state} · ${sessionReady(session) ? "入力済み" : "入力を選択してください"}`
       : "";
@@ -2623,17 +2491,17 @@ export function initModelWorkspace(api) {
     if (selectedEntity?.bbox) {
       const size = selectedEntity.bbox.max.map((value, index) => value - selectedEntity.bbox.min[index]);
       dimensions.replaceChildren();
-      for (const [index, label] of ["W", "D", "H"].entries()) {
-        const item = document.createElement("span");
-        item.dataset.dimension = ["widthMm", "depthMm", "heightMm"][index];
-        item.textContent = `${index ? " × " : ""}${label} ${size[index].toFixed(2)}`;
-        dimensions.append(item);
+      const sizeText = document.createElement("span");
+      sizeText.dataset.dimension = "widthMm";
+      sizeText.textContent = `W ${size[0].toFixed(2)} × D ${size[1].toFixed(2)} × H ${size[2].toFixed(2)} mm`;
+      dimensions.append(sizeText);
+      if (selectedEntity.kind === "solid") {
+        dimensions.append(` · 面積 ${(selectedEntity.displayCache?.areaMm2 || 0).toFixed(2)} mm² · 体積 ${(selectedEntity.displayCache?.volumeMm3 || 0).toFixed(2)} mm³`);
       }
-      dimensions.append(" mm");
       dimensions.hidden = false;
       const center = selectedEntity.bbox.min.map((value, index) => (value + selectedEntity.bbox.max[index]) / 2);
       const screen = view.project(center);
-      if (!activeDrag) gizmo.hidden = !screen?.visible || !!selection[0]?.kind || arrayDialog.open || (!!session && session.command.baseOperation.id !== "shape.transform") || featureEditActive;
+      if (!activeDrag) gizmo.hidden = !screen?.visible || !!selection[0]?.kind || (!!session && session.command.baseOperation.id !== "shape.transform") || featureEditActive;
       if (!activeDrag) for (const handle of gizmo.querySelectorAll("[data-gizmo]")) handle.disabled = !!session;
     } else {
       dimensions.hidden = true;
@@ -3548,24 +3416,6 @@ export function initModelWorkspace(api) {
         boxDragged = false;
         event.stopImmediatePropagation();
         if (session || pivotPicking || measureMode) return;
-        if (arrayDialog.open) {
-          const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
-          const hit = view.hit(event, "object")[0];
-          if (!entity || hit?.entityId !== entity.id) return;
-          const plane = { ...clone(store.document.uiState.workPlane), origin: centerOf(entity) };
-          const start = view.pointAt(event, plane);
-          if (!start) return;
-          trackDrag(canvas, event, (moveEvent) => {
-            const point = view.pointAt(moveEvent, plane);
-            if (!point) return;
-            const translation = point.map((value, axis) => value - start[axis]);
-            const spacing = moveEvent.altKey || !$("modelSnap").checked ? translation : translation.map(Math.round);
-            const field = arrayDialog.querySelector('[name="spacing"]');
-            field.value = spacing.join(",");
-            field.dispatchEvent(new Event("input", {bubbles:true}));
-          }, () => { arrayPreviewPromise = previewArrayCopies(); }, () => arrayDialog.close("cancel"));
-          return;
-        }
         const edge = view.hit(event, "edge")[0];
         if (edge && store.getEntity(edge.entityId)?.kind === "solid" && selection.some((reference) => reference.entityId === edge.entityId && reference.topologyId === edge.topologyId)) {
           const entity = store.getEntity(edge.entityId);
@@ -3632,7 +3482,7 @@ export function initModelWorkspace(api) {
   canvas.addEventListener(
     "pointerup",
     (event) => {
-      if (!active() || arrayDialog.open || event.button !== 0 || !down || !boxDragged || session) return;
+      if (!active() || event.button !== 0 || !down || !boxDragged || session) return;
       const rect = {
         left: Math.min(down[0], event.clientX),
         right: Math.max(down[0], event.clientX),
@@ -3654,7 +3504,7 @@ export function initModelWorkspace(api) {
   canvas.addEventListener(
     "dblclick",
     (event) => {
-      if (!active() || arrayDialog.open || session || event.button !== 0) return;
+      if (!active() || session || event.button !== 0) return;
       const hit = view.hit(event, "object")[0];
       if (!hit) return;
       event.preventDefault();
@@ -3667,7 +3517,7 @@ export function initModelWorkspace(api) {
   canvas.addEventListener(
     "contextmenu",
     (event) => {
-      if (!active() || arrayDialog.open || session) return;
+      if (!active() || session) return;
         const hit = view.hit(event, "edge")[0] || view.hit(event, "face")[0];
       if (hit) showSubshapeMenu(hit, event);
     },
@@ -3679,7 +3529,6 @@ export function initModelWorkspace(api) {
       if (!active() || event.button !== 0) return;
       planeTooltip.hidden = true;
       event.stopImmediatePropagation();
-      if (arrayDialog.open) return;
       if (
         down &&
         Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 3
@@ -3844,12 +3693,6 @@ export function initModelWorkspace(api) {
     "keydown",
     (event) => {
       const eventTarget = event.target instanceof Element ? event.target : document.body;
-      if (active() && event.key === "Escape" && arrayDialog.open) {
-        event.preventDefault(); event.stopImmediatePropagation();
-        if (activeDrag) activeDrag.abort();
-        else arrayDialog.close("cancel");
-        return;
-      }
       if (active() && event.key === "Escape" && activeDrag) {
         event.preventDefault(); event.stopImmediatePropagation(); activeDrag.abort(); return;
       }

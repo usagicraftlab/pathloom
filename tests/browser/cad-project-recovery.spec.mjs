@@ -1,8 +1,8 @@
-import { test, expect } from './fixtures/cad.mjs';
+import { test, expect, selectCadCommand } from './fixtures/cad.mjs';
 import { spawnSync } from 'node:child_process';
 
 async function rectangle(page) {
-  await page.getByRole('button', {name:'Rectangle',exact:true}).click();
+  await selectCadCommand(page, "Rectangle");
   await page.getByRole('button', {name:'確定',exact:true}).click();
   await expect(page.locator('.model-history-entry').last()).toContainText('valid');
 }
@@ -115,7 +115,7 @@ test('P1-07: open curves, open faces, NURBS, failed lastValid, command version a
     window.PathloomModel.render();
     return {id:store.document.id,features:structuredClone(store.document.features),entities:store.document.entities.map(e=>({id:e.id,kind:e.kind,hash:e.geometry.assetHash,bbox:e.bbox,summary:e.displayCache}))};
   });
-  await page.getByRole('button',{name:'Polyline',exact:true}).click();
+  await selectCadCommand(page, "Polyline");
   const project=await save(page);
   expect(project.cadDocument.draftSessions.length).toBeGreaterThan(0);
   const python=process.env.PATHLOOM_BREP_PYTHON||'.pathloom-runtime/python/bin/python';
