@@ -635,7 +635,8 @@ test("P4-03 face menu opens an exact supported sketch and lists ambiguous candid
     store.notify();
   }, target);
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
-  await page.mouse.click(p.x, p.y, { button: "right" });
+  const finalPoint = await screen(page, target.point);
+  await page.mouse.click(finalPoint.x, finalPoint.y, { button: "right" });
   await expect(page.getByRole("menuitem", { name: /この面のスケッチ [12] を編集/ })).toHaveCount(2);
   await expect(page.getByRole("menuitem", { name: "この面のスケッチを編集", exact: true })).toHaveCount(0);
 });

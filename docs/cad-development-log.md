@@ -2477,3 +2477,7 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   非表示ではface hitを遮ったままだった。対象Box以外の全entityを非表示にし、次frame後に同じfaceを
   右クリックするよう修正する。両runのJS249/native105+2skip/Rust24は成功し、全job生ログ確認済み。
   3回の新規browser失敗を後続成功へ置換しない。Ready/mergeは未実施。
+- 再修正head `9631b48`のpush run41535049908/PR run41535061097も同じ最終assertだけ各99成功/
+  1失敗（retryなし）。Box以外を隠した後も、sketch copy追加時のビュー中心更新前に求めた古い画面座標を
+  再利用していた。最終右クリック直前に同じ3D face centroidを再投影する。両runの
+  JS249/native105+2skip/Rust24は成功し、全job生ログ確認済み。4回の新規browser失敗を保持する。
