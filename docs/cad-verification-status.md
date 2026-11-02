@@ -454,3 +454,25 @@ DOM click/frame待ち1成功/2失敗を保持し、修正後はCPU制限3成功�
 各245成功、同一native実装の全107件105成功/任意NVIDIA USD2skip。local Rustはcargo不在で未実行。
 この最終差分のCIとmergeは記録時点で未実施であり、PR #57/ボードCodexログへ実結果を追記して照合する。
 既存A/T/R 62行と実Mac未実施の状態は変更しない。
+
+## 2026-11-02 — 指示028 B のA/T/R証拠
+
+既存A/T/R 62行と正規65 IDの状態は保持する。[生成グラフとCADの双方向ナビゲーション](cad-generation-navigation.md)
+に項目4/7の通知・追跡・強調契約を固定した。JSはノード/接続→上流binding、binding→下流ノード/接続、
+body identity→binding、現在entity/producer履歴を検査する。browserはCAD→生成input/ノード/接続、
+生成ノード→CAD entity/履歴、bindingエラー→修復対象を実画面で照合する。
+
+初回browserはfixture Python指定不備によりtest body前に失敗し、次回は閉じたエラー詳細により製品UI失敗、
+修正後の対象1件は成功した。これらを区別して開発ログへ保持する。Node24.22.1/20.20.2全JS各248成功、
+native全107件105成功/任意NVIDIA USD2skip。最終全件、CI、mergeは記録時点では未実施であり先取りしない。
+実Mac GUI/Tauri/OS dialog/Issue #37は未実施のまま、自動fixtureで合格へ昇格しない。
+
+最終local確認：Node24.22.1/Node20.20.2全JS各248成功、native全107件105成功/任意NVIDIA USD2skip、
+prepared assetsと実OCPを使うbrowser全98件成功（7.2分、retryなし）。local Rustはcargo不在で未実行。
+CIとmergeはこの追記時点で未実施のため、PRと開発ログへ実結果を別記する。
+
+公開製品head `cd6af1b4702a30202337a62ece6704ed5b151b32`（localとtree aa520ddf一致）は、
+push41424719644/PR41424752688各attempt1の全3job successを全6job生ログで照合した。
+各JS248成功、native107件中105成功/任意NVIDIA USD2skip、macOS Rust24成功、browser98成功
+（15.3分、retryなし、新規P2-28成功）。CIの失敗/再実行/cancelledは0。localの先行失敗2回は開発ログに保持。
+証拠文書追記後のCIとmergeはPR #58/ボードへ別記し、実Mac未実施と既存62行の状態を保持する。

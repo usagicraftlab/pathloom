@@ -179,3 +179,10 @@ Muse判断によりUX改善23項目をA→B→C→D→Eへ分け、Aの14項目�
 [選択・作図・直接操作の対応表](cad-ux-interactions.md)で現行差分、exact loop選択、タイプ数式、
 視覚marker、回転/移動、ズームsnapとgrid、orbitを実装・検証する。5/20は既存経路の回帰のみ。
 027マージ後に停止し、B〜Eの新規指示はMuseが発行する。#37/PR43は対象外。
+
+## 2026-11-02 — 指示028 B
+
+Museが有効化したBの項目4/7だけを扱い、既存binding IDによる生成グラフとCADの双方向
+選択・hover・強調、生成エラーからCAD修復履歴への移動を追加する。契約と証拠は
+[生成グラフとCADの双方向ナビゲーション](cad-generation-navigation.md)に固定する。
+A/C/D/E、保存schema、CAD演算、65 command、Issue #37、Draft PR #43へ範囲を広げない。
