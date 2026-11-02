@@ -434,3 +434,8 @@ JS/native/browser fixtureへ結ぶ。ローカルNode24.22.1/20.20.2全JS各245�
 105成功・任意NVIDIA USD 2skip。追加native2件の初回はテスト側のexport/一時directory指定の誤りで
 2 error、修正後2成功。local browserはChromium ZIP取得失敗後、96件が起動前に失敗してbody未実行。
 代替実行環境とCIは開発ログ/PRで更新する。この時点でbrowser成功/実Mac合格にはしない。
+
+追記：npm配布Chromium153と既存fontconfigによるlocal browser起動が復旧した。対象7件は
+初回環境/製品/test失敗を保持し、修正後7成功。全件で検出したorbitのmid-event retarget、
+Ctrl drag中のretarget、menu遮蔽を修正した。初回CIはpush85成功/11失敗、PR64成功/11失敗/
+21未完了で15分cancelled。全job生ログと分類・再実行は開発ログへ記録する。最終合格はまだ未成立。

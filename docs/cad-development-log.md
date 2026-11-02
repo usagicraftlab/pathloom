@@ -2315,3 +2315,30 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
 - Playwright Chromium installerは0 MiB/truncated ZIPで5回取得失敗。local browser全96件は
   実行体不在でlaunch時失敗しtest bodyは未実行。これは製品96件失敗とは分類しないが成功にも数えない。
   npm配布Chromiumでの代替起動を準備中。local Rustはcargo不在で未実行。CI/Draft PR/Ready/mergeは未完了。
+
+### 検証継続・環境復旧・回帰修正
+
+- 通常git pushは認証不在で失敗したため、Git Data APIで全20 blobとtreeのlocal hash一致を確認し
+  head `689b628477b14b18628cd5c6ccdebb9eaadda537`（tree `9647ff5cbacbdfe072d47d51d39aaea2f8305026`）を
+  Draft PR #57へ反映した。対応Issueはなく自動close対象なし。
+- npm配布Chromium153を手動展開した。最初の対象7件はFontConfigのSIGTRAPでpage.goto前に全失敗、
+  一時configのcwd誤りによるsuite未開始、single-process試行で同じ7件の起動失敗も記録した。
+  FONTCONFIG_PATHを既存の/etc/fontsへ直すと起動し、single-processを外してcontext再利用の終了も解消。
+  一時config/実行体/依存は製品やCIへ追加しない。以後のlocal browserは実OCP daemonと実ブラウザで実行する。
+- 対象7件の実行は3成功/4失敗（生成印の即時更新1件、type属性でなく既定text propertyを読むtest1件、
+  single-process環境のcontext再利用2件）→6成功/1失敗（zoom追従）→5成功/2失敗
+  （クリック位置のscreen pixel丸めの期待値、zoom追従）→7成功。初回debug単独の生成印1失敗も保持する。
+  zoomはpreview初期化前にcontrols購読が欠落する製品問題を修正し、wheelの複数イベントで刻みを確認した。
+- 全件で基準面選択直後のrenderがorbit targetを変え、同じクリックの最初の作図点をずらす製品回帰を検出。
+  retargetをevent後のmicrotaskへまとめ、Ctrl canvas copyのdrag中も保留する。作図/任意plane/Polyline閉鎖の
+  対象4件は修正後4成功。Ctrl copy/command reorder対象は初回1成功/1失敗で、後者は開いたメニューの
+  4段目がoutlinerを覆う製品問題だった。項目選択でmenuを閉じるよう修正し、次の4件は3成功/1失敗
+  （閉じたmenu buttonをvisible roleで探すtest）→対象2件再実行2成功。Move回帰は非同期commit後の
+  feature追加数を待ち、前のMoveをRotateとして読まないよう強化した。
+- 初回headのpush run `41392094765` attempt1はJS245/native105+2skip/macOS Rust24成功、
+  browser全96件は85成功/11失敗（12.0分）。PR run `41392127228` attempt1もJS/native/Rustは同じ成功、
+  browserは64成功/11失敗まで表示後15分上限でcancelled、残21件は未完了（集計なし、実行中を含む）。
+  全6jobの生ログを照合し、後続成功で置換しない。失敗箇所はrayのmid-event retarget、Ctrl drag、
+  menuのpointer遮蔽、生成印render、text property期待、zoom購読、非同期commit待ちへ分類した。
+- 修正後のNode24/20全JS各245成功。nativeは変更しておらず全107件105成功/任意2skipを保持。
+  local browser全件の最終結果、修正head CI、Ready/mergeはこの追記時点では未完了。

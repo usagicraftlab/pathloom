@@ -44,7 +44,7 @@ test("027 A multi-selection shows only union WDH, follows orbit target and marks
 test("027 A typed unit expressions commit exact dimensions and reject invalid arithmetic",async({page})=>{
   await selectCadCommand(page,"Box");
   const width=page.locator('[data-parameter="widthMm"]');
-  await expect(width).toHaveAttribute("type","text");
+  await expect(width).toHaveJSProperty("type","text");
   await width.fill("1/0");
   expect(await width.evaluate(input=>input.validity.valid)).toBe(false);
   await page.getByRole("button",{name:"確定",exact:true}).click();
@@ -58,6 +58,12 @@ test("027 A typed unit expressions commit exact dimensions and reject invalid ar
   await page.getByRole("button",{name:"確定",exact:true}).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(1);
   await expect.poll(()=>page.evaluate(()=>window.PathloomModel.store.document.entities[0]?.displayCache.volumeMm3)).toBeCloseTo(5625,5);
+  const box=await page.evaluate(()=>window.PathloomModel.store.document.entities[0]);
+  await select(page,box);await selectCadCommand(page,"Rotate");
+  await page.locator('[data-parameter="angleRad"]').fill("90deg/2");
+  await page.getByRole("button",{name:"確定",exact:true}).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(2);
+  expect(await page.evaluate(()=>window.PathloomModel.store.document.features.at(-1).parameters.angleRad)).toBeCloseTo(Math.PI/4,10);
 });
 
 test("027 A axis balls and workplane back restore reference and exact face support",async({page})=>{
@@ -98,6 +104,11 @@ test("027 A Alt edge click selects one exact loop and preserves ordinary and dou
   await expect.poll(()=>page.evaluate(()=>window.PathloomModel.store.document.uiState.selection.length)).toBe(1);
   const center=await project(page,[-10,-10,10]);await page.mouse.dblclick(center.x,center.y);
   await expect.poll(()=>page.evaluate(()=>window.PathloomModel.store.document.uiState.selection[0]?.kind||"body")).toBe("body");
+  await page.keyboard.press("Escape");await clickWorld(page,[30,15,0]);
+  const target=await page.evaluate(()=>window.Pathloom.viewState().target);
+  // Browser pointer positions are rounded to screen pixels before ray casting.
+  expect(Math.hypot(target[0]-30,target[1]-15)).toBeLessThan(0.5);
+  expect(target[2]).toBeCloseTo(0,6);
 });
 
 test("027 A move origin clears on cancel and commit; Shift rotation has ticks only while held",async({page},info)=>{
@@ -155,11 +166,13 @@ test("027 A zoom snap menu and grid follow scale; snap markers distinguish infer
   await selectCadMenuItem(page,"#modelZoomSnap");
   await expect(page.locator("#modelZoomSnap")).toHaveAttribute("aria-pressed","true");
   const step=await page.evaluate(()=>window.PathloomModel.displayState().gridStepMm);
-  const center=await project(page,[0,0,0]);await page.mouse.move(center.x,center.y);await page.mouse.wheel(0,-800);
+  const center=await project(page,[0,0,0]);await page.mouse.move(center.x,center.y);
+  for(let count=0;count<30;count++) await page.mouse.wheel(0,-100);
   await expect.poll(()=>page.evaluate(()=>window.PathloomModel.displayState().gridStepMm)).toBeLessThan(step);
   await selectCadMenuItem(page,"#modelZoomSnap");
   await expect.poll(()=>page.evaluate(()=>window.PathloomModel.displayState().gridStepMm)).toBe(1);
-  await page.mouse.move(center.x,center.y);await page.mouse.wheel(0,1500);
+  await page.mouse.move(center.x,center.y);
+  for(let count=0;count<60;count++) await page.mouse.wheel(0,100);
   await expect.poll(()=>page.evaluate(()=>window.PathloomModel.displayState().gridMinorOpacity)).toBe(0);
 });
 

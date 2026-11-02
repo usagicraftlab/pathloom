@@ -508,3 +508,4 @@ body[data-workspace-mode=model] .view-axis-buttons.axis-orbit{right:calc(var(--c
 .model-state-indicator[data-state=error]{color:#c7703c}.model-outline-body.has-recompute-error .model-outline-select{color:#bb613c}
 .model-options-items>button[aria-pressed=true]{box-shadow:inset 3px 0 #80c8b5;background:#80c8b522}
 #modelWorkplaneBack:disabled{opacity:.3}
+#modelWorkplaneBack svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}

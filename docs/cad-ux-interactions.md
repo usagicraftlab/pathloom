@@ -30,5 +30,9 @@ exact topologyの表示summaryに`edgeLoops`と頂点/edge/faceの接続索引�
 接続はOCCTのIsSame関係で作り、表示点の座標一致から隣接を推測しない。穴の内外wireは別に保つ。
 B-repや保存正本は変更せず、fresh runtimeへのimportでも同じwire集合を再構成する。
 遠方gridのmajor線は描画数を抑えるため10倍刻みで間引くが、snapのstepを変更しない。
+orbit targetの適用はクリック処理後にまとめ、drag中は保留する。基準面選択と同じクリックを
+最初の作図点として受ける途中や、Ctrlコピーの移動量計測中にカメラを動かさない。
+previewの非同期初期化後にもcontrolsのchange購読を接続し、wheel時のgrid更新を保証する。
+CADメニューは項目選択後に閉じ、outlinerを覆って操作を妨げない。
 
 実結果は[cad-development-log.md](cad-development-log.md)とPRに記録する。上の対応表だけで合格とはしない。

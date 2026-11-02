@@ -248,6 +248,9 @@ export function initModelWorkspace(api) {
     closePolylineAsFace = false;
   let activeDrag = null, pivotPicking = false, pendingPivot = null;
   let previousWorkplane = null, lastOrbitPoint = null;
+  let observedControls = null;
+  let pendingOrbitTarget = null, orbitUpdateQueued = false;
+  let orbitGesture = false;
   let session = null,
     selectedFeature = null,
     propertiesOpen = false,
@@ -304,6 +307,7 @@ export function initModelWorkspace(api) {
   const workplaneBack = makeToolButton("↶", "直前の作業面に戻る");
   workplaneBack.id = "modelWorkplaneBack";
   workplaneBack.setAttribute("aria-label", "直前の作業面に戻る");
+  workplaneBack.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 15 8-4 8 4-8 4zM8 4H4v4m0-4h9a6 6 0 0 1 6 6"/></svg>';
   workplaneBack.disabled = true;
   // 補助機能はコマンドリボンではなくメニューバーにまとめる（指示026-13）。
   const optionsMenu = document.createElement("details");
@@ -315,6 +319,9 @@ export function initModelWorkspace(api) {
   optionsItems.className = "model-options-items";
   optionsItems.append(thumbnailToggle, commandDslButton, commandEditButton, zoomSnapToggle);
   optionsMenu.append(optionsSummary, optionsItems);
+  optionsItems.addEventListener("click", (event) => {
+    if (event.target.closest("button")) optionsMenu.open = false;
+  });
   // 配列コピーは機能ごと不採用。旧ダイアログを起動する入口は置かない。
   commandBarTools.append(measureButton, workplaneBack);
   const commandSearch = panel.querySelector("#modelCommandSearch").closest("label");
@@ -1014,6 +1021,7 @@ export function initModelWorkspace(api) {
       handle.removeEventListener("pointercancel", abort);
       if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
       activeDrag = null;
+      orbitGesture = false;
       cursorReadout.hidden = true;
       snapGuide.hidden = true;
       rotationGuide.setAttribute("hidden", "");
@@ -1075,6 +1083,7 @@ export function initModelWorkspace(api) {
       const binding = bindBody(store.document, entity);
       store.resolveBindings();
       updateBindings(binding.id);
+      renderOutliner();
       setStatus("生成入力へ接続しました。ノード配線は変更していません。");
     } catch (error) {
       report(error);
@@ -1567,6 +1576,7 @@ export function initModelWorkspace(api) {
     }
   }
   function cancel() {
+    orbitGesture = false;
     curvePointPicking=false;
     referencePlanePicking=false;
     mirrorPlanePicking = false;
@@ -2345,12 +2355,25 @@ export function initModelWorkspace(api) {
     }
   }
   function updateView() {
+    observeCameraControls();
     const bounds = selectionBounds(store.document, selection);
     const target = bounds ? bounds.min.map((value, axis) => (value + bounds.max[axis]) / 2) : lastOrbitPoint;
-    if (target) view.setOrbitTarget(target);
+    pendingOrbitTarget = target && [...target];
+    if (!orbitUpdateQueued) {
+      orbitUpdateQueued = true;
+      // A plane pick renders before accepting the same click as its first
+      // drawing point. Keep that ray's camera fixed until the event finishes.
+      queueMicrotask(() => {
+        orbitUpdateQueued = false;
+        if (!pendingOrbitTarget || activeDrag || orbitGesture) return;
+        view.setOrbitTarget(pendingOrbitTarget);
+        positionViewportControls();
+      });
+    }
     view.update(store.document, selection, { colors: uiPreferences.colors, snapStep: snapStep() });
   }
   function positionViewportControls() {
+    observeCameraControls();
     view.updateGrid(snapStep());
     if (activeDrag) return;
     const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
@@ -3426,7 +3449,14 @@ export function initModelWorkspace(api) {
     snapPoint = null;
   };
   const canvas = api.preview().canvas;
-  api.preview().controls?.addEventListener("change", positionViewportControls);
+  function observeCameraControls() {
+    const controls = api.preview().controls;
+    if (controls === observedControls) return;
+    observedControls?.removeEventListener("change", positionViewportControls);
+    observedControls = controls;
+    controls?.addEventListener("change", positionViewportControls);
+  }
+  observeCameraControls();
   document.addEventListener("pathloom:camera-changed", positionViewportControls);
   const planeTooltip = document.createElement("div");
   planeTooltip.className = "model-plane-tooltip";
@@ -3590,7 +3620,9 @@ export function initModelWorkspace(api) {
           if (!start) return;
           const command = clone(commandById("transform.move"));
           command.resultPolicy = "independent";
-          await begin(command);
+          orbitGesture = true;
+          try { await begin(command); }
+          catch (error) { orbitGesture = false; report(error); return; }
           view.setMoveGhost(entity);
           const target = session;
           trackDrag(canvas, event, (moveEvent) => {
@@ -4010,6 +4042,8 @@ export function initModelWorkspace(api) {
       previousWorkplane = null;
       workplaneBack.disabled = true;
       lastOrbitPoint = null;
+      pendingOrbitTarget = null;
+      orbitGesture = false;
       view.setMoveGhost(null);
       view.clearPreview();
       if (doc) store.commitRestore(doc);

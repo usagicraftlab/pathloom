@@ -295,14 +295,17 @@ test("P3 Move inference, Alt precision and Shift snapped rotation keep the reque
   await add(page,"B01",{anchor:[40,20,0],widthMm:10,depthMm:10,heightMm:10});
   await select(page,box);
   await drag(page,page.locator('[data-gizmo="move"][data-axis="X"]'),36);
+  await expect(page.locator(".model-history-entry")).toHaveCount(3);
   let result=await last(page);
   expect(result.feature.parameters.translation).toEqual([35,0,0]);
   await select(page,result.entity);
   await drag(page,page.locator('[data-gizmo="move"][data-axis="Y"]'),15,{alt:true});
+  await expect(page.locator(".model-history-entry")).toHaveCount(4);
   result=await last(page);
   expect(result.feature.parameters.translation).toEqual([0,1.5,0]);
   await select(page,result.entity);
   await drag(page,page.locator('[data-gizmo="rotate"][data-axis="Z"]'),32,{shift:true});
+  await expect(page.locator(".model-history-entry")).toHaveCount(5);
   result=await last(page);
   expect(result.feature.parameters.angleRad).toBeCloseTo(Math.PI/6,8);
   expect(result.entity.displayCache.volumeMm3).toBeCloseTo(1000,5);
