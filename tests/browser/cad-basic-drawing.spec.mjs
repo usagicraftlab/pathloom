@@ -433,10 +433,10 @@ test("P1-05 constrained rectangle preserves lastValid through nonconvergence, Un
     "ソルバー成分",
   );
   await page
-    .getByRole("spinbutton", { name: "スケッチ 幅", exact: true })
+    .getByRole("textbox", { name: "スケッチ 幅", exact: true })
     .fill("80");
   await page
-    .getByRole("spinbutton", { name: "スケッチ 幅", exact: true })
+    .getByRole("textbox", { name: "スケッチ 幅", exact: true })
     .press("Tab");
   await expect
     .poll(() =>

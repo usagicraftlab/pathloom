@@ -260,3 +260,11 @@ CAD演算、command定義、保存schema、bindingの能力・状態は変更し
 wheel/drag増減を行わない。CAD演算、native正本、command DSL、保存schemaは変更しない。
 メニュー入口、status、共通方向widget、gizmo、grid、historyの変更を65機能の能力昇格や
 実Mac GUI合格へ広げない。
+
+## 2026-11-02 — 指示027 A 選択・作図・直接操作
+
+正規65 IDの実装状態は保持する。複数選択の外形寸法、種類別snap marker、作業面の復帰、
+単位付き四則入力、Alt exact edge loop、outliner状態印、Move元輪郭、Shift時だけの15°回転snap、
+fadeするgridと任意のズーム連動snap、選択/最後の点のorbit targetをUIへ接続する。
+既存の方向ボールと再計算ghostは対象回帰で確認する。native変更はexact接続の表示summaryのみ。
+対象番号と境界・検証入口は[cad-ux-interactions.md](cad-ux-interactions.md)。B〜Eは後続指示待ち。

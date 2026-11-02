@@ -494,3 +494,17 @@ body[data-workspace-mode=model] .view-axis-buttons.axis-orbit{right:calc(var(--c
 #modelPanel .model-history-scrubber::-moz-range-track{height:1px;background:rgba(111,136,151,.24)}
 #modelPanel .model-history-scrubber::-moz-range-thumb{width:3px;height:31px;border:0;border-radius:2px;background:#3689bd}
 #modelPanel .model-history-entry svg{width:15px;height:15px}
+
+/* CAD interaction feedback: silhouette and position carry the state. */
+.model-snap-guide{width:22px;height:22px;transform:translate(-11px,-11px);border:0;border-radius:0;background:transparent}
+.model-snap-guide::before,.model-snap-guide::after{content:none}
+.model-snap-guide svg{width:100%;height:100%;fill:#fff7d8b8;stroke:#dc7b24;stroke-width:1.5;stroke-linejoin:round;filter:drop-shadow(0 0 2px #fff)}
+.model-snap-guide[data-snap-kind=intersection] svg{stroke-width:2.2}
+.model-rotation-guide{position:fixed;width:144px;height:144px;pointer-events:none;overflow:visible;fill:none;stroke:#4f8cbe;stroke-width:1.4;filter:drop-shadow(0 0 2px #fff)}
+.model-rotation-guide[hidden]{display:none}
+.model-angle-tick{stroke:#6b8a9d;stroke-width:1}.model-angle-arc{stroke:#dc8c30;stroke-width:2.5}
+.model-state-indicator{display:inline-flex;align-items:center;flex:0 0 13px;width:13px;height:13px;color:#3c8b85}
+.model-state-indicator svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.model-state-indicator[data-state=error]{color:#c7703c}.model-outline-body.has-recompute-error .model-outline-select{color:#bb613c}
+.model-options-items>button[aria-pressed=true]{box-shadow:inset 3px 0 #80c8b5;background:#80c8b522}
+#modelWorkplaneBack:disabled{opacity:.3}

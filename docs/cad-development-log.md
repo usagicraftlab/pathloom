@@ -2300,3 +2300,18 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   `41369621172`のfailed job再実行attempt 2はJS 239成功・browser 89成功（retryなし、6.4分）で
   完走し、生ログを確認した。attempt 1の88成功・1失敗をattempt 2で置換しない。証拠文書commitの
   push／PR両CI、Ready、mergeはこの追記時点では未完了である。
+
+## 2026-11-02 — 指示027 A（選択・作図・直接操作）
+
+- ボード12:26 JSTの分割承認を受け、Aの14項目だけを実装。5/20の既存経路は回帰で照合する。
+  baseはPR56 merge `fd6cb1d46580cea71eb4fdb5c255cf142ec47f63`。既存main run41372498751の
+  全3job success再確認は開始時証拠であり、027の成功証拠には使わない。
+- 合併bbox、SVG snap種類、直前作業面復帰、bounded数式parser、exact OCCT wire/隣接表示metadata、
+  outlinerのエラー/生成印、Move元輪郭、Shift時のみ15°snapと弧目盛り、minor grid fade、
+  1/2/5系列の任意ズームsnap、orbit targetを追加。B〜E/65 command契約/保存schemaは変更しない。
+- 初回既存JS全239成功。追加後Node24.22.1と厳密Node20.20.2の全JSは各245成功、skip/失敗0。
+  追加ロジック対象10件も成功。native追加2件は初回export APIとtemporary rootのtest記述誤りで2 error、
+  修正後2成功。native全107件は105成功・任意NVIDIA USD 2skip（25.2秒）。
+- Playwright Chromium installerは0 MiB/truncated ZIPで5回取得失敗。local browser全96件は
+  実行体不在でlaunch時失敗しtest bodyは未実行。これは製品96件失敗とは分類しないが成功にも数えない。
+  npm配布Chromiumでの代替起動を準備中。local Rustはcargo不在で未実行。CI/Draft PR/Ready/mergeは未完了。

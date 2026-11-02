@@ -172,3 +172,10 @@ in-scene XYZ、context-menu生成登録、縦playhead、配列コピー撤去、
 pivot/gizmo、Sketch内C01〜C12、小型context menuを横断整合させる。
 製品演算・保存schema・正規65 IDは増減しない。ローカルbrowserを実行できない環境では
 未実施として記録し、Museの明示判断または実行可能環境での全件成功なしにReady/mergeしない。
+
+## 2026-11-02 — 指示027 A
+
+Muse判断によりUX改善23項目をA→B→C→D→Eへ分け、Aの14項目のみ先行する。
+[選択・作図・直接操作の対応表](cad-ux-interactions.md)で現行差分、exact loop選択、タイプ数式、
+視覚marker、回転/移動、ズームsnapとgrid、orbitを実装・検証する。5/20は既存経路の回帰のみ。
+027マージ後に停止し、B〜Eの新規指示はMuseが発行する。#37/PR43は対象外。

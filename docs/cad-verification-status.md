@@ -426,3 +426,11 @@ fixtureを追従させ、方向widgetとcommand barの重なりを製品側で�
 最終製品headのPR CIはbrowser 89件全成功（retryなし）まで完走した。途中の49成功/40失敗、
 87成功/2失敗、およびpush attempt 1の既存project recovery 1件の間欠失敗は開発ログに保持し、
 後続再実行やPR成功で置換しない。
+
+## 2026-11-02 — 指示027 A のA/T/R証拠
+
+既存A/T/R 62行と正規65 IDの状態は保持する。[027 A対応表](cad-ux-interactions.md)に14項目を
+JS/native/browser fixtureへ結ぶ。ローカルNode24.22.1/20.20.2全JS各245成功、native全107件は
+105成功・任意NVIDIA USD 2skip。追加native2件の初回はテスト側のexport/一時directory指定の誤りで
+2 error、修正後2成功。local browserはChromium ZIP取得失敗後、96件が起動前に失敗してbody未実行。
+代替実行環境とCIは開発ログ/PRで更新する。この時点でbrowser成功/実Mac合格にはしない。

@@ -1,23 +1,72 @@
-export function parseScalar(text, kind = "length") {
-  const match = String(text)
-    .trim()
-    .match(
-      /^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)\s*(mm|cm|m|deg|rad)?$/i,
-    );
-  if (!match)
-    throw new Error("数値と単位（mm/cm/m、deg/rad）を入力してください");
-  const n = Number(match[1]),
-    unit = (match[2] || "").toLowerCase();
-  if (!Number.isFinite(n)) throw new Error("有限の数値が必要です");
-  if (kind === "angle") {
-    if (unit && !["deg", "rad"].includes(unit))
-      throw new Error("角度単位が必要です");
-    return n * (unit === "rad" ? 1 : Math.PI / 180);
+export function parseScalar(text, kind = "length", { defaultUnit = kind === "angle" ? "deg" : "mm" } = {}) {
+  const implicitScale = { mm: 1, cm: 10, m: 1000, deg: Math.PI / 180, rad: 1 }[defaultUnit];
+  if (implicitScale === undefined || (["deg", "rad"].includes(defaultUnit) ? "angle" : "length") !== kind)
+    throw new Error("入力単位を確認してください");
+  const source = String(text).trim(), tokens = [];
+  if (!source || source.length > 256) throw new Error("数値と単位、四則式を入力してください");
+  const pattern = /\s*(?:(\d+(?:\.\d*)?|\.\d+)(e[+-]?\d+)?|(mm|cm|m|deg|rad)\b|([()+*/-]))/iy;
+  for (let position = 0; position < source.length;) {
+    pattern.lastIndex = position;
+    const match = pattern.exec(source);
+    if (!match) throw new Error("数値と単位、四則式を入力してください");
+    tokens.push(match[1] ? { value: Number(match[1] + (match[2] || "")) }
+      : match[3] ? { unit: match[3].toLowerCase() } : match[4]);
+    position = pattern.lastIndex;
+    if (tokens.length > 128) throw new Error("式が長すぎます");
   }
-  if (["deg", "rad"].includes(unit)) throw new Error("長さ単位が必要です");
-  const value = n * ({ cm: 10, m: 1000 }[unit] || 1);
-  if (!Number.isFinite(value)) throw new Error("有限の長さが必要です");
-  return value;
+  let index = 0;
+  const finite = (value) => {
+    if (!Number.isFinite(value.n)) throw new Error("有限の数値が必要です");
+    return value;
+  };
+  function atom(depth) {
+    if (depth > 16) throw new Error("式の括弧が深すぎます");
+    const token = tokens[index++];
+    let value;
+    if (token === "+" || token === "-") {
+      value = atom(depth + 1);
+      value.n *= token === "-" ? -1 : 1;
+    } else if (token === "(") {
+      value = expression(depth + 1);
+      if (tokens[index++] !== ")") throw new Error("括弧を閉じてください");
+    } else if (token && typeof token.value === "number") value = { n: token.value, dimension: null };
+    else throw new Error("数値が必要です");
+    if (tokens[index]?.unit) {
+      if (value.dimension) throw new Error("単位を重ねて指定できません");
+      const unit = tokens[index++].unit;
+      value = { n: value.n * ({ cm: 10, m: 1000, deg: Math.PI / 180 }[unit] || 1),
+        dimension: ["deg", "rad"].includes(unit) ? "angle" : "length" };
+    }
+    return finite(value);
+  }
+  function product(depth) {
+    let a = atom(depth);
+    while (tokens[index] === "*" || tokens[index] === "/") {
+      const operator = tokens[index++], b = atom(depth);
+      if (operator === "/" && b.n === 0) throw new Error("0では割れません");
+      if (operator === "*" ? a.dimension && b.dimension : b.dimension && a.dimension !== b.dimension)
+        throw new Error("単位の組み合わせが不正です");
+      a = finite({ n: operator === "*" ? a.n * b.n : a.n / b.n,
+        dimension: operator === "*" ? a.dimension || b.dimension : b.dimension ? null : a.dimension });
+    }
+    return a;
+  }
+  function expression(depth) {
+    let a = product(depth);
+    while (tokens[index] === "+" || tokens[index] === "-") {
+      const operator = tokens[index++], b = product(depth);
+      if (a.dimension && b.dimension && a.dimension !== b.dimension)
+        throw new Error("長さと角度は混ぜられません");
+      if (a.dimension && !b.dimension) b.n *= implicitScale;
+      if (b.dimension && !a.dimension) a.n *= implicitScale;
+      a = finite({ n: a.n + (operator === "+" ? b.n : -b.n), dimension: a.dimension || b.dimension });
+    }
+    return a;
+  }
+  const value = expression(0);
+  if (index !== tokens.length) throw new Error("式を確認してください");
+  if (value.dimension && value.dimension !== kind) throw new Error(kind === "angle" ? "角度単位が必要です" : "長さ単位が必要です");
+  return finite({ n: value.n * (!value.dimension ? implicitScale : 1) }).n;
 }
 // Coordinate mapping needs the same orthonormal frame that the native kernel
 // accepts. Offset-specific plane membership remains owned by native validation.
