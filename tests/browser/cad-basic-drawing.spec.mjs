@@ -628,12 +628,13 @@ test("P4-03 face menu opens an exact supported sketch and lists ambiguous candid
   expect(await page.evaluate(({ entityId, topologyId }) =>
     window.PathloomModel.store.document.sketches.every((sketch) =>
       sketch.support.entityId === entityId && sketch.support.topologyId === topologyId), target)).toBe(true);
-  await page.evaluate(() => {
+  await page.evaluate(({ entityId }) => {
     const store = window.PathloomModel.store;
     for (const entity of store.document.entities)
-      if (entity.kind === "curve") entity.visibility = "hidden";
+      if (entity.id !== entityId) entity.visibility = "hidden";
     store.notify();
-  });
+  }, target);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => resolve())));
   await page.mouse.click(p.x, p.y, { button: "right" });
   await expect(page.getByRole("menuitem", { name: /この面のスケッチ [12] を編集/ })).toHaveCount(2);
   await expect(page.getByRole("menuitem", { name: "この面のスケッチを編集", exact: true })).toHaveCount(0);

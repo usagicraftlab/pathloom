@@ -2472,3 +2472,8 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   最終候補確認前だけcurve表示を隠して同じfaceをhitする。push Rust job125566700903はrunner待ちのまま
   step実行前cancelled、PR同一head Rust24成功と区別して保持する。全job生ログを確認し、再修正headで
   browser全件を再確認する。Ready/mergeは未実施。
+- 再修正head `2662305`のpush run41532402347/PR run41532411187も同じ最終assertだけ各99成功/
+  1失敗（retryなし）。閉じたRectangleの表示entityは`curve`ではなくsurface扱いのため、curveだけの
+  非表示ではface hitを遮ったままだった。対象Box以外の全entityを非表示にし、次frame後に同じfaceを
+  右クリックするよう修正する。両runのJS249/native105+2skip/Rust24は成功し、全job生ログ確認済み。
+  3回の新規browser失敗を後続成功へ置換しない。Ready/mergeは未実施。
