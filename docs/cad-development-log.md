@@ -2457,3 +2457,12 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
 - source抑制時のlinked copy blocked、Undo復帰、source削除時のunresolved、Undo復帰を既存Ctrl copy
   browser回帰へ追加した。Draft PRの全CIを完走させた後、ローカルbrowser代替可否をMuseへ判断依頼する。
   CI、Ready、mergeはこの時点では未実施。
+
+### 初回公開head CI
+
+- 公開head `c83941a`（localとtree `1bc271b`一致）のpush run41527043267とPR run41527075781は、
+  各Node JS249、native105成功+任意2skip、macOS Rust24が成功した。browserは両runとも同じ新規
+  face-menu回帰だけが失敗し、各99成功/1失敗（15.8分/15.5分、retryなし）。全6job生ログを確認した。
+- 失敗は製品処理へ到達する前、非同期のsketch attach完了を待たずにテストが`sketches[0].support`を
+  書いたraceだった。attach後のsketch数をpollしてからsupportを設定するようテストを修正する。
+  初回2runの失敗を後続成功へ置換せず、修正headで全CIを再確認する。Ready/mergeは未実施。

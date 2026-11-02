@@ -592,6 +592,7 @@ test("P4-03 face menu opens an exact supported sketch and lists ambiguous candid
   await commit(page, 2);
   await page.locator(".model-history-entry").last().click();
   await page.getByRole("button", { name: "拘束付きスケッチとして編集", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.sketches.length)).toBe(1);
   const target = await page.evaluate(() => {
     const store = window.PathloomModel.store,
       box = store.document.entities.find((entity) => entity.kind === "solid"),
