@@ -1,4 +1,4 @@
-import {test,expect} from './fixtures/cad.mjs';
+import {test,expect,selectCadCommand} from './fixtures/cad.mjs';
 
 async function add(page,id,parameters={}){
   return page.evaluate(async({id,parameters})=>{
@@ -92,7 +92,7 @@ async function clickWorld(page, point, offset = 0) {
 test('P2 E03: Trim retains both intervals and cutters, Undo/Redo and failed lastValid survive v2',async({page})=>{
   const object=await add(page,'C02',{start:[0,0,0],end:[10,0,0]});
   const cutters=[];for(const x of [3,7])cutters.push(await add(page,'C02',{start:[x,-5,0],end:[x,5,0]}));
-  await page.getByRole('button',{name:'Trim Curve',exact:true}).click();
+  await selectCadCommand(page,'Trim Curve');
   await input(page,'object',[object.entity]);await input(page,'cutters',cutters.map(c=>c.entity));
   await axis(page);await page.getByRole('button',{name:'区間・接続側を画面で指定',exact:true}).click();await clickWorld(page,[5,0,0]);
   const f=await commit(page);expect(f.outputSlots).toHaveLength(2);expect(f.parameters.removePoint[0]).toBeCloseTo(5,0);expect(f.parameters.removePoint[1]).toBeCloseTo(0,4);
@@ -107,7 +107,7 @@ test('P2 E03: Trim retains both intervals and cutters, Undo/Redo and failed last
 
 test('P2 E04: explicit rectangle edge Split keeps every other edge as exact output',async({page})=>{
   const object=await add(page,'C04');const edge=object.summary.curveParameters[0];
-  await page.getByRole('button',{name:'Split Curve',exact:true}).click();await input(page,'object',[object.entity]);await input(page,'edge',[{entityId:object.entity,topologyId:edge.topologyId}]);
+  await selectCadCommand(page,'Split Curve');await input(page,'object',[object.entity]);await input(page,'edge',[{entityId:object.entity,topologyId:edge.topologyId}]);
   await param(page,'splitParameters',[(edge.first+edge.last)/2]);
   const f=await commit(page);expect(f.command.version).toBe(2);expect(f.outputSlots).toHaveLength(5);
   const sum=await page.evaluate(id=>{const s=window.PathloomModel.store;return s.getFeature(id).outputSlots.reduce((n,o)=>n+s.getEntity(o.entityId).displayCache.lengthMm,0)},f.id);expect(sum).toBeCloseTo(200,6);
@@ -116,39 +116,39 @@ test('P2 E04: explicit rectangle edge Split keeps every other edge as exact outp
 
 test('P2 E07: Fillet/Chamfer retain all outputs through keepInputs, Undo and v2',async({page})=>{
   const a=await add(page,'C02',{start:[-10,0,0],end:[0,0,0]}),b=await add(page,'C02',{start:[0,0,0],end:[0,10,0]});
-  await page.getByRole('button',{name:'Fillet Curves',exact:true}).click();await input(page,'first',[a.entity]);await input(page,'second',[b.entity]);await param(page,'solutionIndex',1);
+  await selectCadCommand(page,'Fillet Curves');await input(page,'first',[a.entity]);await input(page,'second',[b.entity]);await param(page,'solutionIndex',1);
   const f=await commit(page);expect(f.outputSlots).toHaveLength(3);expect(await visible(page)).toHaveLength(3);
   await page.locator('.model-history-entry').last().click();await param(page,'keepInputs',true);await page.getByRole('button',{name:'設定変更を確定',exact:true}).click();
   await expect.poll(()=>visible(page)).toHaveLength(5);
   await page.keyboard.press('Control+z');await expect.poll(()=>visible(page)).toHaveLength(3);
   await page.keyboard.press('Control+Shift+z');await expect.poll(()=>visible(page)).toHaveLength(5);
-  await page.getByRole('button',{name:'Chamfer Curves',exact:true}).click();await input(page,'first',[a.entity]);await input(page,'second',[b.entity]);await param(page,'keepInputs',true);await param(page,'secondDistanceMm',3);
+  await selectCadCommand(page,'Chamfer Curves');await input(page,'first',[a.entity]);await input(page,'second',[b.entity]);await param(page,'keepInputs',true);await param(page,'secondDistanceMm',3);
   const chamfer=await commit(page);expect(chamfer.outputSlots).toHaveLength(3);
   const after=await roundTrip(page);expect(after.features.find(x=>x.id===f.id).lastValid.curveKeepInputs).toBe(true);
 });
 
 test('P2 E05/E10/E11: approved NURBS continuation, periodic seam and pole editing use explicit inputs',async({page})=>{
-  const a=await add(page,'C09');await page.getByRole('button',{name:'Extend Curve',exact:true}).click();await input(page,'object',[a.entity]);await param(page,'distanceMm',5);
+  const a=await add(page,'C09');await selectCadCommand(page,'Extend Curve');await input(page,'object',[a.entity]);await param(page,'distanceMm',5);
   await expect(page.locator('#modelProperties')).toContainText('NURBS/Bezierのcontinuationは接線延長');
   const extended=await commit(page);expect(extended.parameters.method).toBe('continuation');
   const points=await page.evaluate(id=>{const s=window.PathloomModel.store;return s.getEntity(s.getFeature(id).outputSlots[0].entityId).displayCache.preview.points.map(p=>p.point)},extended.id);
   expect(points.some(p=>Math.hypot(p[0]-30-5/Math.SQRT2,p[1]+5/Math.SQRT2,p[2])<1e-6)).toBe(true);
-  const circle=await add(page,'C06');await page.getByRole('button',{name:'Set Curve Seam',exact:true}).click();await input(page,'object',[circle.entity]);await param(page,'seamParameter',Math.PI/2);const seam=await commit(page);
-  await page.getByRole('button',{name:'Reverse Curve',exact:true}).click();await input(page,'object',[seam.outputSlots[0].entityId]);await commit(page);
-  const spline=await add(page,'C09');await page.getByRole('button',{name:'Edit Curve Poles',exact:true}).click();await input(page,'object',[spline.entity]);await param(page,'mode','insertKnot');const edited=await commit(page);expect(edited.parameters.mode).toBe('insertKnot');
+  const circle=await add(page,'C06');await selectCadCommand(page,'Set Curve Seam');await input(page,'object',[circle.entity]);await param(page,'seamParameter',Math.PI/2);const seam=await commit(page);
+  await selectCadCommand(page,'Reverse Curve');await input(page,'object',[seam.outputSlots[0].entityId]);await commit(page);
+  const spline=await add(page,'C09');await selectCadCommand(page,'Edit Curve Poles');await input(page,'object',[spline.entity]);await param(page,'mode','insertKnot');const edited=await commit(page);expect(edited.parameters.mode).toBe('insertKnot');
   const poleCount=await page.evaluate(id=>{const s=window.PathloomModel.store;return s.getEntity(s.getFeature(id).outputSlots[0].entityId).displayCache.curveParameters[0].poleCount},edited.id);expect(poleCount).toBe(5);
-  await page.getByRole('button',{name:'Edit Curve Poles',exact:true}).click();await input(page,'object',[edited.outputSlots[0].entityId]);await param(page,'mode','removeKnot');await param(page,'multiplicity',0);const removed=await commit(page,'warning');expect(removed.diagnostics[0].details.maxDeviationMm).toBeLessThan(1e-9);
-  const source=await add(page,'C09');await page.getByRole('button',{name:'Edit Curve Poles',exact:true}).click();await input(page,'object',[source.entity]);await param(page,'poleIndex',2);await param(page,'position',[10,20,0]);const moved=await commit(page);expect(moved.parameters.position).toEqual([10,20,0]);
+  await selectCadCommand(page,'Edit Curve Poles');await input(page,'object',[edited.outputSlots[0].entityId]);await param(page,'mode','removeKnot');await param(page,'multiplicity',0);const removed=await commit(page,'warning');expect(removed.diagnostics[0].details.maxDeviationMm).toBeLessThan(1e-9);
+  const source=await add(page,'C09');await selectCadCommand(page,'Edit Curve Poles');await input(page,'object',[source.entity]);await param(page,'poleIndex',2);await param(page,'position',[10,20,0]);const moved=await commit(page);expect(moved.parameters.position).toEqual([10,20,0]);
   await roundTrip(page);
 });
 
 test('P2 E01/E02/E08/E09: groups, Explode, G2 Blend and explicit approximation approval',async({page})=>{
   const a=await add(page,'C02',{start:[0,0,0],end:[10,0,0]}),b=await add(page,'C02',{start:[10,0,0],end:[20,0,0]}),c=await add(page,'C02',{start:[30,0,0],end:[40,0,0]});
-  await page.getByRole('button',{name:'Join Curves',exact:true}).click();await input(page,'objects',[a.entity,b.entity,c.entity]);const joined=await commit(page);expect(joined.outputSlots).toHaveLength(2);expect(joined.command.version).toBe(2);
-  const poly=await add(page,'C03');await page.getByRole('button',{name:'Explode Curve',exact:true}).click();await input(page,'object',[poly.entity]);const exploded=await commit(page);expect(exploded.outputSlots).toHaveLength(2);
+  await selectCadCommand(page,'Join Curves');await input(page,'objects',[a.entity,b.entity,c.entity]);const joined=await commit(page);expect(joined.outputSlots).toHaveLength(2);expect(joined.command.version).toBe(2);
+  const poly=await add(page,'C03');await selectCadCommand(page,'Explode Curve');await input(page,'object',[poly.entity]);const exploded=await commit(page);expect(exploded.outputSlots).toHaveLength(2);
   const x=await add(page,'C02',{start:[0,20,0],end:[10,20,0]}),y=await add(page,'C02',{start:[20,30,0],end:[30,30,0]});
-  await page.getByRole('button',{name:'Blend Curves',exact:true}).click();await input(page,'first',[x.entity]);await input(page,'second',[y.entity]);await param(page,'continuity','G2');await commit(page);
-  const spline=await add(page,'C09');await page.getByRole('button',{name:'Rebuild Curve',exact:true}).click();await input(page,'object',[spline.entity]);
+  await selectCadCommand(page,'Blend Curves');await input(page,'first',[x.entity]);await input(page,'second',[y.entity]);await param(page,'continuity','G2');await commit(page);
+  const spline=await add(page,'C09');await selectCadCommand(page,'Rebuild Curve');await input(page,'object',[spline.entity]);
   await page.locator('#modelPreview').evaluate(button=>button.click());await expect(page.locator('#modelStatus')).toContainText('計測最大偏差');
   const count=await page.evaluate(()=>window.PathloomModel.store.document.features.length);
   await page.locator('#modelCommit').click();await expect(page.locator('#modelDiagnostics')).toContainText('CAD_APPROXIMATION_REQUIRES_CONFIRMATION');await expect(page.locator('.model-history-entry')).toHaveCount(count);
@@ -159,12 +159,12 @@ test('P2 E01/E02/E08/E09: groups, Explode, G2 Blend and explicit approximation a
 
 test('P2 E06: signed Offset, zero unchanged, collapse empty and incompatible plane stay distinct',async({page})=>{
   const a=await add(page,'C06',{radiusMm:10});
-  await page.getByRole('button',{name:'Offset Curve',exact:true}).click();await input(page,'curve',[a.entity]);await param(page,'distanceMm',-1);
+  await selectCadCommand(page,'Offset Curve');await input(page,'curve',[a.entity]);await param(page,'distanceMm',-1);
   const f=await commit(page);
   const length=await page.evaluate(id=>{const s=window.PathloomModel.store;return s.getEntity(s.getFeature(id).outputSlots[0].entityId).displayCache.lengthMm},f.id);expect(length).toBeCloseTo(18*Math.PI,6);
-  await page.getByRole('button',{name:'Offset Curve',exact:true}).click();await input(page,'curve',[a.entity]);await param(page,'distanceMm',0);await commit(page,'warning');
-  await page.getByRole('button',{name:'Offset Curve',exact:true}).click();await input(page,'curve',[a.entity]);await param(page,'distanceMm',-11);const empty=await commit(page,'empty');expect(empty.diagnostics[0].code).toBe('CAD_EMPTY_RESULT');
+  await selectCadCommand(page,'Offset Curve');await input(page,'curve',[a.entity]);await param(page,'distanceMm',0);await commit(page,'warning');
+  await selectCadCommand(page,'Offset Curve');await input(page,'curve',[a.entity]);await param(page,'distanceMm',-11);const empty=await commit(page,'empty');expect(empty.diagnostics[0].code).toBe('CAD_EMPTY_RESULT');
   const after=await roundTrip(page);expect(after.features.at(-1).status).toBe('empty');
-  await page.getByRole('button',{name:'Offset Curve',exact:true}).click();await input(page,'curve',[a.entity]);await param(page,'plane',{origin:[0,0,0],xAxis:[1,0,0],yAxis:[0,0,1]});
+  await selectCadCommand(page,'Offset Curve');await input(page,'curve',[a.entity]);await param(page,'plane',{origin:[0,0,0],xAxis:[1,0,0],yAxis:[0,0,1]});
   const count=after.features.length;await page.locator('#modelCommit').click();await expect(page.locator('#modelDiagnostics')).toContainText('CAD_INPUT_TYPE');await expect(page.locator('.model-history-entry')).toHaveCount(count);
 });

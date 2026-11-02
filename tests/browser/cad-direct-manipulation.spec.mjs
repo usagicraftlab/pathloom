@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures/cad.mjs";
+import { test, expect, selectCadCommand, selectCadMenuItem } from "./fixtures/cad.mjs";
 
 async function add(page, commandId, parameters = {}, selection = []) {
   return page.evaluate(async ({ commandId, parameters, selection }) => {
@@ -135,7 +135,7 @@ test("P3 history hover/scrub shows consumed earlier geometry without changing sa
 
 test("P3 Polyline closes by start snap into a real planar face; two-click measurement shows distance", async ({page}) => {
   await page.getByRole("button", {name:"top view",exact:true}).click();
-  await page.getByRole("button", {name:"Polyline",exact:true}).click();
+  await selectCadCommand(page, "Polyline");
   for (const point of [[-20,-15,0],[-10,-15,0],[-10,-5,0]]) await clickWorld(page, point);
   const start = await page.evaluate(() => window.PathloomModel.projectPoint([-20,-15,0]));
   await page.mouse.move(start.x,start.y);
@@ -155,7 +155,7 @@ test("P3 Extrude direction switches to exact Difference and multiple body overla
   const body = await add(page,"B01",{widthMm:10,depthMm:10,heightMm:10});
   const rectangle = await add(page,"C04",{anchorMode:"corner",anchor:[2,2,10],widthMm:4,heightMm:4});
   const region = await add(page,"S03",{},[{entityId:rectangle.id,entityKind:rectangle.kind}]);
-  await page.getByRole("button",{name:"Extrude Surface",exact:true}).click(); await input(page,"profile",region.id);
+  await selectCadCommand(page, "Extrude Surface"); await input(page,"profile",region.id);
   await page.locator('[data-parameter="distanceMm"]').fill("-5");
   await page.getByRole("button",{name:"確定",exact:true}).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(5);
@@ -166,7 +166,7 @@ test("P3 Extrude direction switches to exact Difference and multiple body overla
   await add(page,"B01",{anchor:[4,0,0],widthMm:10,depthMm:10,heightMm:10});
   const wide = await add(page,"C04",{anchorMode:"corner",anchor:[1,1,0],widthMm:10,heightMm:8});
   const face = await add(page,"S03",{},[{entityId:wide.id,entityKind:wide.kind}]);
-  await page.getByRole("button",{name:"Extrude Surface",exact:true}).click(); await input(page,"profile",face.id);
+  await selectCadCommand(page, "Extrude Surface"); await input(page,"profile",face.id);
   await page.locator('[data-parameter="distanceMm"]').fill("5");
   await page.getByRole("button",{name:"確定",exact:true}).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(9);
@@ -179,7 +179,7 @@ test("P3 Extrude direction switches to exact Difference and multiple body overla
 test("P3 numeric input ignores wheel, Enter navigates, and symmetric arrow keeps draft separate", async ({page}) => {
   const rectangle = await add(page,"C04",{widthMm:10,heightMm:10,anchor:[0,0,0]});
   const face = await add(page,"S03",{},[{entityId:rectangle.id,entityKind:rectangle.kind}]);
-  await page.getByRole("button",{name:"Extrude Surface",exact:true}).click(); await input(page,"profile",face.id);
+  await selectCadCommand(page, "Extrude Surface"); await input(page,"profile",face.id);
   const distance = page.locator('[data-parameter="distanceMm"]');
   await distance.hover(); await page.mouse.wheel(0,-100); await expect(distance).toHaveValue("10");
   await distance.press("Enter"); await expect(page.locator('[data-parameter="bothSides"]')).toBeFocused();
@@ -231,12 +231,12 @@ test("P3 command reorder requires edit mode and generation registration is conte
   const line = page.getByRole("button",{name:"Line",exact:true});
   const rectangle = page.getByRole("button",{name:"Rectangle",exact:true});
   await expect(line).toHaveAttribute("draggable","false");
-  await page.getByRole("button",{name:"配置編集",exact:true}).click();
+  await selectCadMenuItem(page, "#modelCommandEdit");
   await expect(line).toHaveAttribute("draggable","true");
   await rectangle.dragTo(line);
   const ids=await page.locator(".model-command-tab-panel").locator("[data-command-id]").evaluateAll((elements)=>elements.map((element)=>element.dataset.commandId));
   expect(ids.indexOf("C04")).toBeLessThan(ids.indexOf("C02"));
-  await page.getByRole("button",{name:"配置編集",exact:true}).click();
+  await selectCadMenuItem(page, "#modelCommandEdit");
   const body=await add(page,"B01",{widthMm:10,depthMm:10,heightMm:10});
   await expect(page.getByRole("region",{name:"生成で使用",exact:true})).toHaveCount(0);
   await page.locator(`.model-outline-body[data-body-id="${body.bodyId}"] .model-outline-select`).click({button:"right"});
@@ -264,7 +264,7 @@ test("P3 pivot picking, uniform scale corner, rotation snap and mirror face prev
   result=await last(page);
   expect(result.feature.parameters.angleRad).toBeCloseTo(Math.PI/6,8);
   await select(page,result.entity);
-  await page.getByRole("button",{name:"Mirror",exact:true}).click();
+  await selectCadCommand(page, "Mirror");
   const top = result.entity.bbox.max[2];
   await clickWorld(page,[7.5,7.5,top]);
   const plane = JSON.parse(await page.getByRole("textbox",{name:"作業平面",exact:true}).inputValue());

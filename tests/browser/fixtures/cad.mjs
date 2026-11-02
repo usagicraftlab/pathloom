@@ -232,4 +232,28 @@ const test = base.extend({
   },
 });
 
-export { test, expect };
+async function selectCadCommand(page, name) {
+  const command = () => page.getByRole("button", { name, exact: true });
+  if (await command().count()) {
+    await command().click();
+    return;
+  }
+  const tabs = page.getByRole("tab");
+  for (let index = 0; index < await tabs.count(); index++) {
+    await tabs.nth(index).click();
+    if (await command().count()) {
+      await command().click();
+      return;
+    }
+  }
+  throw new Error(`CAD command is not exposed in any tab: ${name}`);
+}
+
+async function selectCadMenuItem(page, selector) {
+  const item = page.locator(selector);
+  if (!(await item.isVisible()))
+    await page.getByRole("button", { name: "CADメニュー", exact: true }).click();
+  await item.click();
+}
+
+export { test, expect, selectCadCommand, selectCadMenuItem };

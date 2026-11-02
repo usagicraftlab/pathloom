@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures/cad.mjs";
+import { test, expect, selectCadCommand } from "./fixtures/cad.mjs";
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 
@@ -52,17 +52,17 @@ test("#34: the same rounded Rectangle bottom edge reaches exact sections and G-c
   });
 
   try {
-    await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+    await selectCadCommand(page, "Rectangle");
     await page.getByRole("textbox", { name: "幅 mm", exact: true }).fill("70");
     await page.getByRole("checkbox", { name: "角丸", exact: true }).check();
     await page.getByRole("textbox", { name: "角丸半径 mm", exact: true }).fill("3");
     await commit(page, 1);
     await page.locator(".model-history-entry").last().click();
-    await page.getByRole("button", { name: "Extrude", exact: true }).click();
+    await selectCadCommand(page, "Extrude");
     await page.getByRole("checkbox", { name: "蓋を作る", exact: true }).check();
     await commit(page, 2);
     await page.locator(".model-history-entry").last().click();
-    await page.getByRole("button", { name: "Fillet Edges", exact: true }).click();
+    await selectCadCommand(page, "Fillet Edges");
   // Preserve the baseline OCCT tangent contour through the explicit v2 choice.
   await page.locator('[data-parameter="chainPolicy"]').selectOption("tangent");
   await page.locator('[data-parameter="chainPolicy"]').dispatchEvent("input");

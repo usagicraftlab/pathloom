@@ -171,6 +171,17 @@ test.afterEach(() => {
   queue = [];
 });
 
+async function selectCadCommand(page, name) {
+  const command = () => page.getByRole("button", { name, exact: true });
+  if (await command().count()) return command().click();
+  const tabs = page.getByRole("tab");
+  for (let index = 0; index < await tabs.count(); index++) {
+    await tabs.nth(index).click();
+    if (await command().count()) return command().click();
+  }
+  throw new Error(`CAD command is not exposed in any tab: ${name}`);
+}
+
 test("AUD-003: D04 exact rerun, changed/count split, v2 reopen and explicit reference/binding repair", async ({
   page,
 }) => {
@@ -204,7 +215,7 @@ test("AUD-003: D04 exact rerun, changed/count split, v2 reopen and explicit refe
       second: second.outputSlots[0].entityId,
     };
   });
-  await page.getByRole("button", { name: "Split Body", exact: true }).click();
+  await selectCadCommand(page, "Split Body");
   await page
     .getByRole("listbox", { name: "CAD input targets", exact: true })
     .selectOption({
@@ -415,7 +426,7 @@ test("A01/A03/T01: real center rectangle, dimension edit, Undo, portable save an
 }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page
     .getByRole("textbox", { name: "基準点 XYZ", exact: true })
     .fill("[10,20,0]");
@@ -478,7 +489,7 @@ test("A01/A03/T01: real center rectangle, dimension edit, Undo, portable save an
 test("A13/A14: free 3D curve below Z zero becomes an open exact surface", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Line", exact: true }).click();
+  await selectCadCommand(page, "Line");
   await page
     .getByRole("textbox", { name: "始点 XYZ", exact: true })
     .fill("[0,0,-10]");
@@ -488,7 +499,7 @@ test("A13/A14: free 3D curve below Z zero becomes an open exact surface", async 
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toContainText("valid");
   await page.locator(".model-history-entry").click();
-  await page.getByRole("button", { name: "Extrude", exact: true }).click();
+  await selectCadCommand(page, "Extrude");
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
   await expect(page.locator(".model-history-entry").last()).toContainText(
@@ -505,7 +516,7 @@ test("A13/A14: free 3D curve below Z zero becomes an open exact surface", async 
 test("A05/A07/A08/A24: sketch width drives exact solid and fillet; a lost edge requires repair", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await page.locator(".model-history-entry").first().click();
   await page
@@ -525,7 +536,7 @@ test("A05/A07/A08/A24: sketch width drives exact solid and fillet; a lost edge r
       ),
     )
     .toBeCloseTo(40, 5);
-  await page.getByRole("button", { name: "Extrude", exact: true }).click();
+  await selectCadCommand(page, "Extrude");
   await page.getByRole("checkbox", { name: "蓋を作る", exact: true }).check();
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
@@ -557,10 +568,10 @@ test("A05/A07/A08/A24: sketch width drives exact solid and fillet; a lost edge r
 test("A07/T11/T12: semantic edge follows width change and disappears without silent substitution", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await page.locator(".model-history-entry").first().click();
-  await page.getByRole("button", { name: "Extrude", exact: true }).click();
+  await selectCadCommand(page, "Extrude");
   await page.getByRole("checkbox", { name: "蓋を作る", exact: true }).check();
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
@@ -568,7 +579,7 @@ test("A07/T11/T12: semantic edge follows width change and disappears without sil
     "valid",
   );
   await page.locator(".model-history-entry").last().click();
-  await page.getByRole("button", { name: "Fillet Edges", exact: true }).click();
+  await selectCadCommand(page, "Fillet Edges");
   // Preserve the baseline OCCT tangent contour through the explicit v2 choice.
   await page.locator('[data-parameter="chainPolicy"]').selectOption("tangent");
   await page.locator('[data-parameter="chainPolicy"]').dispatchEvent("input");
@@ -647,7 +658,7 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
   page,
 }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(1);
   await expect(page.locator(".model-history-entry")).toContainText("valid");
@@ -718,12 +729,12 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
 test("Issue15 Rotate Scale Mirror commit exact B-rep history through the workspace", async ({
   page,
 }) => {
-  await page.getByRole("button", { name: "Box", exact: true }).click();
+  await selectCadCommand(page, "Box");
   await page.getByRole("button", { name: "確定", exact: true }).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(1);
   await page.locator(".model-history-entry").last().click();
 
-  await page.getByRole("button", { name: "Rotate", exact: true }).click();
+  await selectCadCommand(page, "Rotate");
   await page
     .getByLabel("軸（原点・方向）", { exact: true })
     .fill(JSON.stringify({ origin: [0, 0, 0], direction: [0, 0, 1] }));
@@ -733,7 +744,7 @@ test("Issue15 Rotate Scale Mirror commit exact B-rep history through the workspa
   await expect(page.locator(".model-history-entry").last()).toContainText("valid");
   await page.locator(".model-history-entry").last().click();
 
-  await page.getByRole("button", { name: "Scale", exact: true }).click();
+  await selectCadCommand(page, "Scale");
   await page.getByLabel("中心 XYZ", { exact: true }).fill("[0,0,0]");
   await page.getByLabel("倍率", { exact: true }).fill("2");
   await page.getByRole("button", { name: "確定", exact: true }).click();
@@ -741,7 +752,7 @@ test("Issue15 Rotate Scale Mirror commit exact B-rep history through the workspa
   await expect(page.locator(".model-history-entry").last()).toContainText("valid");
   await page.locator(".model-history-entry").last().click();
 
-  await page.getByRole("button", { name: "Mirror", exact: true }).click();
+  await selectCadCommand(page, "Mirror");
   await page
     .getByLabel("作業平面", { exact: true })
     .last()
@@ -785,9 +796,7 @@ test("A04/R06: work-order command definition creates real geometry and persists 
   await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
   await deferWholeProjectRecovery(page);
   await page.locator("#modeModel").click();
-  await page
-    .getByRole("button", { name: "Custom Center Rectangle", exact: true })
-    .click();
+  await selectCadCommand(page, "Custom Center Rectangle");
   await page
     .getByRole("textbox", { name: "CAD point center", exact: true })
     .fill("10,20,0");
@@ -820,9 +829,7 @@ test("A04/R06: work-order command definition creates real geometry and persists 
   await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
   await page.evaluate(() => document.querySelector("#projectOpen").click());
   await expect(page.locator(".model-history-entry")).toContainText("valid");
-  await expect(
-    page.getByRole("button", { name: "Custom Center Rectangle", exact: true }),
-  ).toBeVisible();
+  await selectCadCommand(page, "Custom Center Rectangle");
   expect(
     await page.evaluate(
       () => window.PathloomModel.store.document.entities[0].bbox.max[0],
@@ -842,7 +849,7 @@ test("A11/T07: Join gap remains until the user explicitly changes tolerance", as
       [20, 5, 0],
     ],
   ]) {
-    await page.getByRole("button", { name: "Line", exact: true }).click();
+    await selectCadCommand(page, "Line");
     await page
       .getByRole("textbox", { name: "始点 XYZ", exact: true })
       .fill(JSON.stringify(start));
@@ -854,7 +861,7 @@ test("A11/T07: Join gap remains until the user explicitly changes tolerance", as
     await expect(page.locator(".model-right")).toBeHidden();
   }
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
-  await page.getByRole("button", { name: "Join Curves", exact: true }).click();
+  await selectCadCommand(page, "Join Curves");
   const refs = await page
     .getByLabel("CAD input objects", { exact: true })
     .locator("option")
@@ -921,8 +928,7 @@ test("#11: delayed shared commands load through the registry without a JSON regi
       const stored = JSON.parse(await window.__cadStorage({ key: "commands" }));
       return (Array.isArray(stored) ? stored : stored.entries).map(d => d.id);
     })).toContain(definition.id);
-    await expect(page.getByRole("button", { name: definition.displayName, exact: true })).toBeVisible();
-    await page.getByRole("button", { name: definition.displayName, exact: true }).click();
+    await selectCadCommand(page, definition.displayName);
     await page.getByRole("textbox", { name: "CAD point center", exact: true }).fill("10,20,0");
     await page.getByRole("textbox", { name: "CAD point center", exact: true }).dispatchEvent("change");
     await page.getByRole("textbox", { name: "CAD point corner", exact: true }).fill("40,40,0");

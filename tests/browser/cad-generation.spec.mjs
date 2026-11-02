@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures/cad.mjs";
+import { test, expect, selectCadCommand } from "./fixtures/cad.mjs";
 
 async function commit(page, count) {
   await page.getByRole("button", { name: "確定", exact: true }).click();
@@ -38,15 +38,15 @@ async function state(page) {
 }
 
 async function drawing(page, multiple = false) {
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await commit(page, 1);
   await page.locator(".model-history-entry").first().click();
-  await page.getByRole("button", { name: "Extrude", exact: true }).click();
+  await selectCadCommand(page, "Extrude");
   await page.getByRole("checkbox", { name: "蓋を作る", exact: true }).check();
   await commit(page, 2);
   expect(await page.evaluate(() => window.PathloomModel.store.document.entities.at(-1).displayCache.volumeMm3)).toBeCloseTo(60000, 4);
   await page.locator(".model-history-entry").last().click();
-  await page.getByRole("button", { name: "Fillet Edges", exact: true }).click();
+  await selectCadCommand(page, "Fillet Edges");
   // Preserve the baseline OCCT tangent contour through the explicit v2 choice.
   await page.locator('[data-parameter="chainPolicy"]').selectOption("tangent");
   await page.locator('[data-parameter="chainPolicy"]').dispatchEvent("input");
@@ -176,7 +176,7 @@ test("P1-06: a late section cannot revive a lost edge; lastValid blocks G-code a
   await expect(page.locator("#cadStatus")).toHaveAttribute("data-state", "error");
   await expect(page.locator("#cadStatus")).toContainText("前回の形状");
   expect((await gcode(page)).error).toContain("CAD input");
-  await page.getByRole("button", { name: "Rectangle", exact: true }).click();
+  await selectCadCommand(page, "Rectangle");
   await commit(page, 4);
   await expect(page.locator(".model-history-entry").nth(2)).toContainText("failed");
   await page.locator(".model-history-entry").nth(2).click();
