@@ -267,6 +267,9 @@ body[data-workspace-mode=generate] .cad-chat-column>.sidebar-island{background:r
 body[data-workspace-mode=generate] .geometry-visibility{left:auto;right:24px;bottom:18px}
 .node-marquee{position:absolute;z-index:10;border:1px solid #4388b6;background:#4388b622;pointer-events:none;box-sizing:border-box}.node-marquee[hidden]{display:none}
 .graph-node.node-selected{outline:2px solid #4388b6;outline-offset:3px}
+.graph-node.cad-binding-highlight{box-shadow:0 0 0 3px rgba(225,106,66,.34),0 5px 16px rgba(140,73,49,.22)}
+.graph-node.cad-binding-highlight::after{content:"CAD";position:absolute;right:5px;top:-10px;padding:1px 4px;border-radius:8px;background:#b94f32;color:#fff;font:bold 8px/1.4 sans-serif;pointer-events:none}
+.graph-node.cad-binding-error{border-color:#b94f32}
 .component-details-panel.cad-panel{position:fixed;z-index:190;top:100px;left:320px;right:auto;bottom:auto;width:min(300px,calc(100vw - 24px));max-height:calc(100vh - 24px);padding:12px;overflow:auto;display:flex;gap:8px;border:1px solid #c4cfd8;border-radius:9px;background:#fffffff2;backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);box-shadow:0 8px 32px #22334426;mask-image:none;-webkit-mask-image:none;scrollbar-gutter:auto}
 .component-details-panel[hidden]{display:none!important}.component-details-heading{display:flex;align-items:center;justify-content:space-between;gap:8px}.component-details-heading strong{font-size:11px}.component-details-panel .operation-card{padding:0;overflow:visible;max-height:none}.component-details-panel .operation-card>summary{display:none}
 .graph-node,.graph-node .operation-heading,.graph-node .operation-heading>summary,.graph-node .node-port-row{cursor:grab}
@@ -280,6 +283,7 @@ body[data-workspace-mode=generate] .geometry-visibility{left:auto;right:24px;bot
 .cad-panel .node-port-row button.node-port:hover,.cad-panel .node-port-row button.node-port:focus-visible{background:color-mix(in srgb,var(--port-color) 20%,white);border-color:var(--port-color);outline:3px solid color-mix(in srgb,var(--port-color) 20%,transparent)}
 .node-port-row{min-height:14px;padding:6px 3px}.node-port-row.out{padding:6px 3px}
 .node-wire,.pending-wire{stroke:var(--wire-color,#708398)}.node-wire:hover,.node-wire.selected,.node-viewport .node-wire:focus-visible{stroke:var(--wire-color,#708398);stroke-width:4;filter:drop-shadow(0 0 2px var(--wire-color,#708398))}
+.node-wire.cad-binding-highlight{stroke:#d66a45;stroke-width:4;filter:drop-shadow(0 0 3px rgba(214,106,69,.65))}
 .graph-node .print-output-heading{justify-content:center;gap:9px;padding:12px}.print-output-icon{width:30px;height:30px;flex:none;fill:none;stroke:#477c98;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
 /* Translucent component surfaces; the checked stage has its own highlight. */
 .graph-node{background:rgba(255,255,255,.4);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}

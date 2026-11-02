@@ -3,6 +3,7 @@ import { readLibraryContainer, writeLibraryContainer } from "../recovery-migrati
 import { constrainedRectangle } from "./sketch/model.js";
 import { SketchSolverClient } from "./sketch/worker-client.js";
 import { bindBody, generationInput } from "./generation-adapter.js";
+import { bindingIdsForCadSelection, cadTargetsForBindings } from "./generation-navigation.js";
 import { CadStore } from "./store.js";
 import { NativeCadClient } from "./native-client.js";
 import { createViewAdapter } from "./view-adapter.js";
@@ -268,7 +269,9 @@ export function initModelWorkspace(api) {
     ready = false,
     runtimeStart = null,
     selection = [],
+    generationHoverSelection = [],
     view;
+  let lastCadNavigationStamp = "";
   const solver = new SketchSolverClient();
   const bindingStamps = new Map();
   const native = new NativeCadClient(),
@@ -2376,7 +2379,7 @@ export function initModelWorkspace(api) {
         positionViewportControls();
       });
     }
-    view.update(store.document, selection, { colors: uiPreferences.colors, snapStep: snapStep() });
+    view.update(store.document, [...selection, ...generationHoverSelection], { colors: uiPreferences.colors, snapStep: snapStep() });
   }
   function positionViewportControls() {
     observeCameraControls();
@@ -2410,6 +2413,12 @@ export function initModelWorkspace(api) {
     if (!panel.isConnected) return;
     $("modelStatus").textContent = status;
     renderOutliner();
+    const cadBindingIds = bindingIdsForCadSelection(store.document, [...new Set(selection.map((reference) => reference.entityId))]);
+    const cadNavigationStamp = cadBindingIds.join("\n");
+    if (cadNavigationStamp !== lastCadNavigationStamp) {
+      lastCadNavigationStamp = cadNavigationStamp;
+      document.dispatchEvent(new CustomEvent("pathloom:cad-selection-navigation", { detail: { bindingIds: cadBindingIds } }));
+    }
     workplaneControls.hidden = !session;
     const operationId = session?.command.baseOperation.id;
     const planeOperation = new Set([
@@ -3989,6 +3998,28 @@ export function initModelWorkspace(api) {
   }).observe(document.body, {
     attributes: true,
     attributeFilter: ["data-workspace-mode"],
+  });
+  document.addEventListener("pathloom:generation-navigation", (event) => {
+    const targets = cadTargetsForBindings(store.document, event.detail?.bindingIds || []);
+    if (event.detail?.kind === "hover") {
+      generationHoverSelection = targets.map((target) => ({ entityId: target.entityId, hover: true }));
+      updateView();
+      return;
+    }
+    generationHoverSelection = [];
+    if (!targets.length) {
+      updateView();
+      return;
+    }
+    selection = targets.map((target) => ({ entityId: target.entityId }));
+    selectedFeature = targets[0].featureId || null;
+    propertiesOpen = false;
+    featureEditActive = false;
+    store.document.uiState.selection = clone(selection);
+    setStatus(event.detail?.kind === "error"
+      ? "生成エラーの参照元を選択しました。履歴と形状を確認して修復してください。"
+      : "生成グラフが参照するCAD形状を選択しました。");
+    render();
   });
   const panelResize = new ResizeObserver(() => {
     const left = panel.querySelector(".model-left"),

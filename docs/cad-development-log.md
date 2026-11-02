@@ -2389,3 +2389,28 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
 - 14項目の実装/対象回帰は[cad-ux-interactions.md](cad-ux-interactions.md)。B〜E/#37/PR43は対象外。
   最終差分のCIはこの記録後に実行するため、Ready/mergeはまだ行わない。最終runとマージ結果はPR #57と
   指示ボードのCodexログで照合する。実Mac GUI/Tauri/OS dialogを合格にはしない。
+
+## 2026-11-02 — 指示028 B（生成グラフとCADの双方向ナビゲーション）
+
+- Museが有効化したBの項目4/7だけを実装した。binding IDを起点に、CAD形状/body選択から生成input・
+  下流ノード・接続を強調し、生成ノード/接続の選択・hoverから現在CAD entityとproducer履歴を辿る。
+  CAD bindingを使う生成エラーには「CAD履歴で修復箇所を表示」を追加し、Modelへ切り替えて同じ
+  entity/履歴を選択する。詳細契約と検証対応は[cad-generation-navigation.md](cad-generation-navigation.md)。
+- 保存schema、CAD演算、正規65 commandは変更しない。A/C/D/E、Issue #37、Draft PR #43は対象外。
+- 初回対象browserは、旧worktreeの存在しない`.pathloom-runtime/python/bin/python`をfixture daemonへ
+  指定したためtest body前に終了し、製品失敗とは分類しないが成功にも数えない。primary runtime Pythonへ
+  修正した次回は、エラー詳細が閉じて修復ボタンを操作できない製品UI失敗を検出した。bindingエラーでは
+  詳細を開くよう修正し、対象browser 1件は再実行で成功した。前2回の失敗を後続成功で置換しない。
+- 実装後のNode 24.22.1全JS248件、厳密なNode 20.20.2全JS248件は各全成功。native全107件は
+  105成功・任意NVIDIA USD 2skip。最終小修正後の全JS、browser全件、local Rust、CI、Draft PR、
+  Ready、mergeはこの記録時点では未実施であり、実結果を追記する。
+
+### 最終ローカル検証
+
+- 最終コードでNode 24.22.1と厳密なNode 20.20.2の全JSを再実行し、各248成功、失敗/skip 0。
+  native全107件は105成功・任意NVIDIA USD 2skip。local Rustはcargo不在のため未実行。
+- prepared desktop assets、実OCP fixture、Chromiumでbrowser全98件が7.2分で成功（retryなし）。
+  新規P2-28を同じ全件run内で確認した。先行のfixture Python指定不備と、修復ボタンが閉じた詳細内に
+  あった製品UI失敗は成功へ置換せず上記に保持する。
+- この記録後にcommit/push/Draft PRとCIを行う。CI、Ready、merge、対応Issueなしによる自動close
+  非該当はまだ未確認であり、ローカル成功から先取りしない。

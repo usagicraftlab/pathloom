@@ -150,6 +150,41 @@ test("P1-06: Rectangle→Extrude→Fillet→exact paths→G-code follows 60 to 8
   expect(gcodeWidth((await gcode(page)).code)).toBeCloseTo(80, 2);
 });
 
+test("P2-28: CAD and generation graph navigate both ways and an error opens its repair history", async ({ page }) => {
+  const ids = await drawing(page);
+
+  // CAD body identity, not only the current tip entity, traces the bound input
+  // and every downstream graph connection.
+  await page.locator(".model-history-entry").first().click();
+  await page.locator("#modeGenerate").click();
+  await expect(page.locator(`.geometry-node[data-cad-binding-id="${ids.binding}"]`)).toHaveClass(/cad-binding-highlight/);
+  await expect(page.locator(".graph-node[data-step-id=\"slice\"]")).toHaveClass(/cad-binding-highlight/);
+  await expect(page.locator(".graph-node[data-step-id=\"paths\"]")).toHaveClass(/cad-binding-highlight/);
+  await expect(page.locator(".node-wire.cad-binding-highlight")).toHaveCount(3);
+
+  // Selecting a dependent generation node traces back to the binding and
+  // prepares both the exact CAD entity and its producer history entry.
+  await page.locator(".graph-node[data-step-id=\"paths\"]").click();
+  await page.locator("#modeModel").click();
+  await expect(page.locator(".model-history-entry").last()).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('#modelOutliner .model-outline-select[aria-selected="true"]')).toHaveCount(1);
+
+  // A generation-side binding error has an explicit repair affordance. It
+  // opens CAD and selects the same shape/history rather than showing text only.
+  await page.locator("#modeGenerate").click();
+  await page.evaluate((bindingId) => {
+    const binding = window.PathloomModel.store.document.outputBindings.find((candidate) => candidate.id === bindingId);
+    binding.status = "pending";
+    window.PathloomCad.upsertCadBinding({ bindingId, status: "pending" });
+  }, ids.binding);
+  const repair = page.getByRole("button", { name: "CAD履歴で修復箇所を表示", exact: true });
+  await expect(repair).toBeVisible();
+  await repair.click();
+  await expect(page.locator("body")).toHaveAttribute("data-workspace-mode", "model");
+  await expect(page.locator(".model-history-entry").last()).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#modelStatus")).toContainText("生成エラーの参照元");
+});
+
 test("P1-06: a late section cannot revive a lost edge; lastValid blocks G-code and explicit reselect repairs it", async ({ page }) => {
   const ids = await drawing(page);
   await page.evaluate(() => { window.__holdNextSlice = true; });
