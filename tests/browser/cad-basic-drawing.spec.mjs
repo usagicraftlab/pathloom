@@ -534,6 +534,104 @@ test("P1-05 constrained rectangle preserves lastValid through nonconvergence, Un
     expected.forEach((v, i) => expect(bbox[key][i]).toBeCloseTo(v, 6));
 });
 
+test("P4-03 sketch dimensions toggle without shape history and datum copy stays independent", async ({ page }) => {
+  await selectCadCommand(page, "Rectangle");
+  await page.getByRole("textbox", { name: "基準点 XYZ", exact: true }).fill("[0,0,0]");
+  await commit(page, 1);
+  await page.locator(".model-history-entry").click();
+  await page.getByRole("button", { name: "拘束付きスケッチとして編集", exact: true }).click();
+  const initial = await page.evaluate(() => {
+    const store = window.PathloomModel.store,
+      feature = store.document.features[0],
+      entity = store.getEntity(feature.outputSlots[0].entityId);
+    return { hash: entity.geometry.assetHash, featureId: feature.id, sketchId: feature.sketchId };
+  });
+  const referenceToggle = page.getByRole("button", { name: "スケッチ 幅を参照寸法に切替", exact: true });
+  await referenceToggle.click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(1);
+  await expect(page.locator(".model-sketch-constraint.is-reference").filter({ hasText: "幅" })).toHaveCount(1);
+  expect(await page.evaluate(() => window.PathloomModel.store.document.sketches[0].constraints.find((item) => item.label === "幅").mode)).toBe("reference");
+  expect(await page.evaluate(() => window.PathloomModel.store.document.entities[0].geometry.assetHash)).toBe(initial.hash);
+  await page.getByRole("button", { name: "スケッチ 幅を駆動寸法に切替", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(1);
+  expect(await page.evaluate(() => window.PathloomModel.store.document.entities[0].geometry.assetHash)).toBe(initial.hash);
+
+  await page.locator(".model-history-entry").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "現在の作業平面へ独立コピー", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(2);
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.sketches.length)).toBe(2);
+  const identities = await page.evaluate(() => {
+    const sketches = window.PathloomModel.store.document.sketches;
+    return sketches.map((sketch) => [
+      sketch.id,
+      ...sketch.points.map((item) => item.id),
+      ...sketch.lines.map((item) => item.id),
+      ...sketch.constraints.map((item) => item.id),
+    ]);
+  });
+  expect(identities[0].some((value) => identities[1].includes(value))).toBe(false);
+  await page.getByRole("textbox", { name: "スケッチ 幅", exact: true }).fill("90");
+  await page.getByRole("textbox", { name: "スケッチ 幅", exact: true }).press("Tab");
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.sketches[1].constraints.find((item) => item.label === "幅").value)).toBe(90);
+  expect(await page.evaluate(() => window.PathloomModel.store.document.sketches[0].constraints.find((item) => item.label === "幅").value)).toBe(60);
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.sketches.length)).toBe(1);
+  await page.keyboard.press("Control+Shift+z");
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.sketches.length)).toBe(2);
+  await saveReopen(page);
+  expect(await page.evaluate(() => window.PathloomModel.store.document.sketches.length)).toBe(2);
+});
+
+test("P4-03 face menu opens an exact supported sketch and lists ambiguous candidates", async ({ page }) => {
+  await selectCadCommand(page, "Box");
+  await page.getByRole("textbox", { name: "基準点 XYZ", exact: true }).fill("[100,100,0]");
+  await commit(page, 1);
+  await selectCadCommand(page, "Rectangle");
+  await page.getByRole("textbox", { name: "基準点 XYZ", exact: true }).fill("[0,0,0]");
+  await commit(page, 2);
+  await page.locator(".model-history-entry").last().click();
+  await page.getByRole("button", { name: "拘束付きスケッチとして編集", exact: true }).click();
+  const target = await page.evaluate(() => {
+    const store = window.PathloomModel.store,
+      box = store.document.entities.find((entity) => entity.kind === "solid"),
+      faces = box.displayCache.topology.filter((item) => item.kind === "face"),
+      index = box.displayCache.faces.findIndex((face) => face.planar && face.normal?.[2] > 0.9),
+      topology = faces[index],
+      sketch = store.document.sketches[0];
+    sketch.support = {
+      entityId: box.id,
+      topologyId: topology.topologyId,
+      centroid: structuredClone(topology.fingerprint.centroid),
+    };
+    sketch.supportStatus = "linked";
+    store.document.documentRevision++;
+    return {
+      entityId: box.id,
+      topologyId: topology.topologyId,
+      point: structuredClone(topology.fingerprint.centroid),
+    };
+  });
+  await page.locator(".model-history-entry").last().click();
+  await axis(page, "top");
+  const p = await screen(page, target.point);
+  await page.mouse.click(p.x, p.y, { button: "right" });
+  await expect(page.getByRole("menuitem", { name: "この面のスケッチを編集", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("menuitem", { name: "選択スケッチをこの面へ独立コピー", exact: true })).toHaveCount(1);
+  await page.getByRole("menuitem", { name: "この面のスケッチを編集", exact: true }).click();
+  await expect(page.locator(".model-sketch-status")).toContainText("平面スケッチ");
+  await page.mouse.click(p.x, p.y, { button: "right" });
+  await page.getByRole("menuitem", { name: "選択スケッチをこの面へ独立コピー", exact: true }).click();
+  await expect(page.locator(".model-history-entry")).toHaveCount(3);
+  await expect.poll(() => page.evaluate(() => window.PathloomModel.store.document.sketches.length)).toBe(2);
+  expect(await page.evaluate(({ entityId, topologyId }) =>
+    window.PathloomModel.store.document.sketches.every((sketch) =>
+      sketch.support.entityId === entityId && sketch.support.topologyId === topologyId), target)).toBe(true);
+  await page.mouse.click(p.x, p.y, { button: "right" });
+  await expect(page.getByRole("menuitem", { name: /この面のスケッチ [12] を編集/ })).toHaveCount(2);
+  await expect(page.getByRole("menuitem", { name: "この面のスケッチを編集", exact: true })).toHaveCount(0);
+});
+
 test("P1-05 postselection, hidden/locked objects and snap exclusion", async ({
   page,
 }) => {

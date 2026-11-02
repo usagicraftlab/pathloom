@@ -322,6 +322,10 @@ test("P3 Ctrl canvas copy and outliner reorder preserve the source while array c
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
   const result=await last(page);
   expect(result.feature.resultPolicy).toBe("independent");
+  expect(result.feature.linkedDuplicate).toEqual({
+    sourceEntityId:body.id,
+    sourceFeatureId:body.producer.featureId,
+  });
   expect(result.feature.parameters.translation).toEqual([20,0,0]);
   await expect(page.locator(".model-outline-body")).toHaveCount(2);
   await select(page,result.entity);
@@ -332,6 +336,32 @@ test("P3 Ctrl canvas copy and outliner reorder preserve the source while array c
   await copy.dragTo(source);
   expect(await page.locator(".model-outline-body").evaluateAll((rows)=>rows.map((row)=>row.dataset.bodyId))).toEqual([result.entity.bodyId,body.bodyId]);
   expect(await page.evaluate((id)=>window.PathloomModel.store.getEntity(id).geometry.assetHash,body.id)).toBe(body.geometry.assetHash);
+  const propagated=await page.evaluate(async ({sourceFeatureId,copyEntityId})=>{
+    const store=window.PathloomModel.store, source=store.getFeature(sourceFeatureId);
+    await store.edit(source.id,{...source.parameters,widthMm:20});
+    return {
+      source:structuredClone(store.getEntity(source.outputSlots[0].entityId).bbox),
+      copy:structuredClone(store.getEntity(copyEntityId).bbox),
+    };
+  },{sourceFeatureId:body.producer.featureId,copyEntityId:result.entity.id});
+  expect(propagated.source.max[0]-propagated.source.min[0]).toBeCloseTo(20,6);
+  expect(propagated.copy.max[0]-propagated.copy.min[0]).toBeCloseTo(20,6);
+  await page.keyboard.press("Control+z");
+  await expect.poll(()=>page.evaluate((id)=>{
+    const bbox=window.PathloomModel.store.getEntity(id).bbox;
+    return bbox.max[0]-bbox.min[0];
+  },result.entity.id)).toBeCloseTo(10,6);
+  await page.evaluate(async (id)=>window.PathloomModel.store.suppress(id,true),body.producer.featureId);
+  await expect.poll(()=>page.evaluate((id)=>window.PathloomModel.store.getFeature(id)?.status,result.feature.id)).toBe("blocked");
+  await page.keyboard.press("Control+z");
+  await expect.poll(()=>page.evaluate((id)=>window.PathloomModel.store.getFeature(id)?.status,result.feature.id)).toBe("valid");
+  await page.evaluate((id)=>window.PathloomModel.store.remove(id),body.producer.featureId);
+  expect(await page.evaluate((id)=>{
+    const feature=window.PathloomModel.store.getFeature(id);
+    return feature.status==="blocked" && feature.inputs.object[0].unresolved===true;
+  },result.feature.id)).toBe(true);
+  await page.keyboard.press("Control+z");
+  await expect.poll(()=>page.evaluate((id)=>window.PathloomModel.store.getFeature(id)?.status,result.feature.id)).toBe("valid");
 });
 
 test("P3 wheel zoom keeps the model point under the cursor", async ({page}) => {

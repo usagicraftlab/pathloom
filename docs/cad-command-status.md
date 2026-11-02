@@ -277,3 +277,11 @@ fadeするgridと任意のズーム連動snap、選択/最後の点のorbit targ
 JS3件と実OCP browserのP2-28を追加し、全JS248・native105成功/任意2skip・browser98成功を確認した。
 製品head cd6af1b のpush41424719644/PR41424752688各attempt1は全3job success、全6job生ログで
 JS248/native105+2skip/macOS Rust24/browser98（retryなし）を照合。実Mac/Issue #37は未実施のまま。
+
+## 2026-11-03 — 指示029 C リンク複製とsketch再利用
+
+正規65 IDの実装状態は保持する。`shape.transform`の独立copyに元entity/feature identityを保存し、
+DAG追従と独立配置をUIで明示する。C04由来の拘束sketchには駆動/参照の実線/破線toggle、
+face support一致による直接編集、全ID/参照を再採番したface/datumへの独立copyを追加した。
+対象境界と証拠は[指示029契約](cad-linked-sketch-reuse.md)。native演算、保存schema、D/E、
+Issue #37、Draft PR #43は変更しない。最終全検証/CI/mergeは実結果を開発ログへ追記する。

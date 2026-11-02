@@ -476,3 +476,17 @@ push41424719644/PR41424752688各attempt1の全3job successを全6job生ログで
 各JS248成功、native107件中105成功/任意NVIDIA USD2skip、macOS Rust24成功、browser98成功
 （15.3分、retryなし、新規P2-28成功）。CIの失敗/再実行/cancelledは0。localの先行失敗2回は開発ログに保持。
 証拠文書追記後のCIとmergeはPR #58/ボードへ別記し、実Mac未実施と既存62行の状態を保持する。
+
+## 2026-11-03 — 指示029 C のA/T/R証拠
+
+既存A/T/R 62行と正規65 IDの状態は保持する。[指示029契約](cad-linked-sketch-reuse.md)に
+項目9/12/19/21のidentity、表示、support候補、独立copy境界を固定した。unit P4-03は
+point/line/circle/constraint/dimensionのIDと参照の全再採番、support、更新独立性を検査する。
+browser P4-03は駆動/参照toggleの形状不変・feature数不変、datum/face copy、候補0/1/複数、
+Undo/Redo、Save/Openを検査し、既存Ctrl copy回帰は元編集へのDAG追従とlinked identityを検査する。
+
+実装途中のNode24.22.1全JSは249成功、失敗/skip 0。対象browser 2件の最初のローカル実行は
+Chromium実行体不在でtest body前に2失敗し、製品成功/失敗には分類しないが未実施として保持する。
+厳密Node20.20.2全JSも249成功。native全107件は105成功・任意NVIDIA USD 2skip。local Rustは
+`cargo`不在で未実行。Chromium導入も配布内容が5回とも0 MiBで失敗し、対象/全browserはtest body未実行。
+CI、mergeはこの時点で未実施であり先取りしない。

@@ -2432,3 +2432,28 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   local Rustはcargo不在で未実行のまま、CIのmacOS Rust24成功を別証拠として記録する。
 - 対応Issueなしで自動closeは非該当。証拠文書追記後のhead CIとReady/merge/post-merge main CIは
   この時点では未実施であり、PR #58とボードCodexログへ実結果を記録する。
+
+## 2026-11-03 — 指示029 C（リンク複製とsketch再利用）
+
+- post-merge main run41489354183 attempt1はJS248/browser98、native105+任意2skipが成功した一方、
+  macOS/Rust job125427968347がstep実行前cancelled・runner0・生ログ404でRust未実行だった。
+  Muse 05:52判断に従い同jobだけを1回再実行し、attempt2 job125548984514は全step success、
+  生ログでRust24成功/失敗0。attempt1のcancelled/未実行をattempt2成功へ置換していない。
+- 最新main `5c8fdab2`から`feat/29-link-sketch-reuse`を作成。既存Ctrl copyのDAGを明示的な
+  `linkedDuplicate` identityとUI入口へ接続し、元再計算追従/独立配置を区別した。駆動/参照寸法の
+  実線/破線toggle、face支持sketchの0/1/複数候補、全ID/参照を再採番するface/datum独立copy、
+  sketch削除時のmodel cleanupを実装した。契約は[cad-linked-sketch-reuse.md](cad-linked-sketch-reuse.md)。
+- 対象unitを含むNode24.22.1全JS249件は成功。最初の対象browser 2件はChromium実行体不在で
+  test body前に失敗し、ローカルbrowser未実施として区別する。Node20.20.2、native全件、browser全件、
+  local Rust、CI、Draft PR、Ready、mergeはこの時点で未実施。D/E、指示028fixture候補、#37/PR43は対象外。
+
+### ローカル全件とbrowser実行環境
+
+- 厳密なNode20.20.2でも全JS249件が成功。native全107件は105成功・任意NVIDIA USD 2skip。
+  local Rustは`cargo`不在で未実行。
+- Chromium導入を`npx playwright install chromium`で試したが、配布元から5回とも0 MiBの内容が返り、
+  ZIP終端なしで失敗した。既存実行体も存在せず、対象/全browserはtest body未実行のまま。初回の実行体
+  不在2失敗と導入失敗を保持し、CI成功や後続判断でローカル成功へ置換しない。
+- source抑制時のlinked copy blocked、Undo復帰、source削除時のunresolved、Undo復帰を既存Ctrl copy
+  browser回帰へ追加した。Draft PRの全CIを完走させた後、ローカルbrowser代替可否をMuseへ判断依頼する。
+  CI、Ready、mergeはこの時点では未実施。

@@ -186,3 +186,10 @@ Museが有効化したBの項目4/7だけを扱い、既存binding IDによる�
 選択・hover・強調、生成エラーからCAD修復履歴への移動を追加する。契約と証拠は
 [生成グラフとCADの双方向ナビゲーション](cad-generation-navigation.md)に固定する。
 A/C/D/E、保存schema、CAD演算、65 command、Issue #37、Draft PR #43へ範囲を広げない。
+
+## 2026-11-03 — 指示029 C
+
+Museが有効化したCの項目9/12/19/21だけを扱う。既存DAGを明示的なリンク複製へ接続し、
+駆動/参照寸法の形状不変切替、faceからの支持sketch直接編集、全ID/参照を再採番する
+独立sketch copyを追加する。契約と証拠は[リンク複製とsketch再利用](cad-linked-sketch-reuse.md)。
+D/E、指示028のfixture候補、Issue #37、Draft PR #43へ範囲を広げない。

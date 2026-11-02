@@ -355,6 +355,9 @@ export class CadStore {
       ...(session.sketchSupport
         ? { sketchSupport: clone(session.sketchSupport) }
         : {}),
+      ...(session.linkedDuplicate
+        ? { linkedDuplicate: clone(session.linkedDuplicate) }
+        : {}),
       resultPolicy: session.command.resultPolicy,
       outputSlots: [{ key: "result", entityId: id(), bodyId }],
       featureRevision: 1,
@@ -510,12 +513,20 @@ export class CadStore {
       this.document.features
         .filter((f) => doomed.has(f.id))
         .flatMap((f) => f.outputSlots.map((s) => s.entityId)),
-    );
+      ),
+      sketches = new Set(
+        this.document.features
+          .filter((f) => doomed.has(f.id) && f.sketchId)
+          .map((f) => f.sketchId),
+      );
     this.document.features = this.document.features.filter(
       (f) => !doomed.has(f.id),
     );
     this.document.entities = this.document.entities.filter(
       (e) => !entities.has(e.id),
+    );
+    this.document.sketches = this.document.sketches.filter(
+      (sketch) => !sketches.has(sketch.id),
     );
     for (const f of this.document.features)
       for (const ref of references(f.inputs))
@@ -1022,6 +1033,69 @@ export class CadStore {
     );
     this.notify();
     return plane ? this.recompute() : false;
+  }
+  async addSketchCopy(sourceFeatureId, result) {
+    const before = checkpoint(this.document),
+      source = this.getFeature(sourceFeatureId),
+      sketch = clone(result.sketch);
+    if (!source?.sketchId) throw new Error("Sketch feature missing");
+    if (!["solved", "redundant"].includes(result.status))
+      throw new Error("コピーするスケッチを解けませんでした");
+    sketch.solveReport = {
+      status: result.status,
+      degreesOfFreedom: result.degreesOfFreedom,
+      fullyConstrained: result.fullyConstrained,
+      maxResidual: result.maxResidual,
+      diagnostics: result.diagnostics,
+      conflictCandidates: result.conflictCandidates,
+      components: result.components,
+      measurements: result.measurements,
+    };
+    sketch.lastValid = {
+      points: clone(sketch.points),
+      lines: clone(sketch.lines),
+      circles: clone(sketch.circles),
+      plane: clone(sketch.plane),
+      localOrigin: clone(sketch.localOrigin || { u: 0, v: 0 }),
+    };
+    const feature = {
+      ...clone(source),
+      id: id(),
+      name: `${source.name || "Sketch"} copy`,
+      inputs: {},
+      parameters: sketchCurveParameters(sketch),
+      ...(sketch.support
+        ? { sketchSupport: clone(sketch.support) }
+        : { sketchSupport: null }),
+      sketchId: sketch.id,
+      outputSlots: [{ key: "result", entityId: id(), bodyId: id() }],
+      featureRevision: 1,
+      requestedHash: null,
+      resultHash: null,
+      status: "dirty",
+      diagnostics: [],
+      lastValid: null,
+    };
+    delete feature.linkedDuplicate;
+    this.document.sketches.push(sketch);
+    this.document.features.push(feature);
+    this.document.documentRevision++;
+    try {
+      await this.recompute();
+    } catch (error) {
+      this.document = before;
+      this.notify();
+      throw error;
+    }
+    if (!["valid", "warning", "empty"].includes(feature.status)) {
+      const message = feature.diagnostics?.[0]?.message || "スケッチ複製に失敗しました";
+      this.document = before;
+      this.notify();
+      throw new Error(message);
+    }
+    this.transactions.record(before, this.document, "スケッチを独立コピー");
+    this.notify();
+    return feature;
   }
   async insertLibrary(entry, options = {}) {
     const before = checkpoint(this.document),

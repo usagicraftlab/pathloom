@@ -34,3 +34,10 @@
 - C01〜C65の既存command UIを一括してスケッチ内ツールへ再配置すること。
 - E系編集コマンドの意味・入力契約の変更。
 - 実Mac GUI/Tauri/OS dialogの最終実機確認（Issue #37）。
+
+## 2026-11-03 — 指示029 C 追補
+
+既存solverの参照寸法測定をUIの駆動/参照toggleへ接続し、現在測定値を使う参照→駆動で
+形状を維持する。face supportの厳密一致による直接編集と、全要素/拘束/寸法ID・参照を
+再採番する独立copyを追加する。詳細は[リンク複製とsketch再利用](cad-linked-sketch-reuse.md)。
+sketchは引き続き一つのfeature履歴項目で、内部に時系列履歴を新設しない。

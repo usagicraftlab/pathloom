@@ -1,6 +1,6 @@
 import { packageShapes } from "./shape-library.js";
 import { readLibraryContainer, writeLibraryContainer } from "../recovery-migration.js";
-import { constrainedRectangle } from "./sketch/model.js";
+import { constrainedRectangle, copySketchToSupport } from "./sketch/model.js";
 import { SketchSolverClient } from "./sketch/worker-client.js";
 import { bindBody, generationInput } from "./generation-adapter.js";
 import { bindingIdsForCadSelection, cadTargetsForBindings } from "./generation-navigation.js";
@@ -943,6 +943,11 @@ export function initModelWorkspace(api) {
     if (event.ctrlKey || event.metaKey) command.resultPolicy = "independent";
     await begin(command);
     if (!session) return;
+    if (command.resultPolicy === "independent")
+      session.linkedDuplicate = {
+        sourceEntityId: entity.id,
+        sourceFeatureId: entity.producer.featureId,
+      };
     if (kind === "move") view.setMoveGhost(entity);
     handle.disabled = false;
     const target = session;
@@ -1121,6 +1126,26 @@ export function initModelWorkspace(api) {
   function closeHistoryMenu() {
     historyMenu.hidden = true;
   }
+  function openSketchFeature(feature) {
+    const entity = feature.outputSlots.map((slot) => store.getEntity(slot.entityId)).find(Boolean);
+    selectedFeature = feature.id;
+    selection = entity ? [{ entityId: entity.id }] : [];
+    store.document.uiState.selection = clone(selection);
+    propertiesOpen = true;
+    featureEditActive = true;
+    render();
+  }
+  async function copySketchFeature(feature, plane, support) {
+    const source = store.document.sketches.find((sketch) => sketch.id === feature.sketchId);
+    if (!source) throw new Error("コピー元のスケッチが見つかりません");
+    const copied = copySketchToSupport(source, { plane, support }),
+      result = await solver.solve(copied),
+      created = await store.addSketchCopy(feature.id, result);
+    openSketchFeature(created);
+    setStatus(support
+      ? "選択面へ独立したスケッチをコピーしました。"
+      : "現在の基準面へ独立したスケッチをコピーしました。");
+  }
   function showHistoryMenu(feature, event) {
     closeObjectMenu();
     historyMenu.replaceChildren();
@@ -1139,6 +1164,13 @@ export function initModelWorkspace(api) {
     };
     action(feature.status === "suppressed" ? "操作の抑制を解除" : "操作を抑制", () =>
       store.suppress(feature.id, feature.status !== "suppressed"));
+    if (feature.sketchId)
+      action("現在の作業平面へ独立コピー", () =>
+        copySketchFeature(
+          feature,
+          clone(store.document.uiState.workPlane),
+          clone(store.document.uiState.workPlaneSupport || null),
+        ));
     action("履歴を削除", () => {
       const outputIds = new Set(feature.outputSlots.map((slot) => slot.entityId));
       const dependents = store.document.features.filter(
@@ -1171,7 +1203,7 @@ export function initModelWorkspace(api) {
       button.textContent = label;
       button.addEventListener("click", () => {
         closeObjectMenu();
-        action();
+        Promise.resolve(action()).catch(report);
       });
       objectMenu.append(button);
     };
@@ -1183,6 +1215,19 @@ export function initModelWorkspace(api) {
       libraryDialog.showModal();
     });
     addAction("生成で使用", () => useEntityForGeneration(entity));
+    addAction("リンク複製", async () => {
+      selection = [{ entityId: entity.id }];
+      store.document.uiState.selection = clone(selection);
+      const command = clone(commandById("transform.move"));
+      command.resultPolicy = "independent";
+      await begin(command);
+      if (!session) return;
+      session.linkedDuplicate = {
+        sourceEntityId: entity.id,
+        sourceFeatureId: entity.producer.featureId,
+      };
+      setStatus("リンク複製の配置を指定して確定してください。元形状の編集には追従します。");
+    });
     for (const binding of store.document.outputBindings.filter(
       (binding) => ["split", "missing"].includes(binding.status),
     )) {
@@ -1229,6 +1274,18 @@ export function initModelWorkspace(api) {
     );
     if (!topology) return;
     const reference = makeSubshapeRef(entity, topology);
+    const selectedSketchFeature = store.getFeature(selectedFeature),
+      supportedSketches = hit.kind === "face"
+        ? store.document.sketches
+            .filter((sketch) =>
+              sketch.support?.entityId === hit.entityId &&
+              sketch.support?.topologyId === hit.topologyId)
+            .map((sketch) => ({
+              sketch,
+              feature: store.document.features.find((feature) => feature.sketchId === sketch.id),
+            }))
+            .filter((candidate) => candidate.feature)
+        : [];
     selection = [{ entityId: entity.id }, reference];
     store.document.uiState.selection = clone(selection);
     objectMenu.replaceChildren();
@@ -1242,6 +1299,31 @@ export function initModelWorkspace(api) {
         ...(entity.kind === "solid" ? [["Shell", "D07"]] : [["Reverse Normal", "F11"]]),
         ["Mirror（このfaceを基準）", "transform.mirror"],
       ];
+    const menuAction = (label, run, { disabled = false } = {}) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.setAttribute("role", "menuitem");
+      button.textContent = label;
+      button.disabled = disabled;
+      button.onclick = () => {
+        closeObjectMenu();
+        Promise.resolve(run()).catch(report);
+      };
+      objectMenu.append(button);
+    };
+    if (hit.kind === "face") {
+      if (supportedSketches.length === 1)
+        menuAction("この面のスケッチを編集", () => openSketchFeature(supportedSketches[0].feature));
+      else if (supportedSketches.length > 1)
+        for (const [index, candidate] of supportedSketches.entries())
+          menuAction(`この面のスケッチ ${index + 1} を編集`, () => openSketchFeature(candidate.feature));
+      else menuAction("この面に紐づくスケッチなし", () => {}, { disabled: true });
+      if (selectedSketchFeature?.sketchId)
+        menuAction("選択スケッチをこの面へ独立コピー", () => {
+          const target = faceWorkplane(hit);
+          return copySketchFeature(selectedSketchFeature, target.plane, target.support);
+        });
+    }
     for (const [label, commandId] of commands) {
       const command = findCommands().find((candidate) => candidate.id === commandId);
       if (!command) continue;
@@ -1318,7 +1400,10 @@ export function initModelWorkspace(api) {
       group.dataset.bodyId = body.id;
       group.setAttribute("role", "treeitem");
       const heading = document.createElement("summary");
-      heading.textContent = `${entity.kind === "solid" ? "立体" : entity.kind === "curve" ? "カーブ" : "サーフェス"} · ${entity.name || "無題"}`;
+      const linkedProducer = store.getFeature(entity.producer.featureId);
+      heading.textContent = `${linkedProducer?.linkedDuplicate ? "🔗 " : ""}${entity.kind === "solid" ? "立体" : entity.kind === "curve" ? "カーブ" : "サーフェス"} · ${entity.name || "無題"}`;
+      if (linkedProducer?.linkedDuplicate)
+        heading.title = "リンク複製：元形状の編集に追従し、配置は独立しています";
       group.append(heading);
       const row = document.createElement("div");
       row.className = "model-outline-row";
@@ -1718,7 +1803,7 @@ export function initModelWorkspace(api) {
     }
     if (f && !session && !featureEditActive) {
       const summary = document.createElement("p");
-      summary.textContent = `${f.name} · ${f.status} · ${f.operation.id}`;
+      summary.textContent = `${f.linkedDuplicate ? "リンク複製 · " : ""}${f.name} · ${f.status} · ${f.operation.id}`;
       host.append(summary);
       const edit = document.createElement("button");
       edit.type = "button";
@@ -1824,16 +1909,45 @@ export function initModelWorkspace(api) {
       for (const constraint of base.constraints) {
         const row = document.createElement("label");
         row.className = "model-sketch-constraint";
+        row.classList.add(constraint.mode === "reference" ? "is-reference" : "is-driving");
         if (sketch.solveReport?.conflictCandidates?.includes(constraint.id))
           row.classList.add("has-conflict");
         row.textContent = constraint.label || constraint.kind;
-        if (constraint.mode === "reference") {
-          const measurement = sketch.solveReport?.measurements?.find(
+        const measurement = sketch.solveReport?.measurements?.find(
             (candidate) => candidate.id === constraint.id,
-          );
+          ),
+          numericDimension = Number.isFinite(measurement?.value),
+          addModeToggle = () => {
+            if (!numericDimension) return;
+            const toggle = document.createElement("button");
+            toggle.type = "button";
+            toggle.className = "model-sketch-dimension-mode";
+            toggle.textContent = constraint.mode === "reference" ? "駆動にする" : "参照にする";
+            toggle.setAttribute(
+              "aria-label",
+              `スケッチ ${constraint.label || constraint.kind}を${constraint.mode === "reference" ? "駆動" : "参照"}寸法に切替`,
+            );
+            toggle.onclick = async (event) => {
+              event.preventDefault();
+              try {
+                const next = clone(base),
+                  candidate = next.constraints.find((item) => item.id === constraint.id);
+                candidate.mode = constraint.mode === "reference" ? "driving" : "reference";
+                if (candidate.mode === "driving") candidate.value = measurement.value;
+                const result = await solver.solve(next);
+                await store.updateSketch(f.id, result);
+                properties();
+              } catch (error) {
+                report(error);
+              }
+            };
+            row.append(toggle);
+          };
+        if (constraint.mode === "reference") {
           const output = document.createElement("output");
           output.textContent = `${measurement?.value?.toFixed(3) ?? "—"} ${measurement?.unit || "mm"}（参照）`;
           row.append(output);
+          addModeToggle();
           host.append(row);
           continue;
         }
@@ -1869,6 +1983,7 @@ export function initModelWorkspace(api) {
           }
         };
         row.append(input);
+        addModeToggle();
         host.append(row);
       }
       const elements = document.createElement("details"),
@@ -3196,7 +3311,7 @@ export function initModelWorkspace(api) {
     const name = $("modelPlane").value;
     applyReferenceWorkplane(name);
   };
-  function applyFaceWorkplane(hit) {
+  function faceWorkplane(hit) {
     const entity = store.getEntity(hit.entityId);
     if (!entity) throw new Error("作業平面にする形状が見つかりません");
     const faces = entity.displayCache?.topology?.filter((item) => item.kind === "face") || [];
@@ -3224,6 +3339,10 @@ export function initModelWorkspace(api) {
         faces[faceIndex]?.fingerprint?.centroid || hit.point,
       ),
     };
+    return { plane, support };
+  }
+  function applyFaceWorkplane(hit) {
+    const { plane, support } = faceWorkplane(hit);
     rememberWorkplane(plane, support);
     store.document.uiState.workPlane = plane;
     store.document.uiState.workPlaneSupport = support;
@@ -3645,6 +3764,11 @@ export function initModelWorkspace(api) {
           orbitGesture = true;
           try { await begin(command); }
           catch (error) { orbitGesture = false; report(error); return; }
+          if (session)
+            session.linkedDuplicate = {
+              sourceEntityId: entity.id,
+              sourceFeatureId: entity.producer.featureId,
+            };
           view.setMoveGhost(entity);
           const target = session;
           trackDrag(canvas, event, (moveEvent) => {
