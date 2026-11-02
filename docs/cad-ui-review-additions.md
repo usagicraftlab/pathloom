@@ -6,6 +6,11 @@
 
 ## 境界
 
+2026-11-02: 以下の旧直接操作仕様のうち、回転snapは027 Aで「通常自由・Shift中15°」へ反転。
+数値wheelは026で撤去済み。snapの1mm固定は027 AのメニューOFF時として保持し、
+ON時だけズーム連動へ切り替える。配列/生成dragの旧記述は026で撤去済み。
+現行UXは[cad-ux-interactions.md](cad-ux-interactions.md)を参照。
+
 - dragは1mm固定、Altで0.1mm相当。回転は15°刻み、Shift中は自由。数値wheelはhover欄、
   右設定のEnterは次欄へ移る。Esc一回で未確定drag/sessionを破棄する。
 - 自動Extrudeはbboxで候補を絞り、既存Intersectionで正確な交差を確認する。交差が1体のとき

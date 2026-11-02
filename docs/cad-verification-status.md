@@ -426,3 +426,31 @@ fixtureを追従させ、方向widgetとcommand barの重なりを製品側で�
 最終製品headのPR CIはbrowser 89件全成功（retryなし）まで完走した。途中の49成功/40失敗、
 87成功/2失敗、およびpush attempt 1の既存project recovery 1件の間欠失敗は開発ログに保持し、
 後続再実行やPR成功で置換しない。
+
+## 2026-11-02 — 指示027 A のA/T/R証拠
+
+既存A/T/R 62行と正規65 IDの状態は保持する。[027 A対応表](cad-ux-interactions.md)に14項目を
+JS/native/browser fixtureへ結ぶ。ローカルNode24.22.1/20.20.2全JS各245成功、native全107件は
+105成功・任意NVIDIA USD 2skip。追加native2件の初回はテスト側のexport/一時directory指定の誤りで
+2 error、修正後2成功。local browserはChromium ZIP取得失敗後、96件が起動前に失敗してbody未実行。
+代替実行環境とCIは開発ログ/PRで更新する。この時点でbrowser成功/実Mac合格にはしない。
+
+追記：npm配布Chromium153と既存fontconfigによるlocal browser起動が復旧した。対象7件は
+初回環境/製品/test失敗を保持し、修正後7成功。全件で検出したorbitのmid-event retarget、
+Ctrl drag中のretarget、menu遮蔽を修正した。初回CIはpush85成功/11失敗、PR64成功/11失敗/
+21未完了で15分cancelled。全job生ログと分類・再実行は開発ログへ記録する。最終合格はまだ未成立。
+
+head04eb167のprepared assetsでlocal browser96件全成功（7.6分、retryなし）。その後のnullable数値欄の
+補完はD06実OCP browser1件成功（式/単位/null・体積990・Save/Open）。全JSは各245成功を確認し、
+この最終小差分でbrowser全件とCIを再確認する。旧90成功/6失敗は成功へ置換しない。
+
+nullable補完後もlocal96件全成功。04eb167のPR CIは全3job成功（browser96）、pushはbrowser86成功/
+任意作業面1失敗/9未完了で15分cancelled。通常単独8回成功だけでは分類せず、CPU throttling rate4で
+3失敗を再現し、遅いpreviewの途中で視点が動く製品問題を修正した。中間のframe待ち3失敗、
+DOM click/frame待ち1成功/2失敗を保持し、修正後はCPU制限3成功・新規UI8成功。
+新しいpreview視点安定化回帰を含む最終97件と最終head CIを確認する。詳細は開発ログとPR #57。
+
+最終local確認：prepared assetsのbrowser97件全成功（7.8分、retryなし）、Node24.22.1/Node20.20.2全JS
+各245成功、同一native実装の全107件105成功/任意NVIDIA USD2skip。local Rustはcargo不在で未実行。
+この最終差分のCIとmergeは記録時点で未実施であり、PR #57/ボードCodexログへ実結果を追記して照合する。
+既存A/T/R 62行と実Mac未実施の状態は変更しない。

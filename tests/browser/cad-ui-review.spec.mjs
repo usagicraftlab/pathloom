@@ -87,7 +87,7 @@ test("P3 review additions expose view, panel, command and outliner controls", as
 
   const rectangle = page.getByRole("button", { name: "Rectangle", exact: true }).first();
   await selectCadMenuItem(page, "#modelCommandEdit");
-  await expect(page.getByRole("button", { name: "配置編集", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#modelCommandEdit")).toHaveAttribute("aria-pressed", "true");
   await rectangle.click({ button: "right" });
   await expect(page.getByRole("region", { name: "ピン留めしたコマンド" })).toBeVisible();
   await selectCadMenuItem(page, "#modelCommandEdit");

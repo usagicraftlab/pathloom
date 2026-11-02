@@ -232,6 +232,17 @@ const test = base.extend({
   },
 });
 
+// Keep the failure details even when a later test exhausts the job's time
+// budget before Playwright prints its final summary and uploads traces.
+test.afterEach(async ({}, info) => {
+  if (info.status === info.expectedStatus) return;
+  console.error("BROWSER_FAILURE " + JSON.stringify({
+    title: info.titlePath,
+    status: info.status,
+    errors: info.errors.map(({message,stack})=>({message,stack})),
+  }));
+});
+
 async function selectCadCommand(page, name) {
   const command = () => page.getByRole("button", { name, exact: true });
   if (await command().count()) {
@@ -282,4 +293,21 @@ async function selectCadMenuItem(page, selector) {
   await item.click();
 }
 
-export { test, expect, selectCadCommand, selectCadMenuItem };
+async function clickCadPoint(page, point, options = {}) {
+  // Input.dispatchMouseEvent may acknowledge before a busy renderer dispatches
+  // the click. Observe the actual DOM event before waiting for its next frame.
+  await page.evaluate(() => {
+    window.__cadPointClick = new Promise((resolve) => {
+      const clicked = (event) => {
+        if (event.target.id !== "threeCanvas") return;
+        document.removeEventListener("click", clicked, true);
+        requestAnimationFrame(() => resolve());
+      };
+      document.addEventListener("click", clicked, true);
+    });
+  });
+  await page.mouse.click(point.x, point.y, options);
+  await page.evaluate(() => window.__cadPointClick);
+}
+
+export { test, expect, selectCadCommand, selectCadMenuItem, clickCadPoint };

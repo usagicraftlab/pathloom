@@ -43,7 +43,7 @@ import {
   inDrawingPlane,
 } from "./commands/input.js";
 import { makeSubshapeRef } from "./references.js";
-import { boundsOverlap, centerOf, snapCandidates, thumbnailPath } from "./ui-interactions.js";
+import { boundsOverlap, centerOf, snapCandidates, thumbnailPath, selectionBounds, zoomSnapStep, snapCoordinate, snapKind, edgeLoop } from "./ui-interactions.js";
 const $ = (id) => document.getElementById(id);
 const labels = {
   points:"底面の作図点 XYZ（順序付き）",chainPolicy:"edge連鎖の選択",radiiMm:"3軸半径 XYZ mm",transitionMode:"Pipe角部の方式",frameMode:"掃引フレーム",distance1Mm:"距離1 mm（指定face側）",distance2Mm:"距離2 mm（nullは等距離）",
@@ -223,6 +223,7 @@ export function initModelWorkspace(api) {
     commandOrder: [],
     colors: {},
     showThumbnails: true,
+    zoomSnap: false,
     folders: {},
   };
   let uiPreferences = clone(defaultUiPreferences);
@@ -246,6 +247,10 @@ export function initModelWorkspace(api) {
     hoveredSubshape = null,
     closePolylineAsFace = false;
   let activeDrag = null, pivotPicking = false, pendingPivot = null;
+  let previousWorkplane = null, lastOrbitPoint = null;
+  let observedControls = null;
+  let pendingOrbitTarget = null, orbitUpdateQueued = false;
+  let orbitGesture = false;
   let session = null,
     selectedFeature = null,
     propertiesOpen = false,
@@ -296,6 +301,14 @@ export function initModelWorkspace(api) {
   const thumbnailToggle = makeToolButton("▧", "アウトライナーのサムネイル表示");
   thumbnailToggle.id = "modelThumbnailToggle";
   thumbnailToggle.setAttribute("aria-label", "サムネイル表示切替");
+  const zoomSnapToggle = makeToolButton("ズーム連動スナップ");
+  zoomSnapToggle.id = "modelZoomSnap";
+  zoomSnapToggle.setAttribute("aria-pressed", String(uiPreferences.zoomSnap));
+  const workplaneBack = makeToolButton("↶", "直前の作業面に戻る");
+  workplaneBack.id = "modelWorkplaneBack";
+  workplaneBack.setAttribute("aria-label", "直前の作業面に戻る");
+  workplaneBack.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 15 8-4 8 4-8 4zM8 4H4v4m0-4h9a6 6 0 0 1 6 6"/></svg>';
+  workplaneBack.disabled = true;
   // 補助機能はコマンドリボンではなくメニューバーにまとめる（指示026-13）。
   const optionsMenu = document.createElement("details");
   optionsMenu.className = "model-options-menu";
@@ -304,10 +317,13 @@ export function initModelWorkspace(api) {
   optionsSummary.setAttribute("aria-label", "CADメニュー");
   const optionsItems = document.createElement("div");
   optionsItems.className = "model-options-items";
-  optionsItems.append(thumbnailToggle, commandDslButton, commandEditButton);
+  optionsItems.append(thumbnailToggle, commandDslButton, commandEditButton, zoomSnapToggle);
   optionsMenu.append(optionsSummary, optionsItems);
+  optionsItems.addEventListener("click", (event) => {
+    if (event.target.closest("button")) optionsMenu.open = false;
+  });
   // 配列コピーは機能ごと不採用。旧ダイアログを起動する入口は置かない。
-  commandBarTools.append(measureButton);
+  commandBarTools.append(measureButton, workplaneBack);
   const commandSearch = panel.querySelector("#modelCommandSearch").closest("label");
   const commandList = panel.querySelector("#modelCommands");
   const commandSession = panel.querySelector("#modelSession");
@@ -411,7 +427,7 @@ export function initModelWorkspace(api) {
         ["Esc", "ドラッグを開始前へ戻してコマンド終了"], ["Tab", "パネルを一時的に隠す／戻す"],
         ["H", "選択形状を隠す"], ["Shift+H", "隠れた形状をすべて戻す"], ["I", "選択形状だけを表示"],
         ["Cmd/Ctrl+Z", "Undo"], ["Cmd/Ctrl+Shift+Z", "Redo"], ["Enter", "作図を確定／右入力欄では次の欄"],
-        ["Ctrl/Cmd+ドラッグ", "コピーして移動"], ["Alt+ドラッグ", "精密移動"], ["Shift+回転ドラッグ", "角度スナップ解除"],
+        ["Ctrl/Cmd+ドラッグ", "コピーして移動"], ["Alt+ドラッグ", "精密移動"], ["Shift+回転ドラッグ", "15°角度スナップ"],
       ]) {
         const key = document.createElement("dt"), description = document.createElement("dd");
         key.textContent = keys; description.textContent = meaning; shortcuts.append(key, description);
@@ -707,6 +723,37 @@ export function initModelWorkspace(api) {
   const snapGuide = document.createElement("div");
   snapGuide.className = "model-snap-guide";
   snapGuide.hidden = true;
+  snapGuide.setAttribute("aria-hidden", "true");
+  function showSnap(candidate, screen) {
+    snapGuide.hidden = !candidate || !screen;
+    if (snapGuide.hidden) return;
+    const kind = candidate.kind || snapKind(candidate.label);
+    const shapes = { endpoint: '<rect x="4" y="4" width="12" height="12"/>',
+      midpoint: '<path d="m10 3 8 14H2z"/>', center: '<circle cx="10" cy="10" r="6"/><path d="M10 0v6m0 8v6M0 10h6m8 0h6"/>',
+      intersection: '<path d="m4 4 12 12M4 16 16 4"/>' };
+    snapGuide.dataset.snapKind = kind;
+    snapGuide.innerHTML = `<svg viewBox="0 0 20 20">${shapes[kind]}</svg>`;
+    snapGuide.style.left = `${screen.x}px`;
+    snapGuide.style.top = `${screen.y}px`;
+  }
+  const rotationGuide = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  rotationGuide.classList.add("model-rotation-guide");
+  rotationGuide.setAttribute("viewBox", "-72 -72 144 144");
+  rotationGuide.setAttribute("aria-hidden", "true");
+  rotationGuide.setAttribute("hidden", "");
+  function showRotationGuide(point, degrees, enabled) {
+    rotationGuide.toggleAttribute("hidden", !enabled);
+    if (!enabled) return;
+    const projected = view.project(point);
+    if (!projected) return;
+    rotationGuide.style.left = `${projected.x - 72}px`;
+    rotationGuide.style.top = `${projected.y - 72}px`;
+    const polar = (angle, radius) => [Math.sin(angle * Math.PI / 180) * radius, -Math.cos(angle * Math.PI / 180) * radius];
+    const ticks = Array.from({ length: 24 }, (_, index) => `<path class="model-angle-tick" d="M${polar(index * 15, 56).join(" ")}L${polar(index * 15, 63).join(" ")}"/>`).join("");
+    const end = polar(degrees, 52), extent = Math.min(Math.abs(degrees), 359.99);
+    const arcEnd = polar(Math.sign(degrees) * extent, 52);
+    rotationGuide.innerHTML = ticks + `<path class="model-angle-arc" d="M0 -52A52 52 0 ${extent > 180 ? 1 : 0} ${degrees >= 0 ? 1 : 0} ${arcEnd.join(" ")}"/><path d="M0 0L${end.join(" ")}"/>`;
+  }
   const measurementLine = document.createElement("div");
   measurementLine.className = "model-measure-line";
   measurementLine.hidden = true;
@@ -784,7 +831,7 @@ export function initModelWorkspace(api) {
   boxSelection.className = "model-box-selection";
   boxSelection.hidden = true;
   viewportStatus.append(modelStatus, dimensions, cursorReadout);
-  viewportOverlay.append(viewportStatus, snapGuide, measurementLine, measurementLabel, projectedDimensions, inlineDimensionInput, distanceHandle, gizmo, boxSelection);
+  viewportOverlay.append(viewportStatus, snapGuide, rotationGuide, measurementLine, measurementLabel, projectedDimensions, inlineDimensionInput, distanceHandle, gizmo, boxSelection);
   document.body.append(viewportOverlay);
   const libraryPlacementLabel = document.createElement("label"),
     libraryPlacementInput = document.createElement("input");
@@ -802,6 +849,33 @@ export function initModelWorkspace(api) {
   inspector.append(actionControls, exportStepButton);
   document.body.append(panel);
   view = createViewAdapter(api.preview);
+  const snapStep = () => zoomSnapStep(view.pixelScaleMm(), uiPreferences.zoomSnap);
+  const snapNumber = (value) => snapCoordinate(value, snapStep());
+  zoomSnapToggle.onclick = () => {
+    uiPreferences.zoomSnap = !uiPreferences.zoomSnap;
+    zoomSnapToggle.setAttribute("aria-pressed", String(uiPreferences.zoomSnap));
+    saveUiPreferences();
+    snapPoint = null;
+    updateView();
+  };
+  workplaneBack.onclick = () => {
+    if (!previousWorkplane) return;
+    const previous = previousWorkplane;
+    rememberWorkplane(previous.plane, previous.support);
+    store.document.uiState.workPlane = clone(previous.plane);
+    store.document.uiState.workPlaneSupport = clone(previous.support);
+    planeSelect.value = previous.name;
+    planeBeforeFace = previous.name;
+    referencePlanePicking = false;
+    planePicking = false;
+    snapPoint = null;
+    invalidFields.delete("plane");
+    if (session?.parameters.plane) {
+      dispatchSession(session, { type: "setting.change", key: "plane", value: clone(previous.plane) });
+      saveDraft(); properties(); queuePreview();
+    }
+    render({ keepProperties: true });
+  };
   commandEditButton.addEventListener("click", () => {
     commandEditMode = !commandEditMode;
     setStatus(commandEditMode
@@ -823,6 +897,7 @@ export function initModelWorkspace(api) {
     render({ keepProperties: true, keepHistory: true });
   });
   function editDisplayedDimension(event) {
+    if (selectionBounds(store.document, selection)?.count !== 1) return;
     const entity = store.getEntity(selection[0]?.entityId);
     const feature = store.getFeature(selectedFeature || entity?.producer.featureId);
     const key = event.target.closest("[data-dimension]")?.dataset.dimension || "widthMm";
@@ -865,6 +940,7 @@ export function initModelWorkspace(api) {
     if (event.ctrlKey || event.metaKey) command.resultPolicy = "independent";
     await begin(command);
     if (!session) return;
+    if (kind === "move") view.setMoveGhost(entity);
     handle.disabled = false;
     const target = session;
     const pivot = pendingPivot?.entityId === entity.id ? pendingPivot.point : centerOf(entity);
@@ -876,7 +952,7 @@ export function initModelWorkspace(api) {
       if (session !== target) return;
       const delta = moveEvent.clientX - startX;
       if (kind === "move") {
-        let amount = moveEvent.altKey ? Math.round(delta) / 10 : Math.round(delta);
+        let amount = moveEvent.altKey ? Math.round(delta) / 10 : $("modelSnap").checked ? snapNumber(delta) : delta;
         const center = entity.bbox.min.map(
           (minimum, index) => (minimum + entity.bbox.max[index]) / 2,
         );
@@ -892,22 +968,21 @@ export function initModelWorkspace(api) {
           amount = aligned.offset;
           const point = view.project(aligned.point);
           if (point) {
-            snapGuide.hidden = false;
-            snapGuide.style.left = `${point.x}px`;
-            snapGuide.style.top = `${point.y}px`;
+            showSnap(aligned, point);
           }
         } else snapGuide.hidden = true;
         const translation = [0, 0, 0];
         translation[axisIndex] = amount;
         dispatchSession(session, { type: "setting.change", key: "translation", value: translation });
-        cursorReadout.textContent = `${axisName} ${amount.toFixed(moveEvent.altKey ? 1 : 0)} mm · ${moveEvent.altKey ? "精密" : "1mm snap"}`;
+        cursorReadout.textContent = `${axisName} ${Number(amount.toFixed(3))} mm`;
       } else if (kind === "rotate") {
-        const degrees = moveEvent.shiftKey ? delta : Math.round(delta / 15) * 15;
+        const degrees = moveEvent.shiftKey ? Math.round(delta / 15) * 15 : delta;
         const direction = [0, 0, 0];
         direction[axisIndex] = 1;
         dispatchSession(session, { type: "setting.change", key: "axis", value: { origin: [...pivot], direction } });
         dispatchSession(session, { type: "setting.change", key: "angleRad", value: degrees * Math.PI / 180 });
-        cursorReadout.textContent = `${axisName} ${degrees.toFixed(1)}° · ${moveEvent.shiftKey ? "自由" : "15° snap"}`;
+        cursorReadout.textContent = `${axisName} ${degrees.toFixed(1)}°`;
+        showRotationGuide(pivot, degrees, moveEvent.shiftKey);
       } else {
         const factor = Math.max(0.01, 1 + delta * (moveEvent.altKey ? 0.001 : 0.01));
         if (axisName === "all") target.parameters.factor = factor;
@@ -932,19 +1007,32 @@ export function initModelWorkspace(api) {
   function trackDrag(handle, event, onMove, onEnd, onCancel) {
     event.preventDefault();
     handle.setPointerCapture(event.pointerId);
+    let latest = event;
+    const move = (next) => { latest = next; onMove(next); };
+    const modifier = (keyEvent) => {
+      if (keyEvent.key === "Shift") move({ clientX: latest.clientX, clientY: latest.clientY,
+        shiftKey: keyEvent.type === "keydown", altKey: keyEvent.altKey });
+    };
+    document.addEventListener("keydown", modifier);
+    document.addEventListener("keyup", modifier);
     const cleanup = () => {
-      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", finish);
       handle.removeEventListener("pointercancel", abort);
       if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
       activeDrag = null;
+      orbitGesture = false;
       cursorReadout.hidden = true;
       snapGuide.hidden = true;
+      rotationGuide.setAttribute("hidden", "");
+      view.setMoveGhost(null);
+      document.removeEventListener("keydown", modifier);
+      document.removeEventListener("keyup", modifier);
     };
     const finish = () => { cleanup(); Promise.resolve(onEnd?.()).catch(report); };
     const abort = () => { cleanup(); onCancel?.(); };
     activeDrag = { abort };
-    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointermove", move);
     handle.addEventListener("pointerup", finish);
     handle.addEventListener("pointercancel", abort);
   }
@@ -966,12 +1054,12 @@ export function initModelWorkspace(api) {
     trackDrag(handle, event, (moveEvent) => {
       if (session !== target) return;
       const raw = initial + (moveEvent.clientX - initialX) * (moveEvent.altKey ? 0.1 : 1);
-      const value = moveEvent.altKey || !$("modelSnap").checked ? raw : Math.round(raw);
+      const value = moveEvent.altKey || !$("modelSnap").checked ? raw : snapNumber(raw);
       dispatchSession(target, { type: "setting.change", key, value });
       cursorReadout.hidden = false;
       cursorReadout.style.left = `${moveEvent.clientX}px`;
       cursorReadout.style.top = `${moveEvent.clientY}px`;
-      cursorReadout.textContent = `${value.toFixed(moveEvent.altKey ? 1 : 0)} mm${target.parameters.bothSides ? " · 両側" : ""}`;
+      cursorReadout.textContent = `${Number(value.toFixed(3))} mm`;
       const field = $("modelProperties").querySelector(`[data-parameter="${key}"]`);
       if (field) field.value = String(value);
       saveDraft();
@@ -995,13 +1083,18 @@ export function initModelWorkspace(api) {
       const binding = bindBody(store.document, entity);
       store.resolveBindings();
       updateBindings(binding.id);
+      renderOutliner();
       setStatus("生成入力へ接続しました。ノード配線は変更していません。");
     } catch (error) {
       report(error);
     }
   }
-  function selectOutlinerEntity(entity, { showProperties = false } = {}) {
-    selection = [{ entityId: entity.id }];
+  function selectOutlinerEntity(entity, { showProperties = false, additive = false } = {}) {
+    if (additive) {
+      const selected = selection.some((reference) => reference.entityId === entity.id);
+      selection = selection.filter((reference) => reference.entityId !== entity.id);
+      if (!selected) selection.push({ entityId: entity.id });
+    } else selection = [{ entityId: entity.id }];
     selectedFeature = null;
     propertiesOpen = showProperties;
     featureEditActive = false;
@@ -1238,9 +1331,9 @@ export function initModelWorkspace(api) {
       group.classList.toggle("is-suppressed", store.getFeature(entity.producer.featureId)?.status === "suppressed");
       select.title = `${entity.kind} · ${entity.closure.enclosesVolume ? "閉体積" : "開いた形状"}`;
       let selectClickTimer = null;
-      select.addEventListener("click", () => {
+      select.addEventListener("click", (event) => {
         clearTimeout(selectClickTimer);
-        selectClickTimer = setTimeout(() => selectOutlinerEntity(entity), 180);
+        selectClickTimer = setTimeout(() => selectOutlinerEntity(entity, { additive: event.shiftKey }), 180);
       });
       select.addEventListener("dblclick", (event) => {
         event.preventDefault();
@@ -1320,7 +1413,24 @@ export function initModelWorkspace(api) {
         saveUiPreferences();
         render();
       });
-      row.append(select, color, visibility, lock);
+      const producer = store.getFeature(entity.producer.featureId);
+      group.classList.toggle("has-recompute-error", ["failed", "blocked"].includes(producer?.status));
+      const indicator = (state, label, markup) => {
+        const mark = document.createElement("span");
+        mark.className = "model-state-indicator";
+        mark.dataset.state = state;
+        mark.setAttribute("role", "img");
+        mark.setAttribute("aria-label", label);
+        mark.title = label;
+        mark.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true">${markup}</svg>`;
+        return mark;
+      };
+      row.append(select);
+      if (["failed", "blocked"].includes(producer?.status))
+        row.append(indicator("error", "再計算エラー", '<path d="m8 1 7 13H1z"/><path d="M8 5v4m0 2v1"/>'));
+      if (store.document.outputBindings.some((binding) => binding.source.bodyId === body.id || binding.resolvedEntityId === entity.id))
+        row.append(indicator("generation", "生成に登録済み", '<circle cx="4" cy="4" r="2"/><circle cx="12" cy="12" r="2"/><path d="M6 4h6v6"/>'));
+      row.append(color, visibility, lock);
       group.append(row);
       group.addEventListener("dragstart", (event) => {
         event.dataTransfer.effectAllowed = "move";
@@ -1466,6 +1576,7 @@ export function initModelWorkspace(api) {
     }
   }
   function cancel() {
+    orbitGesture = false;
     curvePointPicking=false;
     referencePlanePicking=false;
     mirrorPlanePicking = false;
@@ -1485,6 +1596,8 @@ export function initModelWorkspace(api) {
     store.cancelJobs();
     session = null;
     view.clearPreview();
+    view.setMoveGhost(null);
+    rotationGuide.setAttribute("hidden", "");
     previewHandles = [];
     setStatus("未確定操作を破棄しました。確定済み形状は保持しています。");
     render();
@@ -1722,9 +1835,10 @@ export function initModelWorkspace(api) {
           continue;
         }
         const input = document.createElement("input");
-        input.type =
-          typeof constraint.value === "number" ? "number" : "checkbox";
-        if (input.type === "number") {
+        const numeric = typeof constraint.value === "number";
+        input.type = numeric ? "text" : "checkbox";
+        if (numeric) {
+          input.inputMode = "decimal";
           input.value = constraint.value;
           input.setAttribute(
             "aria-label",
@@ -1738,7 +1852,7 @@ export function initModelWorkspace(api) {
           try {
             const next = clone(base),
               c = next.constraints.find((c) => c.id === constraint.id);
-            if (input.type === "number") c.value = parseScalar(input.value);
+            if (numeric) c.value = parseScalar(input.value);
             else c.suppressed = !input.checked;
             const result = await solver.solve(next);
             store.updateSketch(f.id, result);
@@ -1764,7 +1878,8 @@ export function initModelWorkspace(api) {
         row.append(`点 ${index + 1}`);
         for (const key of ["u", "v"]) {
           const input = document.createElement("input");
-          input.type = "number";
+          input.type = "text";
+          input.inputMode = "decimal";
           input.value = point[key];
           input.setAttribute(
             "aria-label",
@@ -1972,6 +2087,8 @@ export function initModelWorkspace(api) {
       if(enumValues)for(const value of enumValues){const option=document.createElement('option');option.value=value;option.textContent=solidEnums?({selected:'選択edgeのみ',tangent:'接線でつながる連鎖',dimensions:'幅・奥行・高さ',twoCorners:'底面2点',threePoints:'底面3点',rightCorner:'角を交差で接続',roundCorner:'角を丸く接続',transformed:'フレーム変換','corrected-frame':'補正フレーム',frenet:'Frenet',inward:'内側',outward:'外側'}[value]||value):value;input.append(option);}
       input.dataset.parameter = key;
       input.setAttribute("aria-label", parameterLabel);
+      const nullableScalar = (value === null || typeof value === "number") &&
+        ["distance2Mm", "targetParameter", "solutionIndex"].includes(key);
       const operation = session?.command.baseOperation.id || f?.operation.id;
       if (
         key === "tangentChain" ||
@@ -1999,14 +2116,10 @@ export function initModelWorkspace(api) {
           const v =
             typeof value === "boolean"
               ? input.checked
-              : typeof value === "number"
-                ? key.toLowerCase().includes("anglerad")
-                  ? parseScalar(
-                      /(?:deg|rad)\s*$/i.test(input.value)
-                        ? input.value
-                        : input.value + "rad",
-                      "angle",
-                    )
+              : typeof value === "number" || nullableScalar
+                ? nullableScalar && input.value.trim() === "null" ? null
+                  : key.toLowerCase().includes("anglerad")
+                  ? parseScalar(input.value, "angle", { defaultUnit: "rad" })
                   : parseScalar(input.value)
                 : typeof value === "object"
                   ? JSON.parse(input.value)
@@ -2244,10 +2357,30 @@ export function initModelWorkspace(api) {
       bindingStamps.set(b.id, stamp);
     }
   }
+  function orbitCenter() {
+    const bounds = selectionBounds(store.document, selection);
+    return bounds ? bounds.min.map((value, axis) => (value + bounds.max[axis]) / 2) : lastOrbitPoint;
+  }
   function updateView() {
-    view.update(store.document, selection, { colors: uiPreferences.colors });
+    observeCameraControls();
+    const target = orbitCenter();
+    pendingOrbitTarget = target && [...target];
+    if (!orbitUpdateQueued) {
+      orbitUpdateQueued = true;
+      // A plane pick renders before accepting the same click as its first
+      // drawing point. Keep that ray's camera fixed until the event finishes.
+      queueMicrotask(() => {
+        orbitUpdateQueued = false;
+        if (!pendingOrbitTarget || activeDrag || orbitGesture || session) return;
+        view.setOrbitTarget(pendingOrbitTarget);
+        positionViewportControls();
+      });
+    }
+    view.update(store.document, selection, { colors: uiPreferences.colors, snapStep: snapStep() });
   }
   function positionViewportControls() {
+    observeCameraControls();
+    view.updateGrid(snapStep());
     if (activeDrag) return;
     const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
     if (entity?.bbox && entity.visibility !== "hidden") {
@@ -2487,22 +2620,26 @@ export function initModelWorkspace(api) {
     $("modelUndo").disabled = !store.transactions.canUndo;
     $("modelRedo").disabled = !store.transactions.canRedo;
     updateView();
-    const selectedEntity = selection.length === 1 && store.getEntity(selection[0].entityId)?.visibility !== "hidden" ? store.getEntity(selection[0].entityId) : null;
-    if (selectedEntity?.bbox) {
-      const size = selectedEntity.bbox.max.map((value, index) => value - selectedEntity.bbox.min[index]);
+    const selectedBounds = selectionBounds(store.document, selection);
+    const selectedEntity = selectedBounds?.count === 1 ? selection.map((reference) => store.getEntity(reference.entityId))
+      .find((entity) => entity?.bbox && entity.visibility !== "hidden") : null;
+    if (selectedBounds) {
+      const size = selectedBounds.max.map((value, index) => value - selectedBounds.min[index]);
       dimensions.replaceChildren();
       const sizeText = document.createElement("span");
       sizeText.dataset.dimension = "widthMm";
       sizeText.textContent = `W ${size[0].toFixed(2)} × D ${size[1].toFixed(2)} × H ${size[2].toFixed(2)} mm`;
       dimensions.append(sizeText);
-      if (selectedEntity.kind === "solid") {
+      if (selectedEntity?.kind === "solid") {
         dimensions.append(` · 面積 ${(selectedEntity.displayCache?.areaMm2 || 0).toFixed(2)} mm² · 体積 ${(selectedEntity.displayCache?.volumeMm3 || 0).toFixed(2)} mm³`);
       }
       dimensions.hidden = false;
-      const center = selectedEntity.bbox.min.map((value, index) => (value + selectedEntity.bbox.max[index]) / 2);
-      const screen = view.project(center);
-      if (!activeDrag) gizmo.hidden = !screen?.visible || !!selection[0]?.kind || (!!session && session.command.baseOperation.id !== "shape.transform") || featureEditActive;
-      if (!activeDrag) for (const handle of gizmo.querySelectorAll("[data-gizmo]")) handle.disabled = !!session;
+      if (selectedEntity) {
+        const center = selectedEntity.bbox.min.map((value, index) => (value + selectedEntity.bbox.max[index]) / 2);
+        const screen = view.project(center);
+        if (!activeDrag) gizmo.hidden = !screen?.visible || !!selection[0]?.kind || (!!session && session.command.baseOperation.id !== "shape.transform") || featureEditActive;
+        if (!activeDrag) for (const handle of gizmo.querySelectorAll("[data-gizmo]")) handle.disabled = !!session;
+      } else gizmo.hidden = true;
     } else {
       dimensions.hidden = true;
       gizmo.hidden = true;
@@ -3000,6 +3137,18 @@ export function initModelWorkspace(api) {
         f.status = "dirty";
     store.recompute().catch(report);
   };
+  function rememberWorkplane(nextPlane, nextSupport) {
+    const state = store.document.uiState;
+    if (canonical([state.workPlane, state.workPlaneSupport || null]) === canonical([nextPlane, nextSupport || null])) return;
+    const current = state.workPlane;
+    let name = "face";
+    for (const candidate of ["XY", "XZ", "YZ"]) {
+      const plane = { origin: [0, 0, 0], xAxis: candidate === "YZ" ? [0, 1, 0] : [1, 0, 0], yAxis: candidate === "XY" ? [0, 1, 0] : [0, 0, 1] };
+      if (!state.workPlaneSupport && canonical(plane) === canonical(current)) name = candidate;
+    }
+    previousWorkplane = { plane: clone(current), support: clone(state.workPlaneSupport || null), name };
+    workplaneBack.disabled = false;
+  }
   function applyReferenceWorkplane(name) {
     if (!new Set(["XY", "XZ", "YZ"]).has(name)) return;
     planeSelect.value = name;
@@ -3007,11 +3156,13 @@ export function initModelWorkspace(api) {
     snapPoint = null;
     invalidFields.delete("plane");
     planeBeforeFace = name;
-    store.document.uiState.workPlane = {
+    const nextPlane = {
       origin: [0, 0, 0],
       xAxis: name === "YZ" ? [0, 1, 0] : [1, 0, 0],
       yAxis: name === "XY" ? [0, 1, 0] : [0, 0, 1],
     };
+    rememberWorkplane(nextPlane, null);
+    store.document.uiState.workPlane = nextPlane;
     store.document.uiState.workPlaneSupport = null;
     if (session?.parameters.plane) {
       dispatchSession(session, {
@@ -3057,14 +3208,16 @@ export function initModelWorkspace(api) {
     ];
     const plane = { origin: hit.point, xAxis, yAxis };
     validateDrawingPlane(plane);
-    store.document.uiState.workPlane = plane;
-    store.document.uiState.workPlaneSupport = {
+    const support = {
       entityId: hit.entityId,
       topologyId: hit.topologyId,
       centroid: clone(
         faces[faceIndex]?.fingerprint?.centroid || hit.point,
       ),
     };
+    rememberWorkplane(plane, support);
+    store.document.uiState.workPlane = plane;
+    store.document.uiState.workPlaneSupport = support;
     planeSelect.value = "face";
     snapPoint = null;
     if (session?.parameters.plane) {
@@ -3164,6 +3317,7 @@ export function initModelWorkspace(api) {
     else if ("anchor" in params) params.anchor = p;
     else return;
     lastPoint = p;
+    lastOrbitPoint = [...p];
     session.previewSequence++;
     saveDraft();
     properties();
@@ -3226,11 +3380,19 @@ export function initModelWorkspace(api) {
       Object.assign(hit, makeSubshapeRef(e, t));
     }
     if (!event.shiftKey) selection = [];
-    const index = selection.findIndex(
-      (r) => r.entityId === hit.entityId && r.topologyId === hit.topologyId,
-    );
-    if (index >= 0) selection.splice(index, 1);
-    else selection.push(hit);
+    if (event.altKey && hit.kind === "edge") {
+      const face = view.hit(event, "face").find((candidate) => candidate.entityId === e.id);
+      const ids = edgeLoop(e.displayCache, hit.topologyId, face?.topologyId);
+      for (const topologyId of ids) {
+        if (selection.some((reference) => reference.entityId === e.id && reference.topologyId === topologyId)) continue;
+        const topology = e.displayCache.topology.find((entry) => entry.topologyId === topologyId);
+        selection.push(makeSubshapeRef(e, topology));
+      }
+    } else {
+      const index = selection.findIndex((r) => r.entityId === hit.entityId && r.topologyId === hit.topologyId);
+      if (index >= 0) selection.splice(index, 1);
+      else selection.push(hit);
+    }
     store.document.uiState.selection = clone(selection);
     if (session) {
       const eligible = session.command.inputs.filter(
@@ -3293,7 +3455,14 @@ export function initModelWorkspace(api) {
     snapPoint = null;
   };
   const canvas = api.preview().canvas;
-  api.preview().controls?.addEventListener("change", positionViewportControls);
+  function observeCameraControls() {
+    const controls = api.preview().controls;
+    if (controls === observedControls) return;
+    observedControls?.removeEventListener("change", positionViewportControls);
+    observedControls = controls;
+    controls?.addEventListener("change", positionViewportControls);
+  }
+  observeCameraControls();
   document.addEventListener("pathloom:camera-changed", positionViewportControls);
   const planeTooltip = document.createElement("div");
   planeTooltip.className = "model-plane-tooltip";
@@ -3351,7 +3520,7 @@ export function initModelWorkspace(api) {
     const featureSnap = snapCandidate(event)?.point || snapPoint;
     if (featureSnap) return [...featureSnap];
     const point = view.pointAt(event, inputPlane(true));
-    return point && !event.altKey && $("modelSnap").checked ? point.map((value) => Math.round(value)) : point;
+    return point && !event.altKey && $("modelSnap").checked ? point.map(snapNumber) : point;
   }
   canvas.addEventListener(
     "pointermove",
@@ -3381,11 +3550,11 @@ export function initModelWorkspace(api) {
         cursorPoint = view.pointAt(event, inputPlane(true));
       } catch {}
       if (cursorPoint) {
-        const point = event.altKey || !$("modelSnap").checked ? cursorPoint : cursorPoint.map((value) => Math.round(value));
+        const point = event.altKey || !$("modelSnap").checked ? cursorPoint : cursorPoint.map(snapNumber);
         cursorReadout.hidden = false;
         cursorReadout.style.left = `${event.clientX}px`;
         cursorReadout.style.top = `${event.clientY}px`;
-        cursorReadout.textContent = `${point.map((value) => value.toFixed(event.altKey ? 1 : 0)).join(", ")} mm · ${event.altKey ? "精密" : "1mm snap"}`;
+        cursorReadout.textContent = `${point.map((value) => Number(value.toFixed(3))).join(", ")} mm`;
       }
       if (!session) return;
       const hoveredPlane = referencePlanePicking && view.hit(event, "workplane")[0];
@@ -3397,20 +3566,20 @@ export function initModelWorkspace(api) {
       view.hoverReferencePlane?.(hoveredPlane?.referencePlane);
       const found = snapCandidate(event);
       snapPoint = found?.point || null;
-      snapGuide.hidden = !found;
-      if (found) {
-        snapGuide.style.left = `${event.clientX}px`;
-        snapGuide.style.top = `${event.clientY}px`;
-        setStatus(
-          `${found.label}にスナップ · ${found.point.map((n) => n.toFixed(3)).join(", ")} mm`,
-        );
-      }
+      showSnap(found, found && view.project(found.point));
     },
     true,
   );
   canvas.addEventListener(
     "pointerdown",
     async (event) => {
+      if (active() && event.button === 2) {
+        // A late drawing preview must not reframe the next point under the
+        // cursor. Apply its latest pivot when the user actually starts orbiting.
+        const target = orbitCenter();
+        if (target) view.setOrbitTarget(target);
+        positionViewportControls();
+      }
       if (active() && event.button === 0) {
         down = [event.clientX, event.clientY];
         boxDragged = false;
@@ -3425,14 +3594,14 @@ export function initModelWorkspace(api) {
           const apply = () => {
             if (!target || session !== target) return;
             const raw = initial + (latest.clientX - event.clientX) * (latest.altKey ? 0.1 : 1);
-            const value = latest.altKey || !$("modelSnap").checked ? raw : Math.round(raw);
+            const value = latest.altKey || !$("modelSnap").checked ? raw : snapNumber(raw);
             dispatchSession(target, {type:"setting.change",key,value});
             const field = $("modelProperties").querySelector(`[data-parameter="${key}"]`);
             if (field) field.value = String(value);
             cursorReadout.hidden = false;
             cursorReadout.style.left = `${latest.clientX}px`;
             cursorReadout.style.top = `${latest.clientY}px`;
-            cursorReadout.textContent = `${value.toFixed(latest.altKey ? 1 : 0)} mm`;
+            cursorReadout.textContent = `${Number(value.toFixed(3))} mm`;
             saveDraft(); queuePreview();
           };
           trackDrag(canvas, event, (moveEvent) => {
@@ -3464,14 +3633,17 @@ export function initModelWorkspace(api) {
           if (!start) return;
           const command = clone(commandById("transform.move"));
           command.resultPolicy = "independent";
-          await begin(command);
+          orbitGesture = true;
+          try { await begin(command); }
+          catch (error) { orbitGesture = false; report(error); return; }
+          view.setMoveGhost(entity);
           const target = session;
           trackDrag(canvas, event, (moveEvent) => {
             const point = view.pointAt(moveEvent, plane);
             if (!point || target !== session) return;
             const translation = point.map((value, axis) => value - start[axis]);
             dispatchSession(target, { type: "setting.change", key: "translation", value:
-              $("modelSnap").checked && !moveEvent.altKey ? translation.map(Math.round) : translation });
+              $("modelSnap").checked && !moveEvent.altKey ? translation.map(snapNumber) : translation });
             saveDraft(); queuePreview();
           }, () => { if (session === target) return commit(); }, () => { if (session === target) cancel(); });
         }
@@ -3534,6 +3706,10 @@ export function initModelWorkspace(api) {
         Math.hypot(event.clientX - down[0], event.clientY - down[1]) > 3
       )
         return;
+      try {
+        const point = view.hit(event, "object")[0]?.point || view.pointAt(event, inputPlane(true));
+        if (point) lastOrbitPoint = [...point];
+      } catch {}
       if (pivotPicking) {
         const entity = store.getEntity(selection[0]?.entityId);
         const hit = view.hit(event, "vertex")[0] || view.hit(event, "face")[0];
@@ -3876,6 +4052,12 @@ export function initModelWorkspace(api) {
       clearTimeout(autosaveTimer);
       session = null;
       selectedFeature = null;
+      previousWorkplane = null;
+      workplaneBack.disabled = true;
+      lastOrbitPoint = null;
+      pendingOrbitTarget = null;
+      orbitGesture = false;
+      view.setMoveGhost(null);
       view.clearPreview();
       if (doc) store.commitRestore(doc);
       else {

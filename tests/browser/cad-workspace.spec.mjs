@@ -543,10 +543,10 @@ test("A05/A07/A08/A24: sketch width drives exact solid and fillet; a lost edge r
     .click();
   await expect(page.locator("#modelProperties")).toContainText("自由度 0");
   await page
-    .getByRole("spinbutton", { name: "スケッチ 幅", exact: true })
+    .getByRole("textbox", { name: "スケッチ 幅", exact: true })
     .fill("80");
   await page
-    .getByRole("spinbutton", { name: "スケッチ 幅", exact: true })
+    .getByRole("textbox", { name: "スケッチ 幅", exact: true })
     .dispatchEvent("change");
   await expect
     .poll(() =>

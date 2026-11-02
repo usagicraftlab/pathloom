@@ -27,6 +27,7 @@ test("inference snap includes endpoints, midpoints, centers and spatial intersec
   }
   const candidates = snapCandidates(doc);
   for (const label of ["端点", "中点", "中心", "交点"]) assert.ok(candidates.some((candidate) => candidate.label === label));
+  assert.deepEqual([...new Set(candidates.map((candidate) => candidate.kind))].sort(), ["center", "endpoint", "intersection", "midpoint"]);
   assert.deepEqual(candidates.find((candidate) => candidate.label === "交点").point, [5,0,0]);
   doc.entities[1].displayCache.preview.curves[0].points = [[5,-5,1],[5,5,1]];
   assert.equal(snapCandidates(doc).some((candidate) => candidate.label === "交点"), false);

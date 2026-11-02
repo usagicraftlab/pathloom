@@ -7,6 +7,8 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
   let referencePlaneGroup = null;
   let originGroup = null;
   let cadGridGroup = null;
+  let moveGhost = null;
+  let gridState = { step: 1, minorOpacity: 0.1, key: null };
   let selectedReferencePlane = "XY";
   let stageFeatureId = null;
   let hoverSelection = null;
@@ -59,28 +61,55 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       scene.add(originGroup);
       cadGridGroup = new THREE.Group();
       cadGridGroup.name = "CAD z=0 millimetre grid";
-      const addGrid = (step, color, opacity) => {
-        const extent = 400, half = extent / 2, positions = [];
-        for (let value = -half; value <= half; value += step) {
-          positions.push(-half, value, 0, half, value, 0, value, -half, 0, value, half, 0);
-        }
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-        const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
-        cadGridGroup.add(new THREE.LineSegments(geometry, material));
-      };
-      // One millimetre minor lines with a stronger ten millimetre cadence.
-      addGrid(1, 0x87979e, 0.10);
-      addGrid(10, 0x62757f, 0.30);
-      const plane = new THREE.Mesh(
-        new THREE.PlaneGeometry(400, 400),
-        new THREE.MeshBasicMaterial({ color: 0xb8c7cb, transparent: true, opacity: 0.035, side: THREE.DoubleSide, depthWrite: false }),
-      );
-      plane.position.z = -0.002;
-      cadGridGroup.add(plane);
       scene.add(cadGridGroup);
     }
     return true;
+  }
+  function pixelScaleMm() {
+    const { camera, canvas, controls } = preview();
+    const height = canvas?.getBoundingClientRect().height || 1;
+    if (!camera || !controls) return 1;
+    return camera.isOrthographicCamera
+      ? (camera.top - camera.bottom) / camera.zoom / height
+      : 2 * Math.tan(camera.fov * Math.PI / 360) * camera.position.distanceTo(controls.target) / height;
+  }
+  function updateGrid(step = 1) {
+    if (!ensure()) return;
+    const { THREE, canvas, controls } = preview();
+    const mm = pixelScaleMm();
+    // Thin distant major lines independently of the actual snap interval.
+    // Fixed 1 mm snapping must remain cheap even at the widest camera zoom.
+    const major = step * 10 * Math.max(1, 10 ** Math.ceil(Math.log10(Math.max(1, mm * 5 / (step * 10)))));
+    const span = mm * Math.max(canvas?.getBoundingClientRect().width || 800, canvas?.getBoundingClientRect().height || 600);
+    const half = major * Math.max(10, Math.ceil(span / major));
+    const center = [controls?.target.x || 0, controls?.target.y || 0].map((value) => Math.round(value / major) * major);
+    const showMinor = step / Math.max(mm, 1e-12) >= 1.2;
+    const opacity = Math.max(0, Math.min(0.15, (step / Math.max(mm, 1e-12) - 1.2) * 0.035));
+    const key = [step, half, ...center, showMinor].join(":");
+    if (key !== gridState.key) {
+      for (const child of [...cadGridGroup.children]) dispose(child);
+      for (const [spacing, color, alpha, minor] of [[step, 0x87979e, opacity, true], [major, 0x62757f, 0.30, false]]) {
+        if (minor && !showMinor) continue;
+        const positions = [];
+        // Grid lines are aligned to world coordinates; fading never changes snap.
+        for (let value = -half; value <= half + spacing * 0.01; value += spacing) {
+          if (minor && Math.abs(value / major - Math.round(value / major)) < 1e-7) continue;
+          positions.push(center[0] - half, center[1] + value, 0, center[0] + half, center[1] + value, 0,
+            center[0] + value, center[1] - half, 0, center[0] + value, center[1] + half, 0);
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        const line = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color, transparent: true, opacity: alpha, depthWrite: false }));
+        line.userData.minorGrid = minor;
+        cadGridGroup.add(line);
+      }
+      const plane = new THREE.Mesh(new THREE.PlaneGeometry(half * 2, half * 2),
+        new THREE.MeshBasicMaterial({ color: 0xb8c7cb, transparent: true, opacity: 0.035, side: THREE.DoubleSide, depthWrite: false }));
+      plane.position.set(center[0], center[1], -0.002);
+      cadGridGroup.add(plane);
+    }
+    for (const line of cadGridGroup.children) if (line.userData.minorGrid) line.material.opacity = opacity;
+    gridState = { step, minorOpacity: opacity, key };
   }
   function dispose(object) {
     const geometries = new Set(),
@@ -302,6 +331,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
     },
     update(doc, selection = [], options = {}) {
       if (!ensure()) return;
+      updateGrid(options.snapStep || 1);
       const { THREE } = preview();
       lastDocument = doc;
       lastSelection = selection;
@@ -310,6 +340,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       previewGroup.visible = group.visible;
       originGroup.visible = group.visible;
       cadGridGroup.visible = group.visible;
+      if (moveGhost) moveGhost.visible = group.visible;
       const visible = stageEntities(doc, stageFeatureId);
       const visibleStage = stageFeatureId == null;
       for (const feature of doc.features.filter((item) => item.status === "suppressed")) {
@@ -469,6 +500,29 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       if (lastDocument) this.update(lastDocument, lastSelection, lastOptions);
       preview().dirty();
     },
+    pixelScaleMm,
+    updateGrid,
+    setOrbitTarget(point) {
+      const { THREE, camera, controls } = preview();
+      if (!camera || !controls || !point?.every(Number.isFinite)) return;
+      const target = new THREE.Vector3(...point), delta = target.clone().sub(controls.target);
+      if (delta.lengthSq() < 1e-16) return;
+      camera.position.add(delta);
+      controls.target.copy(target);
+      camera.updateMatrixWorld(true);
+      controls.update();
+      preview().dirty();
+    },
+    setMoveGhost(entity) {
+      if (moveGhost) { dispose(moveGhost); moveGhost = null; }
+      if (entity && ensure()) {
+        const summary = { ...entity.displayCache, preview: { curves: entity.displayCache?.preview?.curves || [], meshes: [], points: [] } };
+        moveGhost = draw(summary, "$move-origin", entity.resultHash, true);
+        moveGhost.name = "CAD move origin outline";
+        preview().scene.add(moveGhost);
+      }
+      preview().dirty();
+    },
     setStage(featureId) {
       stageFeatureId = featureId;
       if (lastDocument) this.update(lastDocument, lastSelection, lastOptions);
@@ -484,6 +538,10 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
     displayState() {
       return {
         stageFeatureId,
+        gridStepMm: gridState.step,
+        gridMinorOpacity: gridState.minorOpacity,
+        moveGhostVisible: !!moveGhost?.visible,
+        orbitTarget: preview().controls?.target.toArray(),
         entityIds: [...shown].filter(([, object]) => object.visible).map(([entityId]) => entityId),
         originVisible: !!originGroup?.visible,
         ghostEntityIds: [...shown].filter(([, object]) => object.visible && object.userData.ghost).map(([entityId]) => entityId),
@@ -651,6 +709,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       if (referencePlaneGroup) dispose(referencePlaneGroup);
       if (originGroup) dispose(originGroup);
       if (cadGridGroup) dispose(cadGridGroup);
+      if (moveGhost) dispose(moveGhost);
       shown.clear();
     },
   };

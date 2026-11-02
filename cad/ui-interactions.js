@@ -5,6 +5,49 @@ export const centerOf = (entity) => entity.bbox.min.map(
   (value, axis) => (value + entity.bbox.max[axis]) / 2,
 );
 
+export function selectionBounds(doc, selection) {
+  const ids = new Set(selection.map((reference) => reference.entityId));
+  const entities = doc.entities.filter((entity) => ids.has(entity.id) && entity.visibility !== "hidden" && entity.bbox);
+  if (!entities.length) return null;
+  return { count: entities.length,
+    min: [0, 1, 2].map((axis) => Math.min(...entities.map((entity) => entity.bbox.min[axis]))),
+    max: [0, 1, 2].map((axis) => Math.max(...entities.map((entity) => entity.bbox.max[axis]))) };
+}
+
+export function zoomSnapStep(mmPerPixel, enabled) {
+  if (!enabled || !Number.isFinite(mmPerPixel) || mmPerPixel <= 0) return 1;
+  const target = Math.max(0.01, Math.min(100, mmPerPixel * 8));
+  const decade = 10 ** Math.floor(Math.log10(target));
+  return Math.min(100, [1, 2, 5, 10].find((factor) => factor * decade >= target) * decade);
+}
+export const snapCoordinate = (value, step = 1) => Number((Math.round(value / step) * step).toPrecision(12));
+export const snapKind = (label) => ({ "端点": "endpoint", "閉じる": "endpoint", "中点": "midpoint", "中心": "center", "面中心": "center", "交点": "intersection" }[label] || "endpoint");
+
+// Prefer the exact wire under the pointer. At a branch never infer a loop
+// from coincident sampled points or cross into another body.
+export function edgeLoop(summary, edgeId, faceId = null) {
+  const edges = (summary.topology || []).filter((entry) => entry.kind === "edge");
+  if (!edges.some((edge) => edge.topologyId === edgeId)) return [];
+  let loops = (summary.edgeLoops || []).filter((loop) => loop.edgeTopologyIds.includes(edgeId));
+  if (faceId && loops.some((loop) => loop.faceTopologyId === faceId))
+    loops = loops.filter((loop) => loop.faceTopologyId === faceId);
+  const unique = [...new Map(loops.map((loop) => [[...loop.edgeTopologyIds].sort().join("|"), loop.edgeTopologyIds])).values()];
+  if (unique.length === 1) return [...unique[0]];
+  const byId = new Map((summary.topology || []).map((entry) => [entry.topologyId, entry]));
+  const result = new Set([edgeId]), pending = [edgeId];
+  while (pending.length) {
+    const edge = byId.get(pending.pop());
+    for (const vertexId of edge.fingerprint?.adjacentTopologyIds || []) {
+      const vertex = byId.get(vertexId);
+      if (vertex?.kind !== "vertex") continue;
+      const connected = (vertex.fingerprint?.adjacentTopologyIds || []).filter((id) => byId.get(id)?.kind === "edge");
+      if (connected.length !== 2) continue;
+      for (const id of connected) if (!result.has(id)) { result.add(id); pending.push(id); }
+    }
+  }
+  return [...result];
+}
+
 // This is a display replay. It never edits body tips, bindings or the document.
 export function stageEntities(doc, featureId) {
   if (featureId == null) return deriveVisibleEntities(doc);
@@ -46,7 +89,7 @@ export function snapCandidates(doc, { includeIntersections = true } = {}) {
   const result = [], segments = [];
   const add = (point, label, entityId) => {
     if (Array.isArray(point) && point.length === 3 && point.every(Number.isFinite))
-      result.push({ point: [...point], label, entityId });
+      result.push({ point: [...point], label, kind: snapKind(label), entityId });
   };
   for (const entity of deriveVisibleEntities(doc).filter((item) => !item.locked)) {
     add(centerOf(entity), "中心", entity.id);

@@ -1,4 +1,4 @@
-import { test, expect, selectCadCommand, selectCadMenuItem } from "./fixtures/cad.mjs";
+import { test, expect, selectCadCommand, selectCadMenuItem, clickCadPoint } from "./fixtures/cad.mjs";
 
 async function add(page, commandId, parameters = {}, selection = []) {
   return page.evaluate(async ({ commandId, parameters, selection }) => {
@@ -41,7 +41,7 @@ async function last(page) {
 async function clickWorld(page, point) {
   const projected = await page.evaluate((point) => window.PathloomModel.projectPoint(point), point);
   await page.mouse.move(projected.x, projected.y);
-  await page.mouse.click(projected.x, projected.y);
+  await clickCadPoint(page, projected);
 }
 async function input(page, key, entityId) {
   const field = page.getByLabel(`CAD input ${key}`, {exact:true});
@@ -139,7 +139,7 @@ test("P3 Polyline closes by start snap into a real planar face; two-click measur
   for (const point of [[-20,-15,0],[-10,-15,0],[-10,-5,0]]) await clickWorld(page, point);
   const start = await page.evaluate(() => window.PathloomModel.projectPoint([-20,-15,0]));
   await page.mouse.move(start.x,start.y);
-  await expect(page.locator("#modelStatus")).toContainText("閉じる");
+  await expect(page.locator(".model-snap-guide")).toHaveAttribute("data-snap-kind", "endpoint");
   await page.mouse.click(start.x,start.y);
   await page.getByRole("button", {name:"確定",exact:true}).click();
   await expect(page.locator(".model-history-entry")).toHaveCount(2);
@@ -262,7 +262,7 @@ test("P3 pivot picking, uniform scale corner, rotation snap and mirror face prev
   await drag(page,page.locator('[data-gizmo="rotate"][data-axis="Z"]'),32);
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
   result=await last(page);
-  expect(result.feature.parameters.angleRad).toBeCloseTo(Math.PI/6,8);
+  expect(result.feature.parameters.angleRad).toBeCloseTo(32*Math.PI/180,8);
   await select(page,result.entity);
   await selectCadCommand(page, "Mirror");
   const top = result.entity.bbox.max[2];
@@ -290,21 +290,24 @@ test("P3 drag previews color actual added/removed volumes and Esc restores the i
   expect(result.entity.geometry.assetHash).toBe(box.geometry.assetHash);
 });
 
-test("P3 Move inference, Alt precision and Shift free rotation keep the requested exact transform", async ({page}) => {
+test("P3 Move inference, Alt precision and Shift snapped rotation keep the requested exact transform", async ({page}) => {
   const box = await add(page,"B01",{widthMm:10,depthMm:10,heightMm:10});
   await add(page,"B01",{anchor:[40,20,0],widthMm:10,depthMm:10,heightMm:10});
   await select(page,box);
   await drag(page,page.locator('[data-gizmo="move"][data-axis="X"]'),36);
+  await expect(page.locator(".model-history-entry")).toHaveCount(3);
   let result=await last(page);
   expect(result.feature.parameters.translation).toEqual([35,0,0]);
   await select(page,result.entity);
   await drag(page,page.locator('[data-gizmo="move"][data-axis="Y"]'),15,{alt:true});
+  await expect(page.locator(".model-history-entry")).toHaveCount(4);
   result=await last(page);
   expect(result.feature.parameters.translation).toEqual([0,1.5,0]);
   await select(page,result.entity);
   await drag(page,page.locator('[data-gizmo="rotate"][data-axis="Z"]'),32,{shift:true});
+  await expect(page.locator(".model-history-entry")).toHaveCount(5);
   result=await last(page);
-  expect(result.feature.parameters.angleRad).toBeCloseTo(32*Math.PI/180,8);
+  expect(result.feature.parameters.angleRad).toBeCloseTo(Math.PI/6,8);
   expect(result.entity.displayCache.volumeMm3).toBeCloseTo(1000,5);
 });
 

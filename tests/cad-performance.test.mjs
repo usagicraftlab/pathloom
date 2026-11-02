@@ -112,3 +112,46 @@ test("P4 display cache stays bounded and disposes replaced and hidden resources"
     restoreDocument();
   }
 });
+
+test("027 move outline, running translucency, grid fading and orbit target recover without changing geometry", () => {
+  const restoreDocument = installDocument(), scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-40,40,30,-30);
+  camera.position.set(50,50,50);
+  const controls = {target:new THREE.Vector3(),update(){}},
+    canvas = {getBoundingClientRect:()=>({width:800,height:600,left:0,top:0})},
+    adapter = createViewAdapter(()=>({THREE,scene,camera,controls,canvas,dirty(){}}));
+  try {
+    const doc = model(1), original = structuredClone(doc.entities[0]);
+    adapter.update(doc);
+    const nearOpacity = adapter.displayState().gridMinorOpacity;
+    assert.ok(nearOpacity > 0);
+    camera.zoom = 0.05;
+    adapter.updateGrid(1);
+    assert.equal(adapter.displayState().gridMinorOpacity,0);
+    camera.zoom = 1;
+    adapter.updateGrid(0.5);
+    assert.equal(adapter.displayState().gridStepMm,0.5);
+    const offset = camera.position.clone().sub(controls.target);
+    adapter.setOrbitTarget([15,-20,5]);
+    assert.deepEqual(adapter.displayState().orbitTarget,[15,-20,5]);
+    assert.ok(camera.position.clone().sub(controls.target).distanceTo(offset)<1e-12);
+    adapter.setMoveGhost(doc.entities[0]);
+    assert.equal(adapter.displayState().moveGhostVisible,true);
+    const outline = scene.children.find((child)=>child.name==="CAD move origin outline");
+    assert.ok(outline.children.length>0);
+    assert.ok(outline.children.every((child)=>!child.isMesh));
+    adapter.setMoveGhost(null);
+    assert.equal(adapter.displayState().moveGhostVisible,false);
+    doc.features[0].status="running";
+    adapter.update(doc);
+    assert.deepEqual(adapter.displayState().ghostEntityIds,["entity-0"]);
+    doc.features[0].status="valid";
+    adapter.update(doc);
+    assert.deepEqual(adapter.displayState().ghostEntityIds,[]);
+    assert.deepEqual(doc.entities[0],original);
+    camera.zoom = 1e-8;
+    adapter.updateGrid(1);
+    const grid = scene.children.find((child)=>child.name==="CAD z=0 millimetre grid");
+    assert.ok(grid.children.every((child)=>!child.geometry.attributes.position || child.geometry.attributes.position.count<5000));
+  } finally { adapter.dispose(); restoreDocument(); }
+});

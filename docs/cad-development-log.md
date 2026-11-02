@@ -2300,3 +2300,92 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   `41369621172`のfailed job再実行attempt 2はJS 239成功・browser 89成功（retryなし、6.4分）で
   完走し、生ログを確認した。attempt 1の88成功・1失敗をattempt 2で置換しない。証拠文書commitの
   push／PR両CI、Ready、mergeはこの追記時点では未完了である。
+
+## 2026-11-02 — 指示027 A（選択・作図・直接操作）
+
+- ボード12:26 JSTの分割承認を受け、Aの14項目だけを実装。5/20の既存経路は回帰で照合する。
+  baseはPR56 merge `fd6cb1d46580cea71eb4fdb5c255cf142ec47f63`。既存main run41372498751の
+  全3job success再確認は開始時証拠であり、027の成功証拠には使わない。
+- 合併bbox、SVG snap種類、直前作業面復帰、bounded数式parser、exact OCCT wire/隣接表示metadata、
+  outlinerのエラー/生成印、Move元輪郭、Shift時のみ15°snapと弧目盛り、minor grid fade、
+  1/2/5系列の任意ズームsnap、orbit targetを追加。B〜E/65 command契約/保存schemaは変更しない。
+- 初回既存JS全239成功。追加後Node24.22.1と厳密Node20.20.2の全JSは各245成功、skip/失敗0。
+  追加ロジック対象10件も成功。native追加2件は初回export APIとtemporary rootのtest記述誤りで2 error、
+  修正後2成功。native全107件は105成功・任意NVIDIA USD 2skip（25.2秒）。
+- Playwright Chromium installerは0 MiB/truncated ZIPで5回取得失敗。local browser全96件は
+  実行体不在でlaunch時失敗しtest bodyは未実行。これは製品96件失敗とは分類しないが成功にも数えない。
+  npm配布Chromiumでの代替起動を準備中。local Rustはcargo不在で未実行。CI/Draft PR/Ready/mergeは未完了。
+
+### 検証継続・環境復旧・回帰修正
+
+- 通常git pushは認証不在で失敗したため、Git Data APIで全20 blobとtreeのlocal hash一致を確認し
+  head `689b628477b14b18628cd5c6ccdebb9eaadda537`（tree `9647ff5cbacbdfe072d47d51d39aaea2f8305026`）を
+  Draft PR #57へ反映した。対応Issueはなく自動close対象なし。
+- npm配布Chromium153を手動展開した。最初の対象7件はFontConfigのSIGTRAPでpage.goto前に全失敗、
+  一時configのcwd誤りによるsuite未開始、single-process試行で同じ7件の起動失敗も記録した。
+  FONTCONFIG_PATHを既存の/etc/fontsへ直すと起動し、single-processを外してcontext再利用の終了も解消。
+  一時config/実行体/依存は製品やCIへ追加しない。以後のlocal browserは実OCP daemonと実ブラウザで実行する。
+- 対象7件の実行は3成功/4失敗（生成印の即時更新1件、type属性でなく既定text propertyを読むtest1件、
+  single-process環境のcontext再利用2件）→6成功/1失敗（zoom追従）→5成功/2失敗
+  （クリック位置のscreen pixel丸めの期待値、zoom追従）→7成功。初回debug単独の生成印1失敗も保持する。
+  zoomはpreview初期化前にcontrols購読が欠落する製品問題を修正し、wheelの複数イベントで刻みを確認した。
+- 全件で基準面選択直後のrenderがorbit targetを変え、同じクリックの最初の作図点をずらす製品回帰を検出。
+  retargetをevent後のmicrotaskへまとめ、Ctrl canvas copyのdrag中も保留する。作図/任意plane/Polyline閉鎖の
+  対象4件は修正後4成功。Ctrl copy/command reorder対象は初回1成功/1失敗で、後者は開いたメニューの
+  4段目がoutlinerを覆う製品問題だった。項目選択でmenuを閉じるよう修正し、次の4件は3成功/1失敗
+  （閉じたmenu buttonをvisible roleで探すtest）→対象2件再実行2成功。Move回帰は非同期commit後の
+  feature追加数を待ち、前のMoveをRotateとして読まないよう強化した。
+- 初回headのpush run `41392094765` attempt1はJS245/native105+2skip/macOS Rust24成功、
+  browser全96件は85成功/11失敗（12.0分）。PR run `41392127228` attempt1もJS/native/Rustは同じ成功、
+  browserは64成功/11失敗まで表示後15分上限でcancelled、残21件は未完了（集計なし、実行中を含む）。
+  全6jobの生ログを照合し、後続成功で置換しない。失敗箇所はrayのmid-event retarget、Ctrl drag、
+  menuのpointer遮蔽、生成印render、text property期待、zoom購読、非同期commit待ちへ分類した。
+- 修正後のNode24/20全JS各245成功。nativeは変更しておらず全107件105成功/任意2skipを保持。
+  local browser全件の最終結果、修正head CI、Ready/mergeはこの追記時点では未完了。
+
+### 固定したdesktop assetsでの全件再検証
+
+- 修正中のlocal全件初回は90成功/6失敗（9.7分）。run中にも修正を反映したため、単一headの
+  合格証拠には使わない。失敗6件は実click/中心snap、mouse Polyline/three-point Rectangle、
+  Polyline閉鎖/測定、command reorder、Ctrl canvas copy、UI review additionsで、上記の製品修正へ対応する。
+- head `04eb167`に固定したprepared desktop assetsでlocal browser全96件が成功（7.6分、retryなし）。
+  Node24.22.1/20.20.2全JSも各245成功、native全107件105成功/任意USD2skipは変更なし。
+- 最終レビューでnullableな数値3欄（distance2Mm/targetParameter/solutionIndex）がJSON数値専用のまま
+  だったため、四則/単位入力とnullへの復帰を同じ入力経路へ接続した。nullable vector/point列はJSONのまま。
+  D06 browserで`(4/2)mm`→null→`0.2cm`、distance2Mm=2、実体積990とSave/Openを照合し1件成功。
+  この小差分後のNode24/20全JSは各245成功。prepared assetsを再作成しbrowser全96件を再実行中。
+  04eb167のCIと最終差分のCIは別に記録する。
+
+### 任意作業面の負荷診断とlate preview時の視点安定化
+
+- nullable補完後のlocal全96件も成功（7.6分、retryなし）。04eb167のPR run `41393892421` attempt1は
+  全3job成功（JS245/native105+任意2skip/macOS Rust24/browser96、browser12.1分）。一方push run
+  `41393887896` attempt1はnative/Rust成功、JS245成功後のbrowserが86成功/任意作業面1失敗/9未完了で
+  15分cancelledとなった。全6job生ログを照合。残9件は実行中を含み最終集計なし。artifactは0件で、
+  CI失敗の詳細は欠落したまま保持し、PR成功をそのrunの成功へ置き換えない。
+- 同じ任意作業面testは通常の単独8回では全成功。CDPのCPU throttling rate4で3回全失敗し、
+  XYの幅20期待に対し23.132168933、許容差2.628655561を超えることを再現した。frame1回待ちでも
+  3回全失敗。投影/カメラ状態を追加観測した単独1回は成功したが、観測の追加でタイミングが変わるため
+  解決とは扱わない。実DOM click完了＋frame待ちへ直した3回も1成功/2失敗で、XZで幅がほぼ0になる
+  typed failureを含んだ。この各失敗と再実行を保持する。
+- traceで、最初の点の処理後に180ms待ちのnative previewがrenderを呼び、次点の画面投影と実clickの
+  間にorbit targetを動かしていたことを確認した。点入力session中は自動retargetを保留し、実際の右button
+  回転開始時とコマンド終了後に最新の中心を反映する製品修正を追加した。CPU制限3回は全成功
+  （20.6/21.8/18.3秒）。preview完了でも視点が動かず、回転開始で直前の点を中心にするbrowser回帰を追加。
+  新規UI対象8件は全成功（53.8秒）。CIの元失敗の詳細欠落と、このローカル再現で得た原因を区別する。
+- 3つのworld click helperを実DOM click後のframe待ちへ統一し、CAD fixtureのafterEachで失敗内容を
+  即座に`BROWSER_FAILURE` JSONとして生ログへ出す。assertion/許容差/timeout/skip/retryは緩和しない。
+  最終製品差分のNode24.22.1/20.20.2全JSは各245成功。nativeは同一実装の107件105成功/任意2skip。
+  prepared assetsで全97件を確認中。local Rustはcargo不在で未実行、最終head CI/Ready/mergeは未実施。
+
+### 最終ローカル結果
+
+- 製品差分を固定してdesktop assetsを再作成し、全browser97件が成功（7.8分、retryなし）。
+  Node24.22.1と厳密Node20.20.2の全JSは各245成功、失敗/skipなし。native実装は先行の全107件実行から
+  変更しておらず105成功/任意NVIDIA USD2skipを保持。local Rustはcargo不在で未実行。
+- 先行のlocal全件90成功/6失敗、96件成功2回、負荷診断の失敗と成功、旧2headのpush/PR CIは上記に保持する。
+  旧pushの個別job metadata GETはconnector未対応で400となったため、run/jobs collectionと専用job logsで
+  確認し直した。全job生ログを確認できた結果と、cancelledで失われたfailure detail/traceを区別する。
+- 14項目の実装/対象回帰は[cad-ux-interactions.md](cad-ux-interactions.md)。B〜E/#37/PR43は対象外。
+  最終差分のCIはこの記録後に実行するため、Ready/mergeはまだ行わない。最終runとマージ結果はPR #57と
+  指示ボードのCodexログで照合する。実Mac GUI/Tauri/OS dialogを合格にはしない。

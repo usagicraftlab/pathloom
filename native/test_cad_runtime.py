@@ -70,6 +70,34 @@ class CadRuntimeTests(unittest.TestCase):
         o=self.run_op('solid.shell',dict(thicknessMm=1,directionMode='inward'),dict(body=[self.ref(b)],removedFaces=[self.ref(b,dict(kind='face',topologyId=faces[0]['topologyId'],orientation='forward'))]))[0];self.assertAlmostEqual(o['summary']['volumeMm3'],8000-18*18*19,places=5)
     def test_startup_probe_executes_real_operations_without_leaking_handles(self):
         result=self.r.handle(dict(type='probe'));verified={p['operation'] for p in result['probes'] if p['status']=='verified'};self.assertEqual(len(verified),9);self.assertTrue({'surface.sweep2','surface.network','surface.patch','surface.blend','surface.match','surface.rebuild'}<=verified);self.assertFalse(self.r.cache)
+    def test_027_exact_edge_loops_keep_face_boundaries_and_vertex_adjacency(self):
+        box=self.run_op('solid.box',dict(plane=XY,anchorMode='corner',anchor=[0,0,0],widthMm=10,depthMm=20,heightMm=30))[0]
+        summary=box['summary'];topology={t['topologyId']:t for t in summary['topology']}
+        self.assertEqual(len(summary['edgeLoops']),6)
+        for loop in summary['edgeLoops']:
+            self.assertEqual(len(loop['edgeTopologyIds']),4)
+            self.assertEqual(topology[loop['faceTopologyId']]['kind'],'face')
+            for edge_id in loop['edgeTopologyIds']:
+                adjacent=topology[edge_id]['fingerprint']['adjacentTopologyIds']
+                vertices=[id for id in adjacent if topology[id]['kind']=='vertex']
+                self.assertEqual(len(vertices),2)
+                for vertex_id in vertices:self.assertIn(edge_id,topology[vertex_id]['fingerprint']['adjacentTopologyIds'])
+        asset=self.r.handle(dict(type='export',handles=[box['handle']]))['assets'][box['geometryHash']]
+        fresh=Runtime();imported=fresh.handle(dict(type='import',hash=box['geometryHash'],asset=asset))
+        self.assertEqual(imported['summary']['edgeLoops'],summary['edgeLoops'])
+    def test_027_annular_face_keeps_inner_and_outer_edge_loops_separate(self):
+        from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+        shape=BRepAlgoAPI_Cut(BRepPrimAPI_MakeCylinder(10,5).Shape(),BRepPrimAPI_MakeCylinder(5,5).Shape()).Shape()
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as folder:output=self.r.publish(shape,Path(folder))
+        summary=output['summary']
+        by_face={}
+        for loop in summary['edgeLoops']:by_face.setdefault(loop['faceTopologyId'],[]).append(set(loop['edgeTopologyIds']))
+        annular=[loops for loops in by_face.values() if len(loops)==2]
+        self.assertEqual(len(annular),2)
+        for outer,inner in annular:self.assertFalse(outer&inner)
     def test_jsonl_persists_handles(self):
         p=subprocess.Popen([sys.executable,'native/cad_runtime.py'],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         try:

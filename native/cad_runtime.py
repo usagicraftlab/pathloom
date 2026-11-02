@@ -11,6 +11,7 @@ from OCP.BRepBndLib import BRepBndLib
 from OCP.Bnd import Bnd_Box
 from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Curve
+from OCP.TopAbs import TopAbs_WIRE
 MAX_LINE=256*1024*1024
 TOLERANCES=dict(kernelLinearMm=1e-6,joinLinearMm=.01,fitLinearMm=.01,solverLinearMm=1e-6,angularRad=1e-5)
 STAMP=['requestId','documentId','documentRevision','workspaceEpoch','runtimeEpoch','sessionId','featureId','featureRevision','requestedHash','previewSequence']
@@ -65,6 +66,28 @@ class Runtime:
                 for mapped,path in sem.get('generated',[]):
                     if sub.IsSame(mapped):semanticPath=path
                 topology.append(dict(kind=kind,topologyId=id,semanticPath=semanticPath,fingerprint=dict(kind=kind,geometryKind=str(sub.ShapeType()),centroid=[(a+b)/2 for a,b in zip(bb['min'],bb['max'])],bbox=bb,lengthMm=metric(sub,'Linear') if kind=='edge' else None,areaMm2=metric(sub,'Surface') if kind=='face' else None,normal=None,tangent=None,adjacentTopologyIds=[])))
+        # Display selection uses exact OCCT membership, never tessellation
+        # coincidence. Keep wire boundaries separate at branching vertices.
+        entries={kind:[t for t in topology if t['kind']==kind] for kind in ('vertex','edge','face')}
+        def topology_ids(shape,kind,enum):
+            members=subshapes(shape,enum)
+            return [t['topologyId'] for t in entries[kind] if any(slots[t['topologyId']].IsSame(member) for member in members)]
+        for edge in entries['edge']:
+            vertices=topology_ids(slots[edge['topologyId']],'vertex',TopAbs_VERTEX)
+            edge['fingerprint']['adjacentTopologyIds']=vertices
+            for vertex in entries['vertex']:
+                if vertex['topologyId'] in vertices:vertex['fingerprint']['adjacentTopologyIds'].append(edge['topologyId'])
+        loops=[]
+        for face in entries['face']:
+            face_edges=topology_ids(slots[face['topologyId']],'edge',TopAbs_EDGE)
+            face['fingerprint']['adjacentTopologyIds']=face_edges
+            for edge in entries['edge']:
+                if edge['topologyId'] in face_edges:edge['fingerprint']['adjacentTopologyIds'].append(face['topologyId'])
+            for wire_shape in subshapes(slots[face['topologyId']],TopAbs_WIRE):
+                loops.append(dict(faceTopologyId=face['topologyId'],edgeTopologyIds=topology_ids(wire_shape,'edge',TopAbs_EDGE)))
+        if not entries['face']:
+            for wire_shape in subshapes(s,TopAbs_WIRE):
+                loops.append(dict(faceTopologyId=None,edgeTopologyIds=topology_ids(wire_shape,'edge',TopAbs_EDGE)))
         solids=subshapes(s,TopAbs_SOLID);faces=subshapes(s,TopAbs_FACE);edges=subshapes(s,TopAbs_EDGE)
         kind='solid' if len(solids)==1 and len(faces)==len(subshapes(solids[0],TopAbs_FACE)) else 'compound' if solids else 'surface' if len(faces)==1 else 'shell' if faces else 'curve' if edges else 'point' if subshapes(s,TopAbs_VERTEX) else 'compound'
         empty=not solids and not faces and not edges and not subshapes(s,TopAbs_VERTEX)
@@ -83,6 +106,7 @@ class Runtime:
             if entry['kind']=='edge':preview['curves'].append(dict(topologyId=entry['topologyId'],points=sample_edge(slots[entry['topologyId']])))
             elif entry['kind']=='vertex':preview['points'].append(dict(topologyId=entry['topologyId'],point=xyz(BRep_Tool.Pnt_s(slots[entry['topologyId']]))))
         summary=dict(kind=kind,bbox=bounds(s),areaMm2=metric(s,'Surface') if faces else 0,volumeMm3=metric(s,'Volume') if solids else 0,lengthMm=metric(s,'Linear') if edges else 0,valid=True,empty=empty,exactness='nurbs' if nurbs else 'analytic',accuracy=None,closure=dict(curveClosed=s.Closed() if not faces else None,surfaceUClosed=None,surfaceVClosed=None,shellClosed=s.Closed() if faces else None,enclosesVolume=bool(solids)),topology=topology,faces=face_data,preview=preview)
+        summary['edgeLoops']=loops
         if kind=='curve':
             summary['lengthMm']=curve_length(edges)
             definitions=[]
