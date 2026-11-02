@@ -2414,3 +2414,21 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   あった製品UI失敗は成功へ置換せず上記に保持する。
 - この記録後にcommit/push/Draft PRとCIを行う。CI、Ready、merge、対応Issueなしによる自動close
   非該当はまだ未確認であり、ローカル成功から先取りしない。
+
+### 20:51 JST 再開・公開headのCI照合
+
+- PR #58は実装・全ローカル検証後にCI待ちのまま引継ぎが止まっていたため、Muse 20:21の確認を受領して
+  再開した。通常git pushは認証不在で失敗し、Git Data APIで12 blobを公開した。local commit b973d40と
+  remote head `cd6af1b4702a30202337a62ece6704ed5b151b32`のtreeは
+  `aa520ddf592dcdc97cb0248cc0fd94243c86fdc2`で一致。ローカル検証を別ソースへ転用していない。
+- headのworkflowは次の2runだけで、どちらもattempt1の全3job success、全6jobの生ログを照合した。
+
+| event / run | javascript/browser job | native job | macOS/Rust job | 生ログ結果 |
+| --- | --- | --- | --- | --- |
+| push 41424719644 | 125208835876 | 125208836194 | 125208836346 | JS248成功・browser98成功（15.3分、retryなし）・native105成功+任意2skip・Rust24成功 |
+| PR 41424752688 | 125208545849 | 125208545462 | 125208546177 | JS248成功・browser98成功（15.3分、retryなし）・native105成功+任意2skip・Rust24成功 |
+
+- 新規P2-28は両全件browser run内で成功した。再実行はなく、CIの失敗・cancelled・未完了は0。
+  local Rustはcargo不在で未実行のまま、CIのmacOS Rust24成功を別証拠として記録する。
+- 対応Issueなしで自動closeは非該当。証拠文書追記後のhead CIとReady/merge/post-merge main CIは
+  この時点では未実施であり、PR #58とボードCodexログへ実結果を記録する。

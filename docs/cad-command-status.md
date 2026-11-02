@@ -268,3 +268,12 @@ wheel/drag増減を行わない。CAD演算、native正本、command DSL、保�
 fadeするgridと任意のズーム連動snap、選択/最後の点のorbit targetをUIへ接続する。
 既存の方向ボールと再計算ghostは対象回帰で確認する。native変更はexact接続の表示summaryのみ。
 対象番号と境界・検証入口は[cad-ux-interactions.md](cad-ux-interactions.md)。B〜Eは後続指示待ち。
+
+## 2026-11-02 — 指示028 B CADと生成グラフの行き来
+
+既存65 IDの状態を保持し、[双方向ナビゲーション](cad-generation-navigation.md)の共有UI証拠を追加する。
+項目4/7は既存binding IDから現在entity・body・producer featureを辿り、CAD形状/履歴の選択と
+生成input・依存ノード・接続を相互強調する。生成エラーの修復ボタンはModelへ切り替えて対象を選択する。
+JS3件と実OCP browserのP2-28を追加し、全JS248・native105成功/任意2skip・browser98成功を確認した。
+製品head cd6af1b のpush41424719644/PR41424752688各attempt1は全3job success、全6job生ログで
+JS248/native105+2skip/macOS Rust24/browser98（retryなし）を照合。実Mac/Issue #37は未実施のまま。

@@ -470,3 +470,9 @@ native全107件105成功/任意NVIDIA USD2skip。最終全件、CI、mergeは記
 最終local確認：Node24.22.1/Node20.20.2全JS各248成功、native全107件105成功/任意NVIDIA USD2skip、
 prepared assetsと実OCPを使うbrowser全98件成功（7.2分、retryなし）。local Rustはcargo不在で未実行。
 CIとmergeはこの追記時点で未実施のため、PRと開発ログへ実結果を別記する。
+
+公開製品head `cd6af1b4702a30202337a62ece6704ed5b151b32`（localとtree aa520ddf一致）は、
+push41424719644/PR41424752688各attempt1の全3job successを全6job生ログで照合した。
+各JS248成功、native107件中105成功/任意NVIDIA USD2skip、macOS Rust24成功、browser98成功
+（15.3分、retryなし、新規P2-28成功）。CIの失敗/再実行/cancelledは0。localの先行失敗2回は開発ログに保持。
+証拠文書追記後のCIとmergeはPR #58/ボードへ別記し、実Mac未実施と既存62行の状態を保持する。
