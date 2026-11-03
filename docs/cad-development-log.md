@@ -2516,3 +2516,15 @@ browserは各101成功/新規面計測1失敗（16.0分/15.8分、retryなし）
 面計測は40 mmに対して40.000000000000114 mmを返しており、testが文字列`"40"`との完全一致を
 要求していたことが失敗原因。実測誤差約1e-13 mmを既存kernelLinearMm=1e-6 mmと照合する数値assertへ
 修正する。製品の計測・許容差・演算は変更しない。初回2runの失敗を保持して修正headの全CIを確認する。
+
+初回CIの実画像`section-live.png`も確認した。変換ギズモが断面へ重なっていたため、検査中だけ非表示にし、
+終了時に既存の選択用コントロールへ戻す。解析中のギズモ非表示をbrowser受入へ追加する。
+
+表示修正後のローカル全JSもNode24.22.1/厳密Node20.20.2各253成功、native107件105成功/任意2skip。
+Chromiumの代替としてHeadless Shellだけの導入も試したが、追加5回とも0 MiB/ZIP破損で失敗した。
+通常Chromium5回と合わせ導入失敗は計10回で、local browserのtest body未実行という状態は変わらない。
+
+数値fixture修正head `f3b85c7637507b1715228a0439770bc24ff73804`（tree7e6aaf5）の
+push41632572418/PR41632580075各attempt1は全3job success、全6job生ログで各JS253・native105+任意2skip・
+Rust24・browser102成功（各16.0分、retryなし）を照合した。新規2件とも成功し、初回各101/1失敗は保持。
+ギズモ表示修正とその受入assertを反映する次headの全CIは、この成功とは別に確認する。

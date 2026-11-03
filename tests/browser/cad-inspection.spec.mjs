@@ -39,6 +39,7 @@ test("030 section inspection drags exact live contours without changing the docu
   const before=await modelContent(page);
   await selectCadMenuItem(page,"#modelSectionInspection");
   await expect(page.locator(".model-section-controls")).toHaveAttribute("data-state","ready");
+  await expect(page.locator(".model-transform-gizmo")).toBeHidden();
   let display=await page.evaluate(()=>window.PathloomModel.displayState().inspection);
   expect(display.curveCount).toBe(4);
   expect(display.lengthMm).toBeCloseTo(60,6);

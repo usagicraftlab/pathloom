@@ -814,7 +814,7 @@ export function initModelWorkspace(api) {
   sectionDrag.setAttribute("aria-label", "切断平面をドラッグ");
   const sectionClose = makeToolButton("×", "断面検査を終了");
   sectionClose.setAttribute("aria-label", "断面検査を終了");
-  sectionClose.onclick = () => stopInspection();
+  sectionClose.onclick = () => { stopInspection(); render({keepProperties:true,keepHistory:true}); };
   sectionControls.append(sectionDrag, sectionClose);
   document.body.append(sectionControls);
   const gizmo = document.createElement("div");
@@ -913,8 +913,9 @@ export function initModelWorkspace(api) {
     }
   }
   sectionButton.onclick = () => {
-    if (inspectionEnabled) return stopInspection();
+    if (inspectionEnabled) { stopInspection(); render({keepProperties:true,keepHistory:true}); return; }
     inspectionEnabled = true;
+    gizmo.hidden = true;
     measureMode = false;
     frozenHistoryStage = null;
     view.clearStage();
@@ -934,7 +935,7 @@ export function initModelWorkspace(api) {
         ? ((move.clientX-event.clientX)*dx+(move.clientY-event.clientY)*dy)/pixels
         : (event.clientY-move.clientY)*mmPerPixel;
       inspection.setPlane({...plane, origin:plane.origin.map((v,i) => v+offset*n[i])});
-    }, positionInspectionControls, stopInspection);
+    }, positionInspectionControls, () => { stopInspection(); render({keepProperties:true,keepHistory:true}); });
   };
   function faceDistance(hit) {
     if (session?.command.baseOperation.id !== "shape.extrude") return null;
@@ -2863,7 +2864,7 @@ export function initModelWorkspace(api) {
       if (selectedEntity) {
         const center = selectedEntity.bbox.min.map((value, index) => (value + selectedEntity.bbox.max[index]) / 2);
         const screen = view.project(center);
-        if (!activeDrag) gizmo.hidden = !screen?.visible || !!selection[0]?.kind || (!!session && session.command.baseOperation.id !== "shape.transform") || featureEditActive;
+        if (!activeDrag) gizmo.hidden = inspectionEnabled || !screen?.visible || !!selection[0]?.kind || (!!session && session.command.baseOperation.id !== "shape.transform") || featureEditActive;
         if (!activeDrag) for (const handle of gizmo.querySelectorAll("[data-gizmo]")) handle.disabled = !!session;
       } else gizmo.hidden = true;
     } else {
