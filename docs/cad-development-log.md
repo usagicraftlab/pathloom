@@ -2481,3 +2481,87 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   1失敗（retryなし）。Box以外を隠した後も、sketch copy追加時のビュー中心更新前に求めた古い画面座標を
   再利用していた。最終右クリック直前に同じ3D face centroidを再投影する。両runの
   JS249/native105+2skip/Rust24は成功し、全job生ログ確認済み。4回の新規browser失敗を保持する。
+
+## 2026-11-03 — 指示030 D（断面検査と押し出しの面計測）
+
+- 開始確認で最新main `4d2effc2298dc4a5bbd2d5482329ef9b45f2f69c`（PR #59 merge）、
+  tree `b50fb2648f9bea46372e604871444576a09c0c24`、post-merge main run41585724596 attempt1全3job successを
+  生ログで確認した（JS249/browser100、native107件中105成功+任意2skip、Rust24）。
+- 15:33に面の向きの具体化をMuseへ照会し要判断。19:46回答で法線とdirectionの平行/反平行な平面、
+  符号付きL、bothSides時2L、解析専用の一時状態を承認され、状態更新・読戻し後20:33に再開した。
+- 作業環境整理で旧checkoutが失われており、最新mainを再cloneして`feat/30-section-inspection`を作成した。
+  一時断面検査の専用描画とドラッグ、最新要求だけの採用・全handle解放、Extrudeの一度きり面計測と
+  採用可否hoverを追加。既存native演算、65 command、保存schemaは変更しない。
+  契約は[cad-section-inspection.md](cad-section-inspection.md)。対応Issueなし・自動close非該当。
+- local Node24.22.1の初回全JSは253件中251成功/新規非同期fixture2失敗。100回のsetImmediate待ちが
+  全件並列実行時のWebCrypto完了を待てなかったtest setup問題で、5秒以内の時刻ベースpollへ修正した。
+  修正後のNode24全253件と厳密Node20.20.2全253件が成功（失敗/skip0）。初回失敗を成功へ置換しない。
+- native runtimeはPython3.12、cadquery-ocp7.8.1.1.post1/OCP7.8.1.1/VTK9.3.1とclosed-box probeを照合。
+  native全107件は105成功+任意NVIDIA USD2skip。local Rustはcargo不在で未実行。
+- local Chromium導入は5回とも0 MiB/ZIP破損で失敗した。全browser suiteを起動しているが実行体がなく、
+  test body未実行として保持する。CI、PR、Ready/mergeはこの時点では未実施。
+  E、028 fixture候補、Issue #37、Draft PR #43は対象外。
+
+### 指示030 ローカルbrowser全件の起動結果
+
+全102件はChromium実行体不在でtest body前に起動失敗した（成功/skip0、test body未実行）。
+新規2件の製品成否はまだ確認できず、実行体起動失敗102件を製品回帰102件とは分類しない。
+Node24再実行253成功、厳密Node20.20.2初回253成功、native105成功/任意2skipとは区別して保持する。
+
+### 指示030 初回公開head CIの数値fixture修正
+
+公開head520a94e（tree33f6020、local36e91afと一致）のpush41630065145/PR41630071751各attempt1を
+全6job生ログで照合。両系統ともJS253、native105成功+任意2skip、Rust24は成功。
+browserは各101成功/新規面計測1失敗（16.0分/15.8分、retryなし）。断面検査の新規回帰と既存100件は成功した。
+面計測は40 mmに対して40.000000000000114 mmを返しており、testが文字列`"40"`との完全一致を
+要求していたことが失敗原因。実測誤差約1e-13 mmを既存kernelLinearMm=1e-6 mmと照合する数値assertへ
+修正する。製品の計測・許容差・演算は変更しない。初回2runの失敗を保持して修正headの全CIを確認する。
+
+初回CIの実画像`section-live.png`も確認した。変換ギズモが断面へ重なっていたため、検査中だけ非表示にし、
+終了時に既存の選択用コントロールへ戻す。解析中のギズモ非表示をbrowser受入へ追加する。
+
+表示修正後のローカル全JSもNode24.22.1/厳密Node20.20.2各253成功、native107件105成功/任意2skip。
+Chromiumの代替としてHeadless Shellだけの導入も試したが、追加5回とも0 MiB/ZIP破損で失敗した。
+通常Chromium5回と合わせ導入失敗は計10回で、local browserのtest body未実行という状態は変わらない。
+
+数値fixture修正head `f3b85c7637507b1715228a0439770bc24ff73804`（tree7e6aaf5）の
+push41632572418/PR41632580075各attempt1は全3job success、全6job生ログで各JS253・native105+任意2skip・
+Rust24・browser102成功（各16.0分、retryなし）を照合した。新規2件とも成功し、初回各101/1失敗は保持。
+ギズモ表示修正とその受入assertを反映する次headの全CIは、この成功とは別に確認する。
+
+### 指示030 最終製品コードでのローカル全件完走
+
+2026-11-03 21:35 JST。過去の環境復旧手順に従い、npm配布`@sparticuz/chromium@153.0.0`を
+一時領域へ取得し、Brotliを所有権変更なしで展開した。Chromium153.0.8010.0、既存`/etc/fonts`、
+同梱SwiftShaderでpage起動probeに成功した。依存定義/lock/製品/CI設定は変更していない。
+head `7ecd08f0da936f11a3fda41b00238c2008e307ab`（local `abde168`、tree `7f9b0476`）の
+desktop assetsを固定して、実OCPと全browser102件が成功した（8.5分、失敗/skip/retry 0）。
+新規断面検査・面計測の2件も成功し、実画像で検査中の変形ギズモ非表示を確認した。
+通常Chromium5回＋headless-shell5回の導入失敗と、初回全102件のtest body前launch失敗は保持する。
+復旧後の全件成功によりlocal browser必須条件を直接満たし、CIによる代替承認は必要なくなった。
+local Node24.22.1/厳密Node20.20.2各JS253成功、native107件105成功/任意NVIDIA USD2skip。
+local Rustはcargo不在で未実行、実Mac GUI/Tauri/OS dialog/Issue #37も未実施のまま。
+最終製品headのpush41635164279/PR41635172900はこの記録時点でnative/Rust成功・browser実行中。
+Ready/mergeは未実施で、全CIの完走と生ログを確認する。
+
+実行コマンド（環境変数と一時実行体はローカル検証だけ）：
+
+```sh
+FONTCONFIG_PATH=/etc/fonts LD_LIBRARY_PATH=/tmp/pathloom030-chromium/runtime \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/tmp/pathloom030-chromium/runtime/chromium \
+PATHLOOM_FRONTEND_DIR=desktop-dist PATHLOOM_BREP_PYTHON=.pathloom-runtime/python/bin/python \
+npm run test:browser
+```
+
+21:40 JST、ギズモ表示修正を含む最終製品head `7ecd08f0da936f11a3fda41b00238c2008e307ab`
+（tree `7f9b0476a0a38d0b80b953726f41f479d351fe9b`）のpush/PR両系統がattempt1で全3job success。
+全6job生ログを照合した。各JS253・browser102成功（各15.9分、失敗/skip/retry 0）、
+native107件105成功/任意NVIDIA USD2skip、macOS Rust24成功。新規2件は両系統で成功した。
+
+| event / run | JS/browser job | native job | macOS/Rust job |
+| --- | --- | --- | --- |
+| push 41635164279 | 125914402024 | 125914402328 | 125914402495 |
+| PR 41635172900 | 125914432803 | 125914432736 | 125914432390 |
+
+本追記は証拠文書だけの更新で、製品コードはlocal全102件と上記CIから変更していない。
+文書反映後の最終head CI、Ready/merge、post-merge main CIはPR #60とボードへ別記する。

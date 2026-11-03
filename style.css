@@ -480,6 +480,9 @@ body[data-workspace-mode=model] .view-axis-buttons.axis-orbit{right:calc(var(--c
 .model-options-items{position:absolute;right:0;top:calc(100% + 5px);min-width:184px;display:flex;flex-direction:column;gap:2px;padding:6px;border:1px solid rgba(158,172,186,.25);border-radius:9px;background:rgba(27,33,40,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 24px rgba(0,0,0,.22)}
 .model-options-items>button{text-align:left;min-height:29px;padding:5px 9px;border:0;border-radius:5px;background:transparent;font-size:11px}
 .model-options-items>button:hover{background:rgba(155,180,200,.16)}
+#modelSectionInspection svg{width:18px;height:18px;vertical-align:middle;fill:none;stroke:currentColor;stroke-width:1.5;margin-right:6px}
+.model-section-controls{position:fixed;z-index:39;display:flex;gap:3px;padding:4px;border:1px solid #3688ba;border-radius:7px;background:#edf7f5ed;box-shadow:0 3px 12px #263d4726}
+.model-section-controls[hidden]{display:none}.model-section-controls button{width:30px;height:30px;padding:2px;border:0;border-radius:4px;color:#29628a;background:transparent}.model-section-controls button:hover{background:#3688ba25}.model-section-controls [aria-label="切断平面をドラッグ"]{font-size:23px;cursor:ns-resize}.model-section-controls[data-state=pending]{border-style:dashed}.model-section-controls[data-state=failed]{border-color:#c4544b}
 .model-object-menu,.model-history-menu{font-size:10px}.model-object-menu button,.model-history-menu button{font-size:10px;line-height:1.25;padding:5px 7px}
 
 /* 指示026-1: Fusion風の水平タブ。旧縦展開グループは描画しない。 */

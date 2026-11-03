@@ -193,3 +193,9 @@ Museが有効化したCの項目9/12/19/21だけを扱う。既存DAGを明示�
 駆動/参照寸法の形状不変切替、faceからの支持sketch直接編集、全ID/参照を再採番する
 独立sketch copyを追加する。契約と証拠は[リンク複製とsketch再利用](cad-linked-sketch-reuse.md)。
 D/E、指示028のfixture候補、Issue #37、Draft PR #43へ範囲を広げない。
+
+## 2026-11-03 — 指示030 D
+
+項目11の解析専用断面検査と項目18のExtrude面計測を追加する。
+[断面検査と押し出しの面計測](cad-section-inspection.md)に一時状態・native preview・符号付き距離・
+両側総距離・非追従の境界を固定する。E項目2、028 fixture候補、Issue #37、Draft PR #43は別枠を保持する。

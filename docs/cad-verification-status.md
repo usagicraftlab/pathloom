@@ -490,3 +490,17 @@ Chromium実行体不在でtest body前に2失敗し、製品成功/失敗には�
 厳密Node20.20.2全JSも249成功。native全107件は105成功・任意NVIDIA USD 2skip。local Rustは
 `cargo`不在で未実行。Chromium導入も配布内容が5回とも0 MiBで失敗し、対象/全browserはtest body未実行。
 CI、mergeはこの時点で未実施であり先取りしない。
+
+## 2026-11-03 — 指示030 D の追加証拠
+
+既存A/T/R 62行・正規65 IDの状態は保持する。[指示030契約](cad-section-inspection.md)に
+一時断面検査とExtrudeの一度きり面計測を固定した。新規JS4件は符号/両側/除外面、平面基底、
+遅延結果破棄・handle解放・文書不変を検査し、新規browser2件は実OCCT断面の長さ、ライブドラッグ、
+Save/Open・Undo/Redo・面計測の非追従を検査する。初回local browserは実行体取得不能でtest body未実行。
+全件/CIの実結果は開発ログへ別記し、自動検証を実Macの合格へ拡大しない。
+
+21:35 JST追記：npm配布Chromium153と既存fontconfigで復旧し、最終製品head7ecd08f0の
+prepared assets/実OCPを使う全browser102件が成功（8.5分、失敗/skip/retry 0）。新規2件と既存100件を
+すべて実行した。Node24.22.1/厳密Node20.20.2各253成功、native105成功/任意NVIDIA USD2skip。
+導入10回失敗・初回102件launch失敗は開発ログに保持し、local Rustのcargo不在/未実行と
+実Mac GUI/Tauri/OS dialog/Issue #37の未実施も維持する。CIとmergeはPR/ボードへ別記する。

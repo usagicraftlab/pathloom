@@ -1866,3 +1866,8 @@ selectedでkernelが連鎖を必要とする場合は診断する。旧v1のOCCT
 [追加UI受入対応](cad-ui-review-additions.md)にまとめる。08:35のユーザー判断により、
 軸別Scaleだけnative変換/軸倍率parameterを拡張する。新規transform.scale v2は
 center/factor/axisFactors、保存済みv1定義と等方変換は保持する。他演算や保存schema/bindingの変更許可ではない。
+
+## 2026-11-03 指示030 解析用断面と面計測
+
+[断面検査と押し出しの面計測](cad-section-inspection.md)を追加する。断面検査は65 command外の一時表示、
+押し出しの面計測は既存distanceMmの一度きりの更新とし、E14/S05/B07のnative演算・保存契約は保持する。

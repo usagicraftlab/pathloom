@@ -285,3 +285,10 @@ DAG追従と独立配置をUIで明示する。C04由来の拘束sketchには駆
 face support一致による直接編集、全ID/参照を再採番したface/datumへの独立copyを追加した。
 対象境界と証拠は[指示029契約](cad-linked-sketch-reuse.md)。native演算、保存schema、D/E、
 Issue #37、Draft PR #43は変更しない。最終全検証/CI/mergeは実結果を開発ログへ追記する。
+
+## 2026-11-03 — 指示030 D 断面検査と面計測
+
+正規65 IDの既存状態は保持する。解析用の一時断面検査を65 command外のCADメニューへ追加し、
+既存shape.sectionのpreview出力を平面ドラッグでライブ表示する。feature/asset/履歴へは追加しない。
+S05/B07実行中のface選択は、法線がdirectionと平行/反平行な平面だけで一度計測して既存distanceMmへ設定する。
+契約・対象外・回帰入口は[指示030契約](cad-section-inspection.md)。native/E/Sの演算契約は維持する。

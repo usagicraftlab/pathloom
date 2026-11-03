@@ -8,6 +8,8 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
   let originGroup = null;
   let cadGridGroup = null;
   let moveGhost = null;
+  let inspectionGroup = null;
+  let inspectionState = null;
   let gridState = { step: 1, minorOpacity: 0.1, key: null };
   let selectedReferencePlane = "XY";
   let stageFeatureId = null;
@@ -144,7 +146,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       geometries = new Set(),
       materials = new Set(),
       textures = new Set();
-    for (const root of [group, previewGroup].filter(Boolean))
+    for (const root of [group, previewGroup, inspectionGroup].filter(Boolean))
       root.traverse((node) => {
         objects.add(node);
         if (node.geometry) geometries.add(node.geometry);
@@ -338,6 +340,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       lastOptions = options;
       group.visible = document.body.dataset.workspaceMode === "model";
       previewGroup.visible = group.visible;
+      if (inspectionGroup) inspectionGroup.visible = group.visible;
       originGroup.visible = group.visible;
       cadGridGroup.visible = group.visible;
       if (moveGhost) moveGhost.visible = group.visible;
@@ -435,7 +438,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
                 const highlight = new THREE.Mesh(
                   geometry,
                   new THREE.MeshBasicMaterial({
-                    color: selected.hover ? 0xf0a22e : 0xe16a42,
+                    color: selected.color ?? (selected.hover ? 0xf0a22e : 0xe16a42),
                     transparent: true,
                     opacity: 0.62,
                     side: THREE.DoubleSide,
@@ -479,6 +482,41 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
         g.userData.selectable =
           !e.locked && e.visibility !== "hidden" && !ghost;
       }
+      preview().dirty();
+    },
+    setInspection(state) {
+      if (inspectionGroup) { dispose(inspectionGroup); inspectionGroup = null; }
+      inspectionState = null;
+      if (!state || !ensure()) { preview().dirty(); return; }
+      const { THREE, scene } = preview(), { origin, xAxis, yAxis } = state.plane;
+      const half = Math.max(1, state.extent / 2), color = state.status === "failed" ? 0xc4544b : 0x3688ba;
+      const corners = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([x,y]) =>
+        origin.map((v,i) => v + half * (x * xAxis[i] + y * yAxis[i])));
+      inspectionGroup = new THREE.Group();
+      inspectionGroup.name = "CAD temporary section inspection";
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(corners.flat(), 3));
+      geometry.setIndex([0,1,2,0,2,3]);
+      const plane = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color,
+        transparent:true, opacity:0.15, side:THREE.DoubleSide, depthWrite:false}));
+      inspectionGroup.add(plane);
+      const border = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(corners.map((p) => new THREE.Vector3(...p))),
+        new THREE.LineBasicMaterial({color, depthTest:false}));
+      border.renderOrder = 20;
+      inspectionGroup.add(border);
+      let curveCount = 0;
+      for (const output of state.outputs) for (const curve of output.summary?.preview?.curves || []) {
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.points.map((p) => new THREE.Vector3(...p))),
+          new THREE.LineBasicMaterial({color:0xf17624, depthTest:false}));
+        line.renderOrder = 21;
+        inspectionGroup.add(line);
+        curveCount++;
+      }
+      inspectionState = {origin:[...origin], status:state.status, curveCount,
+        bbox:state.outputs.map((output) => output.summary.bbox),
+        lengthMm:state.outputs.reduce((n, output) => n + (output.summary.lengthMm || 0), 0)};
+      inspectionGroup.visible = document.body.dataset.workspaceMode === "model";
+      scene.add(inspectionGroup);
       preview().dirty();
     },
     setPreview(result, { sourceEntityIds = [], removedOutputs = null } = {}) {
@@ -541,6 +579,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
         gridStepMm: gridState.step,
         gridMinorOpacity: gridState.minorOpacity,
         moveGhostVisible: !!moveGhost?.visible,
+        inspection: inspectionState,
         orbitTarget: preview().controls?.target.toArray(),
         entityIds: [...shown].filter(([, object]) => object.visible).map(([entityId]) => entityId),
         originVisible: !!originGroup?.visible,
@@ -710,6 +749,7 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       if (originGroup) dispose(originGroup);
       if (cadGridGroup) dispose(cadGridGroup);
       if (moveGhost) dispose(moveGhost);
+      if (inspectionGroup) dispose(inspectionGroup);
       shown.clear();
     },
   };
