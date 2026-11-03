@@ -2528,3 +2528,40 @@ Chromiumの代替としてHeadless Shellだけの導入も試したが、追加5
 push41632572418/PR41632580075各attempt1は全3job success、全6job生ログで各JS253・native105+任意2skip・
 Rust24・browser102成功（各16.0分、retryなし）を照合した。新規2件とも成功し、初回各101/1失敗は保持。
 ギズモ表示修正とその受入assertを反映する次headの全CIは、この成功とは別に確認する。
+
+### 指示030 最終製品コードでのローカル全件完走
+
+2026-11-03 21:35 JST。過去の環境復旧手順に従い、npm配布`@sparticuz/chromium@153.0.0`を
+一時領域へ取得し、Brotliを所有権変更なしで展開した。Chromium153.0.8010.0、既存`/etc/fonts`、
+同梱SwiftShaderでpage起動probeに成功した。依存定義/lock/製品/CI設定は変更していない。
+head `7ecd08f0da936f11a3fda41b00238c2008e307ab`（local `abde168`、tree `7f9b0476`）の
+desktop assetsを固定して、実OCPと全browser102件が成功した（8.5分、失敗/skip/retry 0）。
+新規断面検査・面計測の2件も成功し、実画像で検査中の変形ギズモ非表示を確認した。
+通常Chromium5回＋headless-shell5回の導入失敗と、初回全102件のtest body前launch失敗は保持する。
+復旧後の全件成功によりlocal browser必須条件を直接満たし、CIによる代替承認は必要なくなった。
+local Node24.22.1/厳密Node20.20.2各JS253成功、native107件105成功/任意NVIDIA USD2skip。
+local Rustはcargo不在で未実行、実Mac GUI/Tauri/OS dialog/Issue #37も未実施のまま。
+最終製品headのpush41635164279/PR41635172900はこの記録時点でnative/Rust成功・browser実行中。
+Ready/mergeは未実施で、全CIの完走と生ログを確認する。
+
+実行コマンド（環境変数と一時実行体はローカル検証だけ）：
+
+```sh
+FONTCONFIG_PATH=/etc/fonts LD_LIBRARY_PATH=/tmp/pathloom030-chromium/runtime \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/tmp/pathloom030-chromium/runtime/chromium \
+PATHLOOM_FRONTEND_DIR=desktop-dist PATHLOOM_BREP_PYTHON=.pathloom-runtime/python/bin/python \
+npm run test:browser
+```
+
+21:40 JST、ギズモ表示修正を含む最終製品head `7ecd08f0da936f11a3fda41b00238c2008e307ab`
+（tree `7f9b0476a0a38d0b80b953726f41f479d351fe9b`）のpush/PR両系統がattempt1で全3job success。
+全6job生ログを照合した。各JS253・browser102成功（各15.9分、失敗/skip/retry 0）、
+native107件105成功/任意NVIDIA USD2skip、macOS Rust24成功。新規2件は両系統で成功した。
+
+| event / run | JS/browser job | native job | macOS/Rust job |
+| --- | --- | --- | --- |
+| push 41635164279 | 125914402024 | 125914402328 | 125914402495 |
+| PR 41635172900 | 125914432803 | 125914432736 | 125914432390 |
+
+本追記は証拠文書だけの更新で、製品コードはlocal全102件と上記CIから変更していない。
+文書反映後の最終head CI、Ready/merge、post-merge main CIはPR #60とボードへ別記する。
