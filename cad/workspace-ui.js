@@ -7,6 +7,7 @@ import { bindingIdsForCadSelection, cadTargetsForBindings } from "./generation-n
 import { CadStore } from "./store.js";
 import { NativeCadClient } from "./native-client.js";
 import { createViewAdapter } from "./view-adapter.js";
+import { SectionInspection, inspectionPlane, extrudeFaceDistance } from "./inspection.js";
 import {
   createCadDocument,
   clone,
@@ -320,7 +321,11 @@ export function initModelWorkspace(api) {
   optionsSummary.setAttribute("aria-label", "CADメニュー");
   const optionsItems = document.createElement("div");
   optionsItems.className = "model-options-items";
-  optionsItems.append(thumbnailToggle, commandDslButton, commandEditButton, zoomSnapToggle);
+  const sectionButton = makeToolButton("", "断面検査");
+  sectionButton.id = "modelSectionInspection";
+  sectionButton.setAttribute("aria-label", "断面検査");
+  sectionButton.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${commandIconMarkup.section}</svg><span>断面検査</span>`;
+  optionsItems.append(sectionButton, thumbnailToggle, commandDslButton, commandEditButton, zoomSnapToggle);
   optionsMenu.append(optionsSummary, optionsItems);
   optionsItems.addEventListener("click", (event) => {
     if (event.target.closest("button")) optionsMenu.open = false;
@@ -791,6 +796,27 @@ export function initModelWorkspace(api) {
   const symmetricArrow = makeToolButton("↕", "対称押し出しをドラッグ");
   symmetricArrow.setAttribute("aria-label", "対称押し出しをドラッグ");
   distanceHandle.append(distanceArrow, symmetricArrow);
+  const sectionControls = document.createElement("div");
+  sectionControls.className = "model-section-controls";
+  sectionControls.setAttribute("role", "toolbar");
+  sectionControls.setAttribute("aria-label", "断面検査");
+  sectionControls.hidden = true;
+  for (const [axis, normal] of [["X",[1,0,0]],["Y",[0,1,0]],["Z",[0,0,1]]]) {
+    const button = makeToolButton(axis, `断面法線 ${axis}`);
+    button.setAttribute("aria-label", `断面法線 ${axis}`);
+    button.onclick = () => {
+      const state = inspection.state;
+      if (state) inspection.setPlane(inspectionPlane(state.plane.origin, normal));
+    };
+    sectionControls.append(button);
+  }
+  const sectionDrag = makeToolButton("↥", "切断平面をドラッグ");
+  sectionDrag.setAttribute("aria-label", "切断平面をドラッグ");
+  const sectionClose = makeToolButton("×", "断面検査を終了");
+  sectionClose.setAttribute("aria-label", "断面検査を終了");
+  sectionClose.onclick = () => stopInspection();
+  sectionControls.append(sectionDrag, sectionClose);
+  document.body.append(sectionControls);
   const gizmo = document.createElement("div");
   gizmo.className = "model-transform-gizmo";
   gizmo.hidden = true;
@@ -852,6 +878,76 @@ export function initModelWorkspace(api) {
   inspector.append(actionControls, exportStepButton);
   document.body.append(panel);
   view = createViewAdapter(api.preview);
+  let inspectionEnabled = false;
+  const inspection = new SectionInspection(store, (state) => {
+    view.setInspection(state);
+    sectionControls.hidden = !state;
+    sectionControls.dataset.state = state?.status || "off";
+    sectionControls.title = state?.diagnostics?.[0]?.message || "断面検査";
+    positionInspectionControls();
+  });
+  function stopInspection() {
+    inspectionEnabled = false;
+    inspection.stop();
+    sectionButton.setAttribute("aria-pressed", "false");
+  }
+  function inspectTargets(entityIds) {
+    const visible = new Set(deriveVisibleEntities(store.document).map((e) => e.id));
+    const targets = [...new Set(entityIds)].map((entityId) => store.getEntity(entityId))
+      .filter((e) => e && visible.has(e.id) && !e.locked &&
+        ["solid", "surface", "shell", "compound"].includes(e.kind));
+    if (!targets.length) return;
+    const min = [0,1,2].map((i) => Math.min(...targets.map((e) => e.bbox.min[i]))),
+      max = [0,1,2].map((i) => Math.max(...targets.map((e) => e.bbox.max[i])));
+    const { xAxis:x, yAxis:y } = store.document.uiState.workPlane;
+    const normal = [x[1]*y[2]-x[2]*y[1], x[2]*y[0]-x[0]*y[2], x[0]*y[1]-x[1]*y[0]];
+    inspection.start(targets.map((e) => e.id), inspectionPlane(min.map((v,i) => (v+max[i])/2), normal),
+      Math.max(10, Math.hypot(...max.map((v,i) => v-min[i])) * 1.2));
+  }
+  function positionInspectionControls() {
+    if (!inspection.state || activeDrag) return;
+    const screen = view.project(inspection.state.plane.origin);
+    if (screen) {
+      sectionControls.style.left = `${Math.max(8, Math.min(innerWidth-230, screen.x+18))}px`;
+      sectionControls.style.top = `${Math.max(8, Math.min(innerHeight-55, screen.y+20))}px`;
+    }
+  }
+  sectionButton.onclick = () => {
+    if (inspectionEnabled) return stopInspection();
+    inspectionEnabled = true;
+    measureMode = false;
+    frozenHistoryStage = null;
+    view.clearStage();
+    sectionButton.setAttribute("aria-pressed", "true");
+    inspectTargets(selection.map((r) => r.entityId));
+  };
+  sectionDrag.onpointerdown = (event) => {
+    const state = inspection.state;
+    if (!state) return;
+    const plane = clone(state.plane), x = plane.xAxis, y = plane.yAxis;
+    const n = [x[1]*y[2]-x[2]*y[1],x[2]*y[0]-x[0]*y[2],x[0]*y[1]-x[1]*y[0]];
+    const a = view.project(plane.origin), b = view.project(plane.origin.map((v,i) => v+10*n[i]));
+    const dx = (b.x-a.x)/10, dy = (b.y-a.y)/10, pixels = dx*dx+dy*dy;
+    const mmPerPixel = view.pixelScaleMm();
+    trackDrag(sectionDrag, event, (move) => {
+      const offset = pixels > 0.04
+        ? ((move.clientX-event.clientX)*dx+(move.clientY-event.clientY)*dy)/pixels
+        : (event.clientY-move.clientY)*mmPerPixel;
+      inspection.setPlane({...plane, origin:plane.origin.map((v,i) => v+offset*n[i])});
+    }, positionInspectionControls, stopInspection);
+  };
+  function faceDistance(hit) {
+    if (session?.command.baseOperation.id !== "shape.extrude") return null;
+    const source = store.getEntity(session.inputs.profile?.[0]?.entityId), entity = store.getEntity(hit.entityId);
+    if (!source || !entity) return null;
+    const faces = entity.displayCache?.topology?.filter((item) => item.kind === "face") || [];
+    const index = typeof hit.topologyId === "object" ? hit.topologyId.faceIndex : faces.findIndex((f) => f.topologyId === hit.topologyId);
+    const face = entity.displayCache?.faces?.[index];
+    return extrudeFaceDistance({direction:session.parameters.direction, bothSides:session.parameters.bothSides,
+      profilePoint:source.displayCache?.preview?.points?.[0]?.point || centerOf(source),
+      face:{...face, origin:hit.point}, angularRad:store.document.tolerances.angularRad,
+      linearMm:store.document.tolerances.kernelLinearMm});
+  }
   const snapStep = () => zoomSnapStep(view.pixelScaleMm(), uiPreferences.zoomSnap);
   const snapNumber = (value) => snapCoordinate(value, snapStep());
   zoomSnapToggle.onclick = () => {
@@ -892,6 +988,7 @@ export function initModelWorkspace(api) {
     render({ keepProperties: true, keepHistory: true });
   });
   measureButton.addEventListener("click", () => {
+    stopInspection();
     measureMode = !measureMode;
     measurePoints = [];
     measurementLabel.hidden = true;
@@ -1664,6 +1761,7 @@ export function initModelWorkspace(api) {
     }
   }
   function cancel() {
+    stopInspection();
     orbitGesture = false;
     curvePointPicking=false;
     referencePlanePicking=false;
@@ -1691,6 +1789,7 @@ export function initModelWorkspace(api) {
     render();
   }
   async function begin(command) {
+    stopInspection();
     curvePointPicking=false;
     closePolylineAsFace = false;
     frozenHistoryStage = null;
@@ -2499,6 +2598,7 @@ export function initModelWorkspace(api) {
   function positionViewportControls() {
     observeCameraControls();
     view.updateGrid(snapStep());
+    positionInspectionControls();
     if (activeDrag) return;
     const entity = selection.length === 1 && store.getEntity(selection[0].entityId);
     if (entity?.bbox && entity.visibility !== "hidden") {
@@ -2526,6 +2626,8 @@ export function initModelWorkspace(api) {
   let activeCommandGroup = commandGroupDefinitions[0].id;
   function render({ keepProperties = false, keepHistory = false } = {}) {
     if (!panel.isConnected) return;
+    if (inspection.state && (inspection.document !== store.document || inspection.revision !== store.document.documentRevision)) stopInspection();
+    sectionButton.disabled = !!session || featureEditActive;
     $("modelStatus").textContent = status;
     renderOutliner();
     const cadBindingIds = bindingIdsForCadSelection(store.document, [...new Set(selection.map((reference) => reference.entityId))]);
@@ -3668,7 +3770,10 @@ export function initModelWorkspace(api) {
         return;
       }
       if (event.buttons) return;
-      if (!session) {
+      if (session?.command.baseOperation.id === "shape.extrude" && session.inputs.profile?.length) {
+        const hit = view.hit(event, "face")[0];
+        view.hover(hit ? {...hit, color:faceDistance(hit) == null ? 0xc4544b : 0x2ca66f} : null);
+      } else if (!session) {
         const hit = view.hit(event, "edge")[0] || view.hit(event, "face")[0] || view.hit(event, "object")[0] || null;
         hoveredSubshape = hit;
         view.hover(hit);
@@ -3712,7 +3817,7 @@ export function initModelWorkspace(api) {
         down = [event.clientX, event.clientY];
         boxDragged = false;
         event.stopImmediatePropagation();
-        if (session || pivotPicking || measureMode) return;
+        if (session || pivotPicking || measureMode || inspectionEnabled) return;
         const edge = view.hit(event, "edge")[0];
         if (edge && store.getEntity(edge.entityId)?.kind === "solid" && selection.some((reference) => reference.entityId === edge.entityId && reference.topologyId === edge.topologyId)) {
           const entity = store.getEntity(edge.entityId);
@@ -3843,6 +3948,25 @@ export function initModelWorkspace(api) {
         const point = view.hit(event, "object")[0]?.point || view.pointAt(event, inputPlane(true));
         if (point) lastOrbitPoint = [...point];
       } catch {}
+      if (inspectionEnabled) {
+        const hit = view.hit(event, "object")[0];
+        if (hit) inspectTargets([hit.entityId]);
+        return;
+      }
+      if (session?.command.baseOperation.id === "shape.extrude" && session.inputs.profile?.length) {
+        const hit = view.hit(event, "face")[0];
+        if (hit) {
+          const distance = faceDistance(hit);
+          view.hover({...hit, color:distance == null ? 0xc4544b : 0x2ca66f});
+          if (distance != null) {
+            dispatchSession(session, {type:"setting.change", key:"distanceMm", value:distance});
+            saveDraft();
+            properties();
+            queuePreview();
+          }
+          return;
+        }
+      }
       if (pivotPicking) {
         const entity = store.getEntity(selection[0]?.entityId);
         const hit = view.hit(event, "vertex")[0] || view.hit(event, "face")[0];
@@ -4048,6 +4172,7 @@ export function initModelWorkspace(api) {
         boxSelection.hidden = true;
         if (session) cancel();
         else {
+          stopInspection();
           measureMode = false;
           measurementLabel.hidden = true;
           measurementLine.hidden = true;
@@ -4109,6 +4234,7 @@ export function initModelWorkspace(api) {
       );
   });
   document.addEventListener("pathloom:stage-will-change", (event) => {
+    if (event.detail.mode !== "model") stopInspection();
     if (active() && event.detail.mode !== "model" && session) {
       event.preventDefault();
       pendingStage = event.detail.mode;
@@ -4117,6 +4243,7 @@ export function initModelWorkspace(api) {
   });
   new MutationObserver(() => {
     store.document.uiState.activeStage = document.body.dataset.workspaceMode;
+    if (!active()) stopInspection();
     if (active()) startRuntime();
     updateView();
   }).observe(document.body, {
@@ -4204,6 +4331,7 @@ export function initModelWorkspace(api) {
     },
     prepareRestore,
     restorePrepared(doc) {
+      stopInspection();
       clearTimeout(autosaveTimer);
       session = null;
       selectedFeature = null;

@@ -490,3 +490,11 @@ Chromium実行体不在でtest body前に2失敗し、製品成功/失敗には�
 厳密Node20.20.2全JSも249成功。native全107件は105成功・任意NVIDIA USD 2skip。local Rustは
 `cargo`不在で未実行。Chromium導入も配布内容が5回とも0 MiBで失敗し、対象/全browserはtest body未実行。
 CI、mergeはこの時点で未実施であり先取りしない。
+
+## 2026-11-03 — 指示030 D の追加証拠
+
+既存A/T/R 62行・正規65 IDの状態は保持する。[指示030契約](cad-section-inspection.md)に
+一時断面検査とExtrudeの一度きり面計測を固定した。新規JS4件は符号/両側/除外面、平面基底、
+遅延結果破棄・handle解放・文書不変を検査し、新規browser2件は実OCCT断面の長さ、ライブドラッグ、
+Save/Open・Undo/Redo・面計測の非追従を検査する。local browserは実行体取得不能でtest body未実行。
+全件/CIの実結果は開発ログへ別記し、自動検証を実Macの合格へ拡大しない。

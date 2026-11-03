@@ -2481,3 +2481,29 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   1失敗（retryなし）。Box以外を隠した後も、sketch copy追加時のビュー中心更新前に求めた古い画面座標を
   再利用していた。最終右クリック直前に同じ3D face centroidを再投影する。両runの
   JS249/native105+2skip/Rust24は成功し、全job生ログ確認済み。4回の新規browser失敗を保持する。
+
+## 2026-11-03 — 指示030 D（断面検査と押し出しの面計測）
+
+- 開始確認で最新main `4d2effc2298dc4a5bbd2d5482329ef9b45f2f69c`（PR #59 merge）、
+  tree `b50fb2648f9bea46372e604871444576a09c0c24`、post-merge main run41585724596 attempt1全3job successを
+  生ログで確認した（JS249/browser100、native107件中105成功+任意2skip、Rust24）。
+- 15:33に面の向きの具体化をMuseへ照会し要判断。19:46回答で法線とdirectionの平行/反平行な平面、
+  符号付きL、bothSides時2L、解析専用の一時状態を承認され、状態更新・読戻し後20:33に再開した。
+- 作業環境整理で旧checkoutが失われており、最新mainを再cloneして`feat/30-section-inspection`を作成した。
+  一時断面検査の専用描画とドラッグ、最新要求だけの採用・全handle解放、Extrudeの一度きり面計測と
+  採用可否hoverを追加。既存native演算、65 command、保存schemaは変更しない。
+  契約は[cad-section-inspection.md](cad-section-inspection.md)。対応Issueなし・自動close非該当。
+- local Node24.22.1の初回全JSは253件中251成功/新規非同期fixture2失敗。100回のsetImmediate待ちが
+  全件並列実行時のWebCrypto完了を待てなかったtest setup問題で、5秒以内の時刻ベースpollへ修正した。
+  修正後のNode24全253件と厳密Node20.20.2全253件が成功（失敗/skip0）。初回失敗を成功へ置換しない。
+- native runtimeはPython3.12、cadquery-ocp7.8.1.1.post1/OCP7.8.1.1/VTK9.3.1とclosed-box probeを照合。
+  native全107件は105成功+任意NVIDIA USD2skip。local Rustはcargo不在で未実行。
+- local Chromium導入は5回とも0 MiB/ZIP破損で失敗した。全browser suiteを起動しているが実行体がなく、
+  test body未実行として保持する。CI、PR、Ready/mergeはこの時点では未実施。
+  E、028 fixture候補、Issue #37、Draft PR #43は対象外。
+
+### 指示030 ローカルbrowser全件の起動結果
+
+全102件はChromium実行体不在でtest body前に起動失敗した（成功/skip0、test body未実行）。
+新規2件の製品成否はまだ確認できず、実行体起動失敗102件を製品回帰102件とは分類しない。
+Node24再実行253成功、厳密Node20.20.2初回253成功、native105成功/任意2skipとは区別して保持する。
