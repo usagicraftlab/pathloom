@@ -22,6 +22,41 @@ export function createSketch({ plane = WORLD_XY, support = null } = {}) {
     lastValid: null,
   };
 }
+
+// A copied sketch is a new model, not another view of the source sketch. Every
+// element and constraint identity is remapped so edits, diagnostics and future
+// references can never leak between the two sketches.
+export function copySketchToSupport(sketch, { plane = sketch.plane, support = null } = {}) {
+  validateSketch(sketch);
+  if (!finitePlane(plane)) throw new Error("Invalid sketch copy plane");
+  const next = clone(sketch),
+    identities = new Map();
+  for (const item of [
+    ...next.points,
+    ...next.lines,
+    ...next.circles,
+    ...next.constraints,
+    ...(next.dimensions || []),
+  ])
+    if (item?.id) identities.set(item.id, id());
+  const remap = (value) => {
+    if (typeof value === "string") return identities.get(value) || value;
+    if (Array.isArray(value)) return value.map(remap);
+    if (value && typeof value === "object")
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, remap(item)]));
+    return value;
+  };
+  const copied = remap(next);
+  copied.id = id();
+  copied.plane = clone(plane);
+  copied.support = support ? clone(support) : null;
+  copied.supportStatus = support ? "linked" : "datum";
+  copied.supportWarning = null;
+  copied.lastValid = null;
+  delete copied.solveReport;
+  delete copied.draft;
+  return validateSketch(copied);
+}
 export function validateSketch(s) {
   if (
     !s ||

@@ -19,6 +19,7 @@ import {
 import { solveSketch, qrSolve } from "../cad/sketch/solver.js";
 import {
   createSketch,
+  copySketchToSupport,
   sketchPointWorld,
   updateSketchSupport,
 } from "../cad/sketch/model.js";
@@ -335,6 +336,47 @@ test("P4-02 support movement follows its plane and missing support keeps the las
   assert.deepEqual(orphaned.plane, moved.plane);
   assert.equal(orphaned.supportStatus, "orphaned");
   assert.equal(orphaned.supportWarning.code, "SKETCH_SUPPORT_MISSING");
+});
+
+test("P4-03 copied sketch remaps every model identity and support independently", () => {
+  const sketch = createSketch();
+  sketch.points = [
+    { id: "p1", u: 0, v: 0 },
+    { id: "p2", u: 10, v: 0 },
+  ];
+  sketch.lines = [{ id: "line", start: "p1", end: "p2" }];
+  sketch.constraints = [{ id: "length", kind: "length", refs: ["line"], value: 10 }];
+  sketch.dimensions = [{ id: "dimension", constraintId: "length", refs: ["p1", "p2"] }];
+  const copied = copySketchToSupport(sketch, {
+    plane: { origin: [1, 2, 3], xAxis: [1, 0, 0], yAxis: [0, 1, 0] },
+    support: { entityId: "body", topologyId: "face", centroid: [1, 2, 3] },
+  });
+  const sourceIds = new Set([
+    sketch.id,
+    ...sketch.points.map((item) => item.id),
+    ...sketch.lines.map((item) => item.id),
+    ...sketch.constraints.map((item) => item.id),
+    ...sketch.dimensions.map((item) => item.id),
+  ]);
+  const copiedIds = [
+    copied.id,
+    ...copied.points.map((item) => item.id),
+    ...copied.lines.map((item) => item.id),
+    ...copied.constraints.map((item) => item.id),
+    ...copied.dimensions.map((item) => item.id),
+  ];
+  assert.ok(copiedIds.every((value) => !sourceIds.has(value)));
+  assert.deepEqual(copied.lines[0], {
+    id: copied.lines[0].id,
+    start: copied.points[0].id,
+    end: copied.points[1].id,
+  });
+  assert.deepEqual(copied.constraints[0].refs, [copied.lines[0].id]);
+  assert.equal(copied.dimensions[0].constraintId, copied.constraints[0].id);
+  assert.deepEqual(copied.dimensions[0].refs, copied.points.map((item) => item.id));
+  assert.equal(copied.supportStatus, "linked");
+  copied.points[0].u = 99;
+  assert.equal(sketch.points[0].u, 0);
 });
 
 test("P4-02 linked face recompute moves the sketch and missing topology keeps it orphaned", () => {

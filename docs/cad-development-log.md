@@ -2432,3 +2432,52 @@ timeout・許容差の緩和はしていない。CI、PR、merge、Issue自動cl
   local Rustはcargo不在で未実行のまま、CIのmacOS Rust24成功を別証拠として記録する。
 - 対応Issueなしで自動closeは非該当。証拠文書追記後のhead CIとReady/merge/post-merge main CIは
   この時点では未実施であり、PR #58とボードCodexログへ実結果を記録する。
+
+## 2026-11-03 — 指示029 C（リンク複製とsketch再利用）
+
+- post-merge main run41489354183 attempt1はJS248/browser98、native105+任意2skipが成功した一方、
+  macOS/Rust job125427968347がstep実行前cancelled・runner0・生ログ404でRust未実行だった。
+  Muse 05:52判断に従い同jobだけを1回再実行し、attempt2 job125548984514は全step success、
+  生ログでRust24成功/失敗0。attempt1のcancelled/未実行をattempt2成功へ置換していない。
+- 最新main `5c8fdab2`から`feat/29-link-sketch-reuse`を作成。既存Ctrl copyのDAGを明示的な
+  `linkedDuplicate` identityとUI入口へ接続し、元再計算追従/独立配置を区別した。駆動/参照寸法の
+  実線/破線toggle、face支持sketchの0/1/複数候補、全ID/参照を再採番するface/datum独立copy、
+  sketch削除時のmodel cleanupを実装した。契約は[cad-linked-sketch-reuse.md](cad-linked-sketch-reuse.md)。
+- 対象unitを含むNode24.22.1全JS249件は成功。最初の対象browser 2件はChromium実行体不在で
+  test body前に失敗し、ローカルbrowser未実施として区別する。Node20.20.2、native全件、browser全件、
+  local Rust、CI、Draft PR、Ready、mergeはこの時点で未実施。D/E、指示028fixture候補、#37/PR43は対象外。
+
+### ローカル全件とbrowser実行環境
+
+- 厳密なNode20.20.2でも全JS249件が成功。native全107件は105成功・任意NVIDIA USD 2skip。
+  local Rustは`cargo`不在で未実行。
+- Chromium導入を`npx playwright install chromium`で試したが、配布元から5回とも0 MiBの内容が返り、
+  ZIP終端なしで失敗した。既存実行体も存在せず、対象/全browserはtest body未実行のまま。初回の実行体
+  不在2失敗と導入失敗を保持し、CI成功や後続判断でローカル成功へ置換しない。
+- source抑制時のlinked copy blocked、Undo復帰、source削除時のunresolved、Undo復帰を既存Ctrl copy
+  browser回帰へ追加した。Draft PRの全CIを完走させた後、ローカルbrowser代替可否をMuseへ判断依頼する。
+  CI、Ready、mergeはこの時点では未実施。
+
+### 初回公開head CI
+
+- 公開head `c83941a`（localとtree `1bc271b`一致）のpush run41527043267とPR run41527075781は、
+  各Node JS249、native105成功+任意2skip、macOS Rust24が成功した。browserは両runとも同じ新規
+  face-menu回帰だけが失敗し、各99成功/1失敗（15.8分/15.5分、retryなし）。全6job生ログを確認した。
+- 失敗は製品処理へ到達する前、非同期のsketch attach完了を待たずにテストが`sketches[0].support`を
+  書いたraceだった。attach後のsketch数をpollしてからsupportを設定するようテストを修正する。
+  初回2runの失敗を後続成功へ置換せず、修正headで全CIを再確認する。Ready/mergeは未実施。
+- 修正head `9033b36`のpush run41529790635/PR run41529801659は、attach raceを解消した後に同テストの
+  最終「複数候補」表示で各99成功/1失敗（15.5分/15.8分、retryなし）。faceへ重なるcopy curveが
+  pointer hitを遮り、face menu自体を再度開けていないtest setup問題だった。候補集合の契約を変えず、
+  最終候補確認前だけcurve表示を隠して同じfaceをhitする。push Rust job125566700903はrunner待ちのまま
+  step実行前cancelled、PR同一head Rust24成功と区別して保持する。全job生ログを確認し、再修正headで
+  browser全件を再確認する。Ready/mergeは未実施。
+- 再修正head `2662305`のpush run41532402347/PR run41532411187も同じ最終assertだけ各99成功/
+  1失敗（retryなし）。閉じたRectangleの表示entityは`curve`ではなくsurface扱いのため、curveだけの
+  非表示ではface hitを遮ったままだった。対象Box以外の全entityを非表示にし、次frame後に同じfaceを
+  右クリックするよう修正する。両runのJS249/native105+2skip/Rust24は成功し、全job生ログ確認済み。
+  3回の新規browser失敗を後続成功へ置換しない。Ready/mergeは未実施。
+- 再修正head `9631b48`のpush run41535049908/PR run41535061097も同じ最終assertだけ各99成功/
+  1失敗（retryなし）。Box以外を隠した後も、sketch copy追加時のビュー中心更新前に求めた古い画面座標を
+  再利用していた。最終右クリック直前に同じ3D face centroidを再投影する。両runの
+  JS249/native105+2skip/Rust24は成功し、全job生ログ確認済み。4回の新規browser失敗を保持する。
