@@ -2565,3 +2565,50 @@ native107件105成功/任意NVIDIA USD2skip、macOS Rust24成功。新規2件は
 
 本追記は証拠文書だけの更新で、製品コードはlocal全102件と上記CIから変更していない。
 文書反映後の最終head CI、Ready/merge、post-merge main CIはPR #60とボードへ別記する。
+
+## 2026-11-04〜05 — 指示031 E（前回設定で書き出し）
+
+- 23:48 JST開始確認、23:56 JSTに棚卸しと具体化をボードへ記録。Muse 22:33の有効化に従い、
+  状態だけをrequiredRevisionId付きで未着手→作業中へ更新・読戻し後、最新main `67306dd6`/
+  tree `0213531d`から`feat/31-repeat-export`を作成した。030 post-merge main run41640564938 attempt1の
+  全3job successを生ログで再確認した（JS253/browser102/native105+任意2skip/macOS Rust24）。
+- 既存5形式の成功設定を共通の一時記録へ接続し、workspace横のアイコンから同じ対象の現在データを
+  再生成する。G-codeは既存設定/対象/配置、STEPは元bodyの現在tip、JSON/toolpath/Libraryは元identityを
+  保持する。既存native保存の戻り値で同じ保存先へatomic書込し、browserは既存ファイル名を再利用する。
+  取消/失敗で直近成功を保持し、初回、二重実行、対象消失、Open/遅延応答を扱う。
+  契約は[cad-repeat-export.md](cad-repeat-export.md)。対応Issueなし・自動close非該当。
+- 初回ローカルNode24.22.1全JS258件、厳密Node20.20.2全JS258件は各成功（失敗/skip0）。
+  新規controller5件は現在データ再生成/設定snapshot、取消/失敗保持、同時実行、文書切替中の遅延応答、
+  対象消失/形式切替を検査する。
+- 旧`.pathloom-runtime/python/bin/python`のprobeはENOENT。primary runtimeのPython3.12で
+  cadquery-ocp7.8.1.1.post1/OCP7.8.1.1/VTK9.3.1とclosed-box probeを確認し、同じ全native unittestを
+  直接実行して107件105成功/任意NVIDIA USD2skip。失敗した旧pathのprobeを成功へ置換しない。
+  local Rustはcargo/rustfmt不在で未実行。Rust保存helper2件はCIで確認する。
+- 一時領域へnpm配布`@sparticuz/chromium@153.0.0`を取得し、BrotliとSwiftShaderを所有権変更なしで展開、
+  既存`/etc/fonts`を使ってChromium153.0.8010.0を起動。製品依存/lock/CI設定は変更していない。
+  新規browser3件の初回は2成功/STEP1失敗。fixtureが180 ms遅延のoutliner選択確定前にexportを呼び、
+  対象なしで拒否されたため、製品を変更せずaria-selected確定待ちを追加。再実行3件成功（14.9秒、retry0）。
+  G-code/JSON/toolpath/Libraryの全byte一致、変更後の選択/設定維持、保存先、取消/失敗/二重click/負Z拒否、
+  STEPの現在tipを実OCCT再読込し体積12000 mm³・幅30 mm、対象削除/Openを確認した。初回失敗を保持する。
+- この時点の全browserは実行中、CI/PR/Ready/mergeは未実施。実Mac GUI/Tauri/OS dialog/Issue #37、
+  Draft PR #43、028 fixture候補、新形式/STL exporter、新設定項目は範囲外のまま。
+
+### 指示031 ローカル全件の完走
+
+2026-11-05 00:24 JST。prepared assetsを固定し、実OCPを使う全browser105件が成功した
+（9.2分、失敗/skip/retry0）。新規3件もすべて成功し、既存STEP・生成/G-code・保存回復・UIの回帰を維持した。
+Node24.22.1/厳密Node20.20.2各JS258成功、native107件105成功/任意NVIDIA USD2skipと合わせ、
+必須ローカル4系統を実行した。対象browser初回の2成功/STEP fixture1失敗、修正後3成功の履歴は保持する。
+local Rustはcargo/rustfmt不在で未実行、実Mac GUI/Tauri/OS dialog/Issue #37も未実施のまま。
+本追記後の最終head CI、Ready/merge、post-merge main CIはPR/ボードへ各run・attempt・生ログを別記する。
+
+追加の一時browser QA 1件も成功（3.7秒）。通常JSON書出し後の実画像を確認し、workspace横のアイコン、
+既存UIとの間隔、本文説明を追加しない表示を確認した。一時QAファイルは検証後に除去し、製品・正規suiteは変更しない。
+
+```sh
+"$CODEX_PRIMARY_RUNTIME_PYTHON" -B -m unittest discover -s native -p 'test*.py'
+FONTCONFIG_PATH=/etc/fonts LD_LIBRARY_PATH=/tmp/pathloom031-chromium/runtime \
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/tmp/pathloom031-chromium/runtime/chromium \
+PATHLOOM_FRONTEND_DIR=desktop-dist PATHLOOM_BREP_PYTHON="$CODEX_PRIMARY_RUNTIME_PYTHON" \
+npm run test:browser
+```

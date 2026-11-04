@@ -8,6 +8,7 @@ import { CadStore } from "./store.js";
 import { NativeCadClient } from "./native-client.js";
 import { createViewAdapter } from "./view-adapter.js";
 import { SectionInspection, inspectionPlane, extrudeFaceDistance } from "./inspection.js";
+import { repeatExport } from "../repeat-export.js";
 import {
   createCadDocument,
   clone,
@@ -1660,16 +1661,35 @@ export function initModelWorkspace(api) {
   function report(error) {
     setStatus(error.message || String(error));
   }
+  repeatExport.register("step", {
+    valid(config) {
+      const body = store.document.bodies.find((b) => b.id === config.bodyId), entity = store.getEntity(body?.tipEntityId);
+      return config.documentId === store.document.id && !!entity && ["valid", "warning"].includes(store.getFeature(entity.producer.featureId)?.status);
+    },
+    async prepare(config, current) {
+      const body = store.document.bodies.find((b) => b.id === config.bodyId), entity = store.getEntity(body?.tipEntityId);
+      if (config.documentId !== store.document.id || !entity) throw new Error("書出す現在のCAD bodyを確認してください");
+      const hash = entity.geometry.assetHash, result = await store.exportStep(entity.id);
+      current();
+      const tip = store.getEntity(store.document.bodies.find((b) => b.id === config.bodyId)?.tipEntityId);
+      if (tip?.geometry.assetHash !== hash || !["valid", "warning"].includes(store.getFeature(tip.producer.featureId)?.status)) throw new Error("書き出し中にCAD bodyが変更されました");
+      return { content: result.step, filename: config.filename };
+    },
+    async write({ content, filename }, destination) {
+      const path = await native.saveStep(content, filename, destination);
+      setStatus(path ? `STEPを書き出しました：${path}` : "STEP書出しを取り消しました。");
+      return path ? { destination: path } : null;
+    },
+  });
   exportStepButton.onclick = async () => {
     try {
       const entityId = selection.length === 1 && selection[0].entityId;
       const entity = entityId && store.getEntity(entityId);
       if (!entity) throw new Error("書出す現在のCAD bodyを1つ選択してください");
-      const result = await store.exportStep(entity.id);
+      if (store.document.bodies.find((body) => body.id === entity.bodyId)?.tipEntityId !== entity.id) throw new Error("確定した現在のCAD bodyを選択してください");
       const filename =
         (entity.name || "Pathloom-CAD").replace(/\.(step|stp)$/i, "") + ".step";
-      const path = await native.saveStep(result.step, filename);
-      setStatus(path ? `STEPを書き出しました：${path}` : "STEP書出しを取り消しました。");
+      await repeatExport.export("step", { documentId: store.document.id, bodyId: entity.bodyId, filename });
     } catch (error) {
       report(error);
     }
@@ -2627,6 +2647,7 @@ export function initModelWorkspace(api) {
   let activeCommandGroup = commandGroupDefinitions[0].id;
   function render({ keepProperties = false, keepHistory = false } = {}) {
     if (!panel.isConnected) return;
+    repeatExport.refresh();
     if (inspection.state && (inspection.document !== store.document || inspection.revision !== store.document.documentRevision)) stopInspection();
     sectionButton.disabled = !!session || featureEditActive;
     $("modelStatus").textContent = status;
@@ -4332,6 +4353,7 @@ export function initModelWorkspace(api) {
     },
     prepareRestore,
     restorePrepared(doc) {
+      repeatExport.clear();
       stopInspection();
       clearTimeout(autosaveTimer);
       session = null;

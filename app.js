@@ -11,6 +11,7 @@ import { initCad } from './cad-ui.js';
 import { BASIC_FIELDS, LAYOUT_DEFAULTS, validateProject } from './pathloom-project.js';
 import { validatePauseLayers, pauseGcode, durationText, thumbnailBlock, encodeQoi, progressCommand, usageComments } from './gcode-metadata.js';
 import { estimatePrintTime, estimateFilamentUsage } from './print-time.js';
+import { repeatExport } from './repeat-export.js';
 
 const LIBRARY_KEY = 'pathloom.filamentLibrary.v1';
 const sourceState = new Map();
@@ -178,7 +179,7 @@ function nextInstanceNumber(sourceId){let max=0;for(const[id,inst]of instanceSta
 function addInstance(sourceId,id=`${sourceId}-${nextInstanceNumber(sourceId)}`,transform={}){const maxOrder=Math.max(0,...[...instanceState.values()].map(v=>v.order||0));instanceState.set(id,{source:sourceId,x:transform.x??0,y:transform.y??0,rotation:transform.rotation??0,order:maxOrder+1});selectedInstance=id;return id}
 function removeSource(sourceId,notify=true){const removed=sourceState.get(sourceId);if(notify)document.dispatchEvent(new CustomEvent('pathloom:source-removed',{detail:{sourceId,liveSource:removed?.liveSource,generatorGroup:removed?.generatorGroup,generatorOutputId:removed?.generatorOutputId}}));sourceState.delete(sourceId);syncPrintLinks();for(const[id,inst]of[...instanceState])if(inst.source===sourceId)instanceState.delete(id);selectedInstance=[...instanceState.keys()][0]||null;normalizeOrder();renderAllUI();buildInstances()}
 function normalizeOrder(){[...instanceState.entries()].sort((a,b)=>a[1].order-b[1].order).forEach(([,data],i)=>data.order=i+1)}
-function toolEffectiveSpeed(tool){return tool?.speedOverride??(Number($('#printSpeed').value)||35)}
+function toolEffectiveSpeed(tool,printSpeed=Number($('#printSpeed').value)||35){return tool?.speedOverride??printSpeed}
 function createPathLineMaterial(color){
   const material=new THREE.ShaderMaterial({
     uniforms:{lineColor:{value:new THREE.Color(color)},lineOpacity:{value:1},resolution:{value:new THREE.Vector2(viewport.clientWidth||1,viewport.clientHeight||1)},lineWidth:{value:2.5}},
@@ -196,8 +197,8 @@ function createPathLineMaterial(color){
     side:THREE.DoubleSide
   });material.color=material.uniforms.lineColor.value;return material;
 }
-function createInstanceGroup(instanceId,data){
-  const source=sourceState.get(data.source),group=new THREE.Group();group.userData.instanceId=instanceId;group.userData.paths=source.paths;
+function createInstanceGroup(instanceId,data,source=sourceState.get(data.source)){
+  const group=new THREE.Group();group.userData.instanceId=instanceId;group.userData.paths=source.paths;
   let cached=previewGeometryCache.get(data.source);
   if(!cached||cached.paths!==source.paths){
     const batches=new Map();
@@ -356,7 +357,7 @@ function renderOrderUI(){schedulePrintEstimate();const host=$('#orderList');host
 function bindOrderDrag(){const host=$('#orderList');let dragged=null;host.querySelectorAll('.order-item').forEach(item=>{item.addEventListener('dragstart',()=>{dragged=item;item.classList.add('dragging')});item.addEventListener('dragend',()=>{item.classList.remove('dragging');[...host.children].forEach((el,i)=>instanceState.get(el.dataset.id).order=i+1);renderOrderUI();updateLayerRange();refreshVisibility()});item.addEventListener('dragover',e=>{e.preventDefault();if(!dragged||dragged===item)return;const r=item.getBoundingClientRect();host.insertBefore(dragged,e.clientY<r.top+r.height/2?item:item.nextSibling)})})}
 function instanceDisplayName(id,data){const source=sourceState.get(data.source),n=id.split('-').pop();return`${source?.label||data.source}-${n}`}
 function updateObjectTabs(){const disabled=instanceState.size<2,island=$('#layoutIsland'),header=island.querySelector('.island-header');island.classList.toggle('disabled',disabled);header.disabled=disabled;header.setAttribute('aria-disabled',String(disabled));if(disabled){island.classList.add('collapsed');header.setAttribute('aria-expanded','false')}updatePrintOrderMarkers()}
-function renderAllUI(){renderObjectUI();renderOrderUI();updateObjectTabs()}
+function renderAllUI(){renderObjectUI();renderOrderUI();updateObjectTabs();repeatExport.refresh()}
 function autoArrange(render=true){
   if(!$('#autoArrangeEnabled').checked)return;
   const entries=[...instanceState.entries()].sort((a,b)=>a[1].order-b[1].order);if(!entries.length)return;
@@ -395,7 +396,7 @@ function upsertFilament(e){e.preventDefault();const color=normalizeHex($('#filam
 async function importFiles(files){for(const file of files){try{const parsed=sanitizeToolpath(JSON.parse(await file.text()),file.name);addSource(parsed);showToast(`${file.name} added`)}catch(err){console.error(err);showToast(`${file.name}: ${err.message}`,'error')}}}
 async function loadUkigaraSample(){try{const response=await fetch('./samples/ukigara-clock.toolpath');if(!response.ok)throw new Error(`HTTP ${response.status}`);addSource(sanitizeToolpath(await response.json(),'Ukigara Clock.toolpath'));showToast('Ukigara Clock sample loaded')}catch(err){showToast(`Unable to load sample: ${err.message}`,'error')}}
 function transformedPoints(path,instance){const a=(instance.rotation||0)*Math.PI/180,cos=Math.cos(a),sin=Math.sin(a);return path.points.map(([x,y,z])=>[x*cos-y*sin+instance.x,x*sin+y*cos+instance.y,z])}
-function printerPoints(path,instance){return transformedPoints(path,instance).map(([x,y,z])=>[x+configuredBuildVolume.bedWidth/2,y+configuredBuildVolume.bedDepth/2,z])}
+function printerPoints(path,instance,volume=configuredBuildVolume){return transformedPoints(path,instance).map(([x,y,z])=>[x+volume.bedWidth/2,y+volume.bedDepth/2,z])}
 function sourceMaxZ(source){return sourceBounds(source).maxZ}
 const gcodeComment=value=>String(value).replace(/[\x00-\x1f\x7f]/g,' ');
 function renderGcodeTemplate(template,values){return String(template||'').replace(/\{([a-z0-9_]+)\}/gi,(match,key)=>Object.hasOwn(values,key)?String(values[key]):match).trim()}
@@ -421,14 +422,14 @@ function renderPrintEstimate(){
   }catch(error){label.textContent='Print time in total: —';detail.textContent=error.message}
 }
 
-function exportThumbnails(){
+function exportThumbnails(sources=sourceState,instances=instanceState){
   if(!THREE)throw new Error('Wait for the 3D preview before exporting');
   const captureScene=new THREE.Scene(),model=new THREE.Group();captureScene.background=new THREE.Color('#ffffff');captureScene.add(model);
   const captureRenderer=new THREE.WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
   const size=768;captureRenderer.setPixelRatio(1);captureRenderer.setSize(size,size,false);
   try{
-    for(const[id,instance]of instanceState){
-      const group=createInstanceGroup(id,instance);
+    for(const[id,instance]of instances){
+      const group=createInstanceGroup(id,instance,sources.get(instance.source));
       group.traverse(node=>{if(node.material?.uniforms){node.material.uniforms.resolution.value.set(size,size);node.material.uniforms.lineOpacity.value=1}});
       model.add(group);
     }
@@ -469,37 +470,57 @@ function exportThumbnails(){
   }
 }
 
-function generateGcode(){window.PathloomModel?.store.resolveBindings();for(const source of sourceState.values())for(const input of source.generator?.inputs||[])if(input.cadBinding&&cadInputUsed(source.generator,input.id)){const binding=window.PathloomModel?.store.document.outputBindings.find(b=>b.id===input.cadBinding.id);if(binding?.status!=='ready'||binding.resolvedResultHash!==input.cadBinding.resultHash)throw new Error(`CAD input ${input.name}: update or repair the CAD binding before exporting`)}
+function gcodeExportConfig(){
+  const project=$('#projectName').textContent.trim(),base=project&&project!=='Untitled'?project.replace(/\.pathloom$/i,''):'pathloom-output';
+  return {documentId:window.PathloomModel?.store.document.id,filename:base.replace(/[\x00-\x1f<>:"/\\|?*]/g,'-').slice(0,120)+'.gcode',
+    settings:{printer:$('#printerSelect').value,...Object.fromEntries(BASIC_FIELDS.map(id=>[id,Number($('#'+id).value)]))},
+    profile:{filamentDiameter:configuredFilamentDiameter,...configuredBuildVolume,startGcode:configuredStartGcode,toolChangeGcode:configuredToolChangeGcode,endGcode:configuredEndGcode},
+    sources:[...sourceState].map(([id,source])=>[id,{tools:structuredClone([...source.tools])}]),instances:structuredClone([...instanceState])};
+}
+function gcodeExportTargets(config){
+  if(!config.instances.length)throw new Error('Add a .toolpath file first');
+  if(config.documentId!==window.PathloomModel?.store.document.id||config.instances.some(([id,p])=>instanceState.get(id)?.source!==p.source))throw new Error('前回の書き出し対象を確認してください');
+  const sources=new Map(config.sources.map(([id,options])=>{
+    const source=sourceState.get(id);if(!source)throw new Error('前回の書き出し対象を確認してください');
+    const tools=new Map(options.tools);if(source.paths.some(path=>!tools.has(String(path.tool))))throw new Error('ツール設定を確認して通常の書き出しを実行してください');
+    return[id,{...source,tools}];
+  }));
+  return {sources,instances:new Map(config.instances)};
+}
+function generateGcode(config=gcodeExportConfig()){
+  const {sources:sourceState,instances:instanceState}=gcodeExportTargets(config),settings=config.settings,configuredBuildVolume=config.profile,
+    configuredFilamentDiameter=config.profile.filamentDiameter,configuredStartGcode=config.profile.startGcode,configuredToolChangeGcode=config.profile.toolChangeGcode,configuredEndGcode=config.profile.endGcode;
+  window.PathloomModel?.store.resolveBindings();for(const source of sourceState.values())for(const input of source.generator?.inputs||[])if(input.cadBinding&&cadInputUsed(source.generator,input.id)){const binding=window.PathloomModel?.store.document.outputBindings.find(b=>b.id===input.cadBinding.id);if(binding?.status!=='ready'||binding.resolvedResultHash!==input.cadBinding.resultHash)throw new Error(`CAD input ${input.name}: update or repair the CAD binding before exporting`)}
   if(!instanceState.size)throw new Error('Add a .toolpath file first');
-  assertPrintReferencesCurrent();
+  assertPrintReferencesCurrent(sourceState,settings);
   for(const source of sourceState.values())if(source.generator&&source.generationError)throw new Error(`${source.label}: ${source.generationError}`);
-  for(const source of sourceState.values())if(source.generator){const layerHeight=pipelineLayerHeight(source.generator,source.generatorOutputId);if(Number.isFinite(layerHeight)&&layerHeight>0&&Math.abs(layerHeight-Number($('#printHeight').value))>1e-6)throw new Error(`Set Print height to ${layerHeight} mm to match ${source.label}`)}
-  const width=Number($('#printWidth').value),height=Number($('#printHeight').value),filamentD=configuredFilamentDiameter,travel=Number($('#travelSpeed').value),nozzleTemperature=Number($('#nozzleTemperature').value),bedTemperature=Number($('#bedTemperature').value),fanSpeed=Number($('#fanSpeed').value);
+  for(const source of sourceState.values())if(source.generator){const layerHeight=pipelineLayerHeight(source.generator,source.generatorOutputId);if(Number.isFinite(layerHeight)&&layerHeight>0&&Math.abs(layerHeight-settings.printHeight)>1e-6)throw new Error(`Set Print height to ${layerHeight} mm to match ${source.label}`)}
+  const width=settings.printWidth,height=settings.printHeight,filamentD=configuredFilamentDiameter,travel=settings.travelSpeed,nozzleTemperature=settings.nozzleTemperature,bedTemperature=settings.bedTemperature,fanSpeed=settings.fanSpeed;
   if(![width,height,filamentD,travel].every(value=>Number.isFinite(value)&&value>0)||![nozzleTemperature,bedTemperature].every(value=>Number.isFinite(value)&&value>=0)||!Number.isFinite(fanSpeed)||fanSpeed<0||fanSpeed>100)throw new Error('Check Basic Settings');
   const orderedInstances=[...instanceState.entries()].filter(([,instance])=>sourceState.get(instance.source)?.paths.length).sort((a,b)=>a[1].order-b[1].order),filamentArea=Math.PI*Math.pow(filamentD/2,2),ePerMmBase=width*height/filamentArea;
-  validatePrintSettings(Object.fromEntries(BASIC_FIELDS.map(id=>[id,Number($('#'+id).value)])));
+  validatePrintSettings(settings);
   const {minX:printMinX,maxX:printMaxX,minY:printMinY,maxY:printMaxY,maxZ:printMaxZ}=printableBounds(orderedInstances,sourceState,configuredBuildVolume);
   const areaMinX=Math.max(0,Math.floor(printMinX)),areaMinY=Math.max(0,Math.floor(printMinY)),areaMaxX=Math.min(configuredBuildVolume.bedWidth,Math.ceil(printMaxX)),areaMaxY=Math.min(configuredBuildVolume.bedDepth,Math.ceil(printMaxY));
   if(printMinX<0||printMinY<0||printMaxX>configuredBuildVolume.bedWidth||printMaxY>configuredBuildVolume.bedDepth||printMaxZ>configuredBuildVolume.maxHeight)throw new Error('Objects extend outside the configured build volume');
   const templateValues={bed_temperature:bedTemperature,nozzle_temperature:nozzleTemperature,fan_speed_percent:fanSpeed,fan_speed_255:Math.round(fanSpeed*255/100),travel_speed:travel,travel_feedrate:Math.round(travel*60),bed_width:configuredBuildVolume.bedWidth,bed_depth:configuredBuildVolume.bedDepth,max_height:configuredBuildVolume.maxHeight,print_min_x:areaMinX,print_min_y:areaMinY,print_max_x:areaMaxX,print_max_y:areaMaxY,print_area_width:Math.max(1,areaMaxX-areaMinX),print_area_height:Math.max(1,areaMaxY-areaMinY),print_max_z:Number(printMaxZ.toFixed(3)),print_max_z_plus_10:Number(Math.min(configuredBuildVolume.maxHeight,printMaxZ+10).toFixed(3))};
   const startCode=renderGcodeTemplate(configuredStartGcode||defaultStartGcode,templateValues),endCode=renderGcodeTemplate(configuredEndGcode||defaultEndGcode,templateValues),lines=['; Generated by Pathloom',`; width=${width.toFixed(2)} height=${height.toFixed(2)} filament=${filamentD.toFixed(2)}`,'; Start G-code',startCode];
   const toolMatches=[...startCode.matchAll(/^\s*T(\d+)\b/gm)];let currentTool=toolMatches.length?toolMatches.at(-1)[1]:null,toolChangeCount=0;
-  const estimateInstances=orderedInstances.map(([,instance],index)=>({previousMaxZ:index?sourceMaxZ(sourceState.get(orderedInstances[index-1][1].source)):0,paths:sourceState.get(instance.source).paths.map(path=>{const tool=sourceState.get(instance.source).tools.get(path.tool);return{points:path.points,placement:instance,tool:toolOutputId(path.tool,tool),speed:Math.round(toolEffectiveSpeed(tool)*60)/60,erate:tool?.erate??1}})}));
+  const estimateInstances=orderedInstances.map(([,instance],index)=>({previousMaxZ:index?sourceMaxZ(sourceState.get(orderedInstances[index-1][1].source)):0,paths:sourceState.get(instance.source).paths.map(path=>{const tool=sourceState.get(instance.source).tools.get(path.tool);return{points:path.points,placement:instance,tool:toolOutputId(path.tool,tool),speed:Math.round(toolEffectiveSpeed(tool,settings.printSpeed)*60)/60,erate:tool?.erate??1}})}));
   if(estimateInstances.some(instance=>instance.paths.some(path=>!/^\d+$/.test(path.tool))))throw new Error('Prusa output requires numeric tool IDs');
   const estimate=estimatePrintTime(estimateInstances,travel,configuredBuildVolume.maxHeight,currentTool),usage=estimateFilamentUsage(estimateInstances,width,height,filamentD);
-  lines.splice(1,0,exportThumbnails(),`; estimated printing time (normal mode) = ${durationText(estimate.totalSeconds)}`,...usageComments(usage,filamentD),`; printer_model = ${$('#printerSelect').value==='Prusa CoreOne'?'COREONE':'MK4S'}`,`; layer_height = ${height}`,`; filament_diameter = ${filamentD}`,`; extrusion_width = ${width}`);
+  lines.splice(1,0,exportThumbnails(sourceState,instanceState),`; estimated printing time (normal mode) = ${durationText(estimate.totalSeconds)}`,...usageComments(usage,filamentD),`; printer_model = ${settings.printer==='Prusa CoreOne'?'COREONE':'MK4S'}`,`; layer_height = ${height}`,`; filament_diameter = ${filamentD}`,`; extrusion_width = ${width}`);
   lines.push(progressCommand(0,estimate.totalSeconds));
   let elapsed=0,previousPoint=null;
   for(const[instanceIndex,[instanceId,instance]]of orderedInstances.entries()){
     const source=sourceState.get(instance.source);validatePauseLayers(instance.pauseLayers,source.maxLayer);lines.push(`\n; INSTANCE ${gcodeComment(instanceDisplayName(instanceId,instance))}`);
     if(instanceIndex>0){
-      const[previousId,previousInstance]=orderedInstances[instanceIndex-1],previousSource=sourceState.get(previousInstance.source),previousMaxZ=sourceMaxZ(previousSource),nextStart=printerPoints(source.paths[0],instance)[0],safeZ=Math.min(configuredBuildVolume.maxHeight,previousMaxZ+10),travelFeedrate=Math.round(travel*60);
+      const[previousId,previousInstance]=orderedInstances[instanceIndex-1],previousSource=sourceState.get(previousInstance.source),previousMaxZ=sourceMaxZ(previousSource),nextStart=printerPoints(source.paths[0],instance,configuredBuildVolume)[0],safeZ=Math.min(configuredBuildVolume.maxHeight,previousMaxZ+10),travelFeedrate=Math.round(travel*60);
       lines.push(`; Move safely from ${gcodeComment(instanceDisplayName(previousId,previousInstance))} to ${gcodeComment(instanceDisplayName(instanceId,instance))}`,`G1 Z${safeZ.toFixed(3)} F${travelFeedrate} ; raise 10 mm`,`G1 X${nextStart[0].toFixed(3)} Y${nextStart[1].toFixed(3)} F${travelFeedrate} ; move to next object`,`G1 Z${nextStart[2].toFixed(3)} F${travelFeedrate} ; lower to start Z`);
     }
     let previousLayerZ=null;const emittedPauses=new Set();
     source.paths.forEach((path,pathIndex)=>{
       const tool=source.tools.get(path.tool),outputTool=toolOutputId(path.tool,tool),numericTool=Number(outputTool);
-      const points=printerPoints(path,instance),[startX,startY,startZ]=points[0],travelFeedrate=Math.round(travel*60);
+      const points=printerPoints(path,instance,configuredBuildVolume),[startX,startY,startZ]=points[0],travelFeedrate=Math.round(travel*60);
       if(previousLayerZ!==startZ){lines.push(';LAYER_CHANGE',`;Z:${startZ.toFixed(3)}`,`;HEIGHT:${(previousLayerZ===null?startZ:startZ-previousLayerZ).toFixed(3)}`);previousLayerZ=startZ;if(!emittedPauses.has(path.layer)){lines.push(...pauseGcode(path.layer,instance.pauseLayers));emittedPauses.add(path.layer)}}
       if(previousPoint){const lift=pathIndex===0?Math.min(configuredBuildVolume.maxHeight,sourceMaxZ(sourceState.get(orderedInstances[instanceIndex-1][1].source))+10):startZ;elapsed+=(Math.abs(lift-previousPoint[2])+Math.hypot(startX-previousPoint[0],startY-previousPoint[1])+Math.abs(startZ-lift))/travel}
       if(currentTool!==null&&currentTool!==outputTool)elapsed+=30;
@@ -513,7 +534,7 @@ function generateGcode(){window.PathloomModel?.store.resolveBindings();for(const
         }else lines.push(`; TOOL ${outputTool}`);
         currentTool=outputTool;
       }
-      const speed=Math.round(toolEffectiveSpeed(tool)*60),multiplier=tool?.erate??1;
+      const speed=Math.round(toolEffectiveSpeed(tool,settings.printSpeed)*60),multiplier=tool?.erate??1;
       for(let index=1;index<points.length;index++){const[x,y,z]=points[index],[previousX,previousY,previousZ]=points[index-1],length=Math.hypot(x-previousX,y-previousY,z-previousZ),extrusion=length*ePerMmBase*multiplier;elapsed+=length/(speed/60);lines.push(`G1 X${x.toFixed(3)} Y${y.toFixed(3)} Z${z.toFixed(3)} E${extrusion.toFixed(5)} F${speed}`)}
       previousPoint=points.at(-1);
     });
@@ -563,15 +584,23 @@ async function executeOutput(send){
   const buttons=[$('#executeOutputBtn'),$('#sendToPrinterBtn')];if(buttons.some(button=>button.disabled))return;for(const button of buttons)button.disabled=true;
   try{
     $('#outputErrorDetails').hidden=true;
-    const project=$('#projectName').textContent.trim(),base=project&&project!=='Untitled'?project.replace(/\.pathloom$/i,''):'pathloom-output',filename=base.replace(/[\x00-\x1f<>:"/\\|?*]/g,'-').slice(0,120)+'.gcode';
+    const config=gcodeExportConfig(),filename=config.filename;
     if(send){if(!window.PathloomPrinter)throw new Error('Printer sending requires Pathloom Desktop.');await window.PathloomPrinter.send({filename,generate:generateGcode});return}
-    const gcode=generateGcode();
-    if(window.__TAURI__?.core?.invoke){const path=await window.__TAURI__.core.invoke('save_gcode_file',{content:gcode,filename});if(path)showToast('G-code saved')}
-    else{downloadText(filename,gcode);showToast('G-code generated')}
+    await repeatExport.export('gcode',config);
   }catch(err){const details=$('#outputErrorDetails');details.hidden=false;details.open=true;details.querySelector('pre').textContent=err.message||String(err);showToast('出力できませんでした。詳細を確認してください。','error')}finally{for(const button of buttons)button.disabled=false}
 }
 $('#executeOutputBtn').addEventListener('click',()=>executeOutput(false));
 $('#sendToPrinterBtn').addEventListener('click',()=>executeOutput(true));
+repeatExport.register('gcode',{
+  valid(config){try{gcodeExportTargets(config);return true}catch{return false}},
+  prepare:config=>({content:generateGcode(config),filename:config.filename}),
+  async write({content,filename},destination){
+    if(window.__TAURI__?.core?.invoke){const path=await window.__TAURI__.core.invoke('save_gcode_file',{content,filename,...(destination?{currentPath:destination}:{})});if(!path)return null;showToast('G-code saved');return{destination:path}}
+    downloadText(filename,content);showToast('G-code generated');return{destination:null};
+  }
+});
+repeatExport.subscribe(state=>{const button=$('#repeatExportBtn');button.hidden=!state.last;button.disabled=!state.canRepeat();button.setAttribute('aria-busy',String(state.busy))});
+$('#repeatExportBtn').addEventListener('click',async()=>{try{await repeatExport.repeat()}catch(error){const details=$('#outputErrorDetails');details.hidden=false;details.open=true;details.querySelector('pre').textContent=error.message||String(error);showToast(error.message||String(error),'error')}});
 
 $('#openLibrary').addEventListener('click',openLibrary);$('#closeLibrary').addEventListener('click',closeLibrary);$('#libraryModal').addEventListener('pointerdown',e=>{if(e.target===$('#libraryModal'))closeLibrary()});$('#filamentForm').addEventListener('submit',upsertFilament);$('#cancelFilamentEdit').addEventListener('click',resetFilamentForm);$('#filamentColor').addEventListener('input',e=>$('#filamentHex').value=e.target.value.toUpperCase());$('#filamentHex').addEventListener('input',e=>{const hex=normalizeHex(e.target.value);if(hex)$('#filamentColor').value=hex});
 $('#openSettings').addEventListener('click',()=>openSettings());document.addEventListener('pathloom:open-printer-settings',()=>openSettings('connection'));
@@ -605,7 +634,7 @@ function syncPrintLinks(){
   schedulePrintEstimate();
   document.dispatchEvent(new Event('pathloom:print-links-changed'));
 }
-function assertPrintReferencesCurrent(){for(const source of sourceState.values())for(const input of source.generator?.inputs||[])if(input.printSetting&&input.value!==Number($('#'+input.printSetting).value))throw new Error(`${source.label}: select the object to update its linked Print Settings before saving or exporting`)}
+function assertPrintReferencesCurrent(sources=sourceState,settings=Object.fromEntries(BASIC_FIELDS.map(id=>[id,Number($('#'+id).value)]))){for(const source of sources.values())for(const input of source.generator?.inputs||[])if(input.printSetting&&input.value!==settings[input.printSetting])throw new Error(`${source.label}: select the object to update its linked Print Settings before saving or exporting`)}
 function captureProject({allowCadDraft=false}={}){
   assertPrintReferencesCurrent();
   for(const source of sourceState.values())if(source.generator&&source.generationError&&!(allowCadDraft&&source.generator.inputs?.some(i=>i.cadBinding)))throw new Error(`${source.label}: fix the generation error before saving`);
@@ -619,6 +648,7 @@ function captureProject({allowCadDraft=false}={}){
 function restoreProject(raw){
   const project=validateProject(raw);
   const sources=project.sources.map(source=>({...source,...sanitizeToolpath({paths:source.paths},source.filename,{allowEmpty:true}),tools:new Map(source.tools)}));
+  repeatExport.clear();
   document.dispatchEvent(new Event('pathloom:stop-live-files'));
   sourceState.clear();instanceState.clear();previewGeometryCache.clear();selectedBrepFaces.clear();importedShapes=project.importedShapes||[];
   for(const key of Object.keys(printLinks))delete printLinks[key];Object.assign(printLinks,project.printLinks||{});

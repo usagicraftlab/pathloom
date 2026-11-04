@@ -88,8 +88,8 @@ export class NativeCadClient {
     await this.start();
     return this.invoke("cad_export_step", { handle });
   }
-  async saveStep(content, filename) {
-    return this.invoke("save_cad_step", { content, filename });
+  async saveStep(content, filename, currentPath) {
+    return this.invoke("save_cad_step", { content, filename, ...(currentPath ? { currentPath } : {}) });
   }
   release(handles) {
     if (handles.length)

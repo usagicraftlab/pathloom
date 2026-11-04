@@ -292,3 +292,10 @@ Issue #37、Draft PR #43は変更しない。最終全検証/CI/mergeは実結�
 既存shape.sectionのpreview出力を平面ドラッグでライブ表示する。feature/asset/履歴へは追加しない。
 S05/B07実行中のface選択は、法線がdirectionと平行/反平行な平面だけで一度計測して既存distanceMmへ設定する。
 契約・対象外・回帰入口は[指示030契約](cad-section-inspection.md)。native/E/Sの演算契約は維持する。
+
+## 2026-11-05 — 指示031 E 前回設定で書き出し
+
+正規65 IDの状態は保持する。既存G-code/STEP/generator JSON/Library JSON/toolpathの通常経路へ
+セッション内の成功設定記録を接続し、共通アイコンから同じ対象の現在データを再生成する。
+設定・対象・保存先の契約は[指示031契約](cad-repeat-export.md)。新形式、STL exporter、設定項目、
+CAD演算、保存schema、実Mac Issue #37、Draft PR #43、指示028のfixture候補は追加・変更しない。
