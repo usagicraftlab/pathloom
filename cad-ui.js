@@ -11,6 +11,7 @@ import {initInputUi} from './cad-input-ui.js';
 import {normalizeLibrary,searchLibrary,saveLibraryEntry,applyLibraryOperation} from './cad-library.js';
 import {compactProjectGenerators,validateProject} from './pathloom-project.js';
 import {createProjectRecovery,parseProjectRecovery,prepareProjectOpen,readLibraryContainer,writeLibraryContainer} from './recovery-migration.js';
+import {repeatExport} from './repeat-export.js';
 const clone=value=>structuredClone(value),$=id=>document.getElementById(id);
 export function initCad(api){
   window.PathloomProjectRecoveryEnabled=true;
@@ -168,8 +169,25 @@ export function initCad(api){
   document.querySelector('.cad-chat-column .island-content').addEventListener('contextmenu',showAddMenu);
   document.querySelector('.cad-chat-column .island-content').addEventListener('dblclick',showAddMenu);
   document.addEventListener('pointerdown',event=>{if(!addMenu.contains(event.target))closeAddMenu()});document.addEventListener('keydown',event=>{if(event.key==='Escape')closeAddMenu()});
-  $('cadExportDefinition').addEventListener('click',()=>{try{download('generator.json',JSON.stringify(validateDefinition(definition),null,2))}catch(error){status(error.message)}});
-  $('cadExportLibraryItem').addEventListener('click',()=>{const entry=library.find(item=>item.id===$('cadLibrary').value);if(!entry){status('Select a saved library item');return}download('library-item.json',JSON.stringify({format:'pathloom-library-item',version:1,entry},null,2))});
+  const writeDownload=({filename,content})=>{download(filename,content);return{destination:null}};
+  const exportDefinition=config=>{const source=api.sources().find(s=>s.id===config.sourceId);if(config.sourceId&&!source?.generator)return null;return config.generatorKey===generatorKey?definition:source?.generator};
+  repeatExport.register('generator-json',{
+    valid:config=>!!exportDefinition(config),
+    prepare(config){const value=exportDefinition(config);if(!value)throw new Error('Generator no longer exists');return{filename:config.filename,content:JSON.stringify(validateDefinition(value),null,2)}},
+    write:writeDownload
+  });
+  repeatExport.register('library-json',{
+    valid:config=>library.some(entry=>entry.id===config.entryId),
+    prepare(config){const entry=library.find(item=>item.id===config.entryId);if(!entry)throw new Error('Select a saved library item');return{filename:config.filename,content:JSON.stringify({format:'pathloom-library-item',version:1,entry},null,2)}},
+    write:writeDownload
+  });
+  repeatExport.register('toolpath',{
+    valid:config=>!!api.sources().find(s=>s.id===config.sourceId),
+    prepare(config){const source=api.sources().find(s=>s.id===config.sourceId);if(!source||source.generationError)throw new Error('Generate a valid object first');return{filename:config.filename,content:JSON.stringify({paths:source.paths},null,2)}},
+    write:writeDownload
+  });
+  $('cadExportDefinition').addEventListener('click',async()=>{try{await repeatExport.export('generator-json',{sourceId,generatorKey,filename:'generator.json'})}catch(error){status(error.message)}});
+  $('cadExportLibraryItem').addEventListener('click',async()=>{try{const entry=library.find(item=>item.id===$('cadLibrary').value);if(!entry)throw new Error('Select a saved library item');await repeatExport.export('library-json',{entryId:entry.id,filename:'library-item.json'})}catch(error){status(error.message)}});
   $('cadImportDefinition').addEventListener('change',async event=>{const file=event.target.files[0];if(!file)return;try{
     const raw=JSON.parse(await file.text());
     if(raw.format==='pathloom-library-item'){
@@ -180,7 +198,7 @@ export function initCad(api){
     }catch(error){status(error.message)}event.target.value=''});
 
   function download(name,text){const url=URL.createObjectURL(new Blob([text],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
-  $('cadExportPaths').addEventListener('click',()=>{const source=api.sources().find(s=>s.id===sourceId);if(!source||source.generationError){status('Generate a valid object first');return}download(`${source.label}.toolpath`,JSON.stringify({paths:source.paths},null,2))});
+  $('cadExportPaths').addEventListener('click',async()=>{try{const source=api.sources().find(s=>s.id===sourceId);if(!source||source.generationError)throw new Error('Generate a valid object first');await repeatExport.export('toolpath',{sourceId,filename:`${source.label}.toolpath`})}catch(error){status(error.message)}});
   let readOnlyProject=null,readOnlyFromRecovery=false,projectRecoveryReadable=false,projectRecoveryPending=false,legacyCadRecoveryPending=false,projectRecoveryStamp=null,projectRecoveryBusy=false;
   const readOnlyDialog=document.createElement('dialog');readOnlyDialog.className='model-switch-dialog';readOnlyDialog.innerHTML='<h2>読取専用で回復</h2><p data-read-only-reason></p><dl data-read-only-summary></dl><p>未知の版を含む原文は変更していません。編集・自動保存は無効です。</p><button data-read-only="copy">原文を別名保存</button><button data-read-only="close">閉じる</button>';document.body.append(readOnlyDialog);
   function enterReadOnly(candidate,name='Recovery candidate',fromRecovery=false){

@@ -504,3 +504,16 @@ prepared assets/実OCPを使う全browser102件が成功（8.5分、失敗/skip/
 すべて実行した。Node24.22.1/厳密Node20.20.2各253成功、native105成功/任意NVIDIA USD2skip。
 導入10回失敗・初回102件launch失敗は開発ログに保持し、local Rustのcargo不在/未実行と
 実Mac GUI/Tauri/OS dialog/Issue #37の未実施も維持する。CIとmergeはPR/ボードへ別記する。
+
+## 2026-11-05 — 指示031 E の追加証拠
+
+既存A/T/R 62行・正規65 IDの状態は保持する。[指示031契約](cad-repeat-export.md)に成功記録、
+形式/対象/設定/保存先、現在データ再生成、取消/失敗/同時実行/対象消失/Openの境界を固定した。
+新規JS5件、実OCP/browser3件、Rust保存helper2件を追加した。Node24.22.1/厳密Node20.20.2の
+全JSは各258成功、native全107件105成功/任意NVIDIA USD2skip。対象browser初回は2成功/1失敗で、
+STEP fixtureが180 ms遅延の選択確定を待たなかったため、aria-selectedの確定待ちへ修正後3件成功。
+全browser/CIは実結果を開発ログへ追記する。local Rustはcargo不在で未実行、実Mac検証も未実施のまま。
+
+00:24 JST追記：同じ製品コードのprepared assetsで全browser105件が成功（9.2分、失敗/skip/retry0）。
+新規3件と既存102件をすべて実行した。初回対象STEP fixture1失敗と修正後3成功は開発ログに保持する。
+CI・mergeはPR/ボードで別途実確認し、local Rust/実Mac/Issue #37の未実施と既存62行の状態を維持する。

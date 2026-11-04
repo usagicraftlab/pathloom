@@ -199,3 +199,9 @@ D/E、指示028のfixture候補、Issue #37、Draft PR #43へ範囲を広げな�
 項目11の解析専用断面検査と項目18のExtrude面計測を追加する。
 [断面検査と押し出しの面計測](cad-section-inspection.md)に一時状態・native preview・符号付き距離・
 両側総距離・非追従の境界を固定する。E項目2、028 fixture候補、Issue #37、Draft PR #43は別枠を保持する。
+
+## 2026-11-05 — 指示031 E
+
+Museが有効化した最終分割Eの項目2だけを扱う。[前回設定で書き出し](cad-repeat-export.md)として、
+既存形式・設定・対象・保存先を直近成功から再利用し、現在データを通常経路で再生成する。
+PRマージ後は停止する。新形式/STL exporter、設定項目、028 fixture候補、Issue #37、Draft PR #43は対象外。

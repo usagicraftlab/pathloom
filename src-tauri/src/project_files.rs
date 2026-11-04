@@ -23,6 +23,18 @@ fn step_save_path(mut path: std::path::PathBuf) -> std::path::PathBuf {
     path
 }
 
+fn repeat_export_path(path: String, extensions: &[&str]) -> Result<std::path::PathBuf, String> {
+    let path = std::path::PathBuf::from(path);
+    if !path.is_absolute()
+        || !path.extension().and_then(|v| v.to_str()).is_some_and(|v| {
+            extensions.iter().any(|allowed| v.eq_ignore_ascii_case(allowed))
+        })
+    {
+        return Err("Invalid previous export path".into());
+    }
+    Ok(path)
+}
+
 pub(crate) fn write_atomic(path: &std::path::Path, content: &str) -> Result<(), String> {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -57,20 +69,25 @@ pub async fn save_gcode_file(
     app: AppHandle,
     content: String,
     filename: String,
+    current_path: Option<String>,
 ) -> Result<Option<String>, String> {
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    app.dialog()
-        .file()
-        .set_title("Save G-code")
-        .set_file_name(filename)
-        .add_filter("G-code", &["gcode"])
-        .save_file(move |file| {
-            let _ = sender.send(file);
-        });
-    let Some(file) = receiver.await.map_err(|e| e.to_string())? else {
-        return Ok(None);
+    let path = if let Some(path) = current_path {
+        repeat_export_path(path, &["gcode"])?
+    } else {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        app.dialog()
+            .file()
+            .set_title("Save G-code")
+            .set_file_name(filename)
+            .add_filter("G-code", &["gcode"])
+            .save_file(move |file| {
+                let _ = sender.send(file);
+            });
+        let Some(file) = receiver.await.map_err(|e| e.to_string())? else {
+            return Ok(None);
+        };
+        gcode_save_path(file.into_path().map_err(|e| e.to_string())?)
     };
-    let path = gcode_save_path(file.into_path().map_err(|e| e.to_string())?);
     tauri::async_runtime::spawn_blocking(move || {
         write_atomic(&path, &content)?;
         Ok(Some(path.to_string_lossy().into_owned()))
@@ -84,6 +101,7 @@ pub async fn save_cad_step(
     app: AppHandle,
     content: String,
     filename: String,
+    current_path: Option<String>,
 ) -> Result<Option<String>, String> {
     if content.len() > 100 * 1024 * 1024
         || !content.trim_start().starts_with("ISO-10303-21;")
@@ -92,19 +110,23 @@ pub async fn save_cad_step(
     {
         return Err("Invalid STEP export".into());
     }
-    let (sender, receiver) = tokio::sync::oneshot::channel();
-    app.dialog()
-        .file()
-        .set_title("Export CAD as STEP")
-        .set_file_name(filename)
-        .add_filter("STEP model", &["step", "stp"])
-        .save_file(move |file| {
-            let _ = sender.send(file);
-        });
-    let Some(file) = receiver.await.map_err(|e| e.to_string())? else {
-        return Ok(None);
+    let path = if let Some(path) = current_path {
+        repeat_export_path(path, &["step", "stp"])?
+    } else {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        app.dialog()
+            .file()
+            .set_title("Export CAD as STEP")
+            .set_file_name(filename)
+            .add_filter("STEP model", &["step", "stp"])
+            .save_file(move |file| {
+                let _ = sender.send(file);
+            });
+        let Some(file) = receiver.await.map_err(|e| e.to_string())? else {
+            return Ok(None);
+        };
+        step_save_path(file.into_path().map_err(|e| e.to_string())?)
     };
-    let path = step_save_path(file.into_path().map_err(|e| e.to_string())?);
     tauri::async_runtime::spawn_blocking(move || {
         write_atomic(&path, &content)?;
         Ok(Some(path.to_string_lossy().into_owned()))
@@ -238,6 +260,33 @@ pub async fn cad_library(app: AppHandle, content: Option<String>) -> Result<Stri
 #[cfg(test)]
 mod gcode_tests {
     use super::*;
+    #[test]
+    fn repeat_export_reuses_only_absolute_matching_paths() {
+        assert_eq!(
+            repeat_export_path("/tmp/part.GCODE".into(), &["gcode"]).unwrap(),
+            std::path::PathBuf::from("/tmp/part.GCODE")
+        );
+        assert_eq!(
+            repeat_export_path("/tmp/part.STP".into(), &["step", "stp"]).unwrap(),
+            std::path::PathBuf::from("/tmp/part.STP")
+        );
+        for path in ["part.gcode", "", "/tmp/part.step", "/tmp/part.gcode.tmp"] {
+            assert!(repeat_export_path(path.into(), &["gcode"]).is_err());
+        }
+    }
+    #[test]
+    fn repeat_export_overwrites_the_same_destination_with_exact_new_bytes() {
+        let path = std::env::temp_dir().join(format!(
+            "pathloom-repeat-{}.gcode",
+            std::process::id()
+        ));
+        let chosen = repeat_export_path(path.to_string_lossy().into_owned(), &["gcode"]).unwrap();
+        write_atomic(&chosen, "; first\nG1 X1\n").unwrap();
+        let next = "; thumbnail begin\nG1 X2 Y3 E0.4\nM601\n";
+        write_atomic(&chosen, next).unwrap();
+        assert_eq!(std::fs::read_to_string(&chosen).unwrap(), next);
+        std::fs::remove_file(chosen).unwrap();
+    }
     #[test]
     fn export_extension_preserves_names_and_accepts_uppercase() {
         assert_eq!(
