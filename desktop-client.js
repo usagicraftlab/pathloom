@@ -106,6 +106,12 @@ async function initializeGrasshopperEvents() {
     window.Pathloom?.loadUkigaraSample?.();
   });
 
+  await listen('cad-menu', event => {
+    document.dispatchEvent(new CustomEvent('pathloom:cad-menu', {
+      detail: event.payload
+    }));
+  });
+
   try {
     const status = await invoke('grasshopper_bridge_status');
     ghEndpoint = status.endpoint || ghEndpoint;

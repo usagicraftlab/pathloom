@@ -73,6 +73,8 @@ test("027 A axis balls and workplane back restore reference and exact face suppo
   }
   await page.getByRole("button",{name:"front view",exact:true}).click();
   await selectCadCommand(page,"Rectangle");
+  await page.evaluate(() => new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await clickWorld(page,[10,0,10]);
   expect(await page.evaluate(()=>window.PathloomModel.store.document.uiState.workPlane.yAxis)).toEqual([0,0,1]);
   await page.locator("#modelWorkplaneBack").click();

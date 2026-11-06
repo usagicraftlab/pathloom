@@ -56,3 +56,13 @@ export async function moveStepFaces(shape,faceIndices,offset,whole=false){
   const result=await window.__TAURI__.core.invoke('edit_step_faces',{brep:shape.brep,faceIndices,offset,whole,name:shape.filename||shape.name});
   return validateEditableShape(result);
 }
+export async function restoreStepShape(shape,historyLength=0){
+  validateEditableShape(shape);
+  const edits=shape.brep.history.slice(0,Math.max(0,historyLength));
+  let current=structuredClone(shape);
+  current.brep={...current.brep,data:current.brep.original,history:[]};
+  current=await moveStepFaces(current,[],[0,0,0],true);
+  current.brep.history=[];
+  for(const edit of edits)current=await moveStepFaces({...current,filename:shape.filename||shape.name},edit.faceIndices,edit.offset,edit.operation==='translate');
+  return validateEditableShape(current);
+}

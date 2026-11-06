@@ -92,8 +92,9 @@ test('031 existing generator, toolpath and library JSON downloads repeat the sam
   expect(original.name).toBe('generator.json');
   await page.locator('#cadNew').evaluate(b=>b.click());
   await expect.poll(()=>page.evaluate(()=>window.PathloomCad.snapshot().sourceId)).not.toBe(originalId);
-  await expect.poll(()=>page.evaluate(()=>window.PathloomCad.snapshot().sourceId)).toBeTruthy();
+  await expect.poll(()=>page.evaluate(()=>window.PathloomCad.snapshot().sourceId)).toBeNull();
   expect(await download(page,()=>repeat(page).click())).toEqual(original);
+  await page.evaluate(id=>document.dispatchEvent(new CustomEvent('pathloom:select-source',{detail:{sourceId:id}})),originalId);
   const paths=await download(page,()=>page.locator('#cadExportPaths').evaluate(b=>b.click()));
   expect(paths.name).toMatch(/\.toolpath$/);expect(JSON.parse(paths.text).paths.length).toBeGreaterThan(0);
   await page.evaluate(id=>document.dispatchEvent(new CustomEvent('pathloom:select-source',{detail:{sourceId:id}})),originalId);

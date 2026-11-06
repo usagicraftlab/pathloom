@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {ensurePrintableGenerator} from './helpers/generator.mjs';
 
 async function start(page,{failure=false,delay=150}={}){
   await page.addInitScript(({failure,delay})=>{
@@ -33,8 +34,7 @@ async function start(page,{failure=false,delay=150}={}){
   },{failure,delay});
   await page.goto('/');
   await page.waitForFunction(()=>window.Pathloom&&window.PathloomCad);
-  await expect(page.locator('.operation-shell').first()).toBeVisible();
-  await expect.poll(()=>page.locator('#cadStatus').textContent()).toContain('layers');
+  await ensurePrintableGenerator(page);
 }
 
 test('initial workspace exports without changing layer height; all imports enforce bed Z',async({page})=>{
@@ -66,13 +66,22 @@ test('canvas prompt visibly creates a detached component at the requested positi
   expect(errors).toEqual([]);
 });
 
-test('blank-canvas click opens an on-screen prompt without using the old chat',async({page})=>{
+test('blank-canvas left click stays idle and right-click Create new component opens the prompt',async({page})=>{
   await start(page);const viewport=page.locator('.node-viewport'),bounds=await viewport.boundingBox();
   await page.mouse.click(bounds.x+bounds.width-12,bounds.y+bounds.height-12);
-  const card=page.locator('.ai-component-card');await expect(card).toBeVisible();
+  const card=page.locator('.ai-component-card');await expect(card).toBeHidden();
+  await page.mouse.click(bounds.x+bounds.width-12,bounds.y+bounds.height-12,{button:'right'});
+  await page.getByRole('button',{name:'Create new component',exact:true}).click();await expect(card).toBeVisible();
   const rect=await card.boundingBox();expect(rect.x).toBeGreaterThanOrEqual(bounds.x);expect(rect.x+rect.width).toBeLessThanOrEqual(bounds.x+bounds.width+1);expect(rect.y+rect.height).toBeLessThanOrEqual(bounds.y+bounds.height+1);
   await card.getByRole('textbox').fill('canvasから直接生成');await card.getByRole('textbox').press('Control+Enter');await expect(card).toHaveAttribute('data-phase','done');
   await expect(page.locator('#cadChatForm')).toHaveCount(0);
+});
+
+test('right-click menu adds a Spline and immediately starts STEP face selection',async({page})=>{
+  await start(page);await page.locator('#cadSteps').click({button:'right'});
+  const search=page.getByRole('searchbox',{name:'Search components'});await search.fill('Spline');await search.press('Enter');
+  await expect(page.locator('.operation-shell').filter({hasText:'Spline'})).toHaveCount(1);
+  await expect(page.locator('#cadStatus')).toContainText('Splineを作成するSTEPの平面');
 });
 
 test('closing or repositioning an instruction card preserves its unsent draft',async({page})=>{
@@ -118,7 +127,8 @@ test('idle viewport stops frame polling and camera changes still render',async({
 test('invalid numeric edits keep a clearly stale preview, block output, and recover on correction',async({page})=>{
   await start(page);
   await page.evaluate(async()=>{const THREE=await import('/vendor/three/three.module.js'),render=THREE.Scene.prototype.onBeforeRender;THREE.Scene.prototype.onBeforeRender=function(renderer,scene,camera){window.__audit.dimmed=0;scene.traverse(node=>{if(node.geometry?.getAttribute('segmentStart')&&node.visible&&node.parent?.visible&&node.material?.uniforms?.lineOpacity?.value<.5)window.__audit.dimmed++});return render.call(this,renderer,scene,camera)}});
-  await page.locator('[data-step-id="stack"]').dblclick();const height=page.getByRole('spinbutton',{name:'stack height value',exact:true});await height.fill('0');await height.dispatchEvent('change');
+  const stack=page.locator('.operation-shell').filter({hasText:'Stack / loft'}).first(),stepId=await stack.getAttribute('data-step-id');
+  await stack.dblclick();const height=page.getByRole('spinbutton',{name:`${stepId} height value`,exact:true});await height.fill('0');await height.dispatchEvent('change');
   await expect(page.locator('#cadStatus')).toHaveAttribute('data-state','error');await expect(page.locator('#cadStatus')).toContainText('前回の形状');await expect.poll(()=>page.evaluate(()=>window.__audit.dimmed)).toBeGreaterThan(0);
   expect(await page.evaluate(()=>{try{window.Pathloom.generateGcode();return false}catch{return true}})).toBe(true);
   await height.fill('60');await height.dispatchEvent('change');await expect(page.locator('#cadStatus')).toHaveAttribute('data-state','ready');expect(await page.evaluate(()=>window.Pathloom.generateGcode())).toContain('End of Pathloom output');

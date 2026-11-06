@@ -26,7 +26,7 @@ test("P4-22: unknown project versions recover read-only and save an unchanged co
     importedShapes: [],
     futureRoot: { untouched: [1, 2, 3] },
   };
-  await page.evaluate(async (project) => {
+  await page.addInitScript(async (project) => {
     await window.__cadStorage({
       key: "project-recovery",
       content: JSON.stringify({

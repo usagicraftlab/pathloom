@@ -1,8 +1,11 @@
 // Planar curve primitives and reusable geometry transformations.
 import ClipperLib from './vendor/clipper/clipper-browser.js';
+import {FACE_POLYLINE_SPEC,FACE_SPLINE_SPEC,isFaceSketchOperation} from './face-sketch.js';
 const number=(min,max,integer=false)=>({min,max,integer});
 export const COMPONENT_GROUPS=['Curve','Geometry','Transform','Pattern','Toolpath','Utility','Custom'];
 export const BASIC_COMPONENTS={
+  'face-polyline':FACE_POLYLINE_SPEC,
+  'face-spline':FACE_SPLINE_SPEC,
   circle:{label:'Circle',group:'Curve',accepts:null,returns:'contours',params:{radius:'number',center:'point',samples:'number'},defaults:{radius:20,center:[0,0,0],samples:120},constraints:{radius:number(.05,500),samples:number(12,720,true)}},
   ellipse:{label:'Ellipse',group:'Curve',accepts:null,returns:'contours',params:{radiusX:'number',radiusY:'number',center:'point',samples:'number'},defaults:{radiusX:25,radiusY:15,center:[0,0,0],samples:120},constraints:{radiusX:number(.05,500),radiusY:number(.05,500),samples:number(12,720,true)}},
   rectangle:{label:'Rectangle',group:'Curve',accepts:null,returns:'contours',params:{width:'number',height:'number',center:'point'},defaults:{width:40,height:30,center:[0,0,0]},constraints:{width:number(.1,1000),height:number(.1,1000)}},
@@ -72,7 +75,7 @@ export function executeCurveInputComponent(operation,p,{inputs=new Map(),section
 }
 export function executeBasicComponent(operation,p,source){
   const spec=BASIC_COMPONENTS[operation];if(!spec)return null;
-  if(operation==='curve-boolean'||operation==='join-close'||operation==='divide-curve'||operation==='evaluate-curve')return null;
+  if(isFaceSketchOperation(operation)||operation==='curve-boolean'||operation==='join-close'||operation==='divide-curve'||operation==='evaluate-curve')return null;
   if(operation==='offset')return executeOffset(source,p.distance);
   if(!spec.accepts){
     if(p.center[2]!==0)throw new Error('Curve primitives are in XY; move in Z after Stack');let points=[];

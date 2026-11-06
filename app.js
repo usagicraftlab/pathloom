@@ -731,4 +731,4 @@ initCad({
 modelWorkspace=initModelWorkspace({preview:()=>({THREE,scene,camera,controls,canvas,dirty:requestPreviewRender})});
 window.PathloomModel=modelWorkspace;
 
-new MutationObserver(()=>{const model=document.body.dataset.workspaceMode==='model';if(toolpathGroup)toolpathGroup.visible=!model;if(buildVolumeGroup)buildVolumeGroup.visible=!model;requestPreviewRender()}).observe(document.body,{attributes:true,attributeFilter:['data-workspace-mode']});
+new MutationObserver(()=>{if(toolpathGroup)toolpathGroup.visible=true;if(buildVolumeGroup)buildVolumeGroup.visible=true;requestPreviewRender()}).observe(document.body,{attributes:true,attributeFilter:['data-workspace-mode']});

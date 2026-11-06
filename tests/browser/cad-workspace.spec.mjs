@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
+import { ensurePrintableGenerator } from "./helpers/generator.mjs";
 
 function rectangleCommand(id = "user.rectangle.center", displayName = "Custom Center Rectangle") {
   return {
@@ -162,7 +163,7 @@ test.beforeEach(async ({ page }) => {
   });
   await page.goto("/");
   await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
-  await expect(page.locator("#cadStatus")).toContainText("layers");
+  await ensurePrintableGenerator(page);
   await page.locator("#modeModel").click();
   await expect(page.locator("#modelStatus")).toContainText("正確な形状");
 });
@@ -693,6 +694,7 @@ test("A19/A20/R08: history Library inserts independent shapes and recovery resto
     .getByRole("button", { name: "挿入 · CAD shape", exact: true })
     .click();
   await expect(page.locator(".model-history-entry")).toHaveCount(3);
+  await expect(page.locator(".model-history-entry").last()).toContainText("valid");
   const placed = await page.evaluate(() => {
     const store = window.PathloomModel.store,
       feature = store.document.features.at(-1),

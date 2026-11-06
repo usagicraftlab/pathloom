@@ -2,6 +2,7 @@ import { test as base, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { resolve } from "node:path";
+import { ensurePrintableGenerator } from "../helpers/generator.mjs";
 // Real OCCT daemon behind browser IPC. Only the OS-specific Tauri transport is substituted.
 const test = base.extend({
   page: async ({ page }, use) => {
@@ -222,7 +223,8 @@ const test = base.extend({
       });
       await page.goto("/");
       await page.waitForFunction(() => window.PathloomModel && window.PathloomCad);
-      await expect(page.locator("#cadStatus")).toContainText("layers");
+      // CAD scenarios opt into a printable graph; production still starts empty.
+      await ensurePrintableGenerator(page);
       await page.locator("#modeModel").click();
       await expect(page.locator("#modelStatus")).toContainText("正確な形状");
       await use(page);
@@ -288,9 +290,7 @@ async function selectCadCommand(page, name) {
 
 async function selectCadMenuItem(page, selector) {
   const item = page.locator(selector);
-  if (!(await item.isVisible()))
-    await page.locator('summary[aria-label="CADメニュー"]').click();
-  await item.click();
+  await item.evaluate((button) => button.click());
 }
 
 async function clickCadPoint(page, point, options = {}) {

@@ -627,6 +627,9 @@ pub fn run() {
             if let Some(action) = event.id().as_ref().strip_prefix("project-") {
                 let _ = app.emit("project-menu", action);
             }
+            if let Some(action) = event.id().as_ref().strip_prefix("cad-") {
+                let _ = app.emit("cad-menu", action);
+            }
             if event.id().as_ref() == "load_ukigara_clock" {
                 let _ = app.emit("load-ukigara-clock", ());
             }
@@ -659,6 +662,13 @@ pub fn run() {
             let samples_menu = SubmenuBuilder::new(app, "Samples")
                 .text("load_ukigara_clock", "Load Ukigara Clock")
                 .build()?;
+            let cad_menu = SubmenuBuilder::new(app, "CAD")
+                .text("cad-section-inspection", "断面検査")
+                .text("cad-toggle-thumbnails", "アウトライナーのサムネイル表示")
+                .text("cad-command-dsl", "コマンドDSL・版管理…")
+                .text("cad-command-layout", "コマンド配置編集")
+                .text("cad-toggle-zoom-snap", "ズーム連動スナップ")
+                .build()?;
             if let Some(menu) = app.menu() {
                 let mut file_found = false;
                 for item in menu.items()? {
@@ -679,6 +689,7 @@ pub fn run() {
                     menu.insert(&file_menu, 1)?;
                 }
                 menu.append(&samples_menu)?;
+                menu.append(&cad_menu)?;
                 let mut help_found = false;
                 for item in menu.items()? {
                     if let tauri::menu::MenuItemKind::Submenu(submenu) = item {
@@ -697,6 +708,7 @@ pub fn run() {
                 let menu = MenuBuilder::new(app)
                     .item(&file_menu)
                     .item(&samples_menu)
+                    .item(&cad_menu)
                     .item(&help_menu)
                     .build()?;
                 app.set_menu(menu)?;

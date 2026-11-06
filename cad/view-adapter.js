@@ -338,9 +338,10 @@ export function createViewAdapter(preview, { pick = () => {} } = {}) {
       lastDocument = doc;
       lastSelection = selection;
       lastOptions = options;
-      group.visible = document.body.dataset.workspaceMode === "model";
+      const sharedWorkspace = ["model", "generate", "parameters"].includes(document.body.dataset.workspaceMode);
+      group.visible = sharedWorkspace;
       previewGroup.visible = group.visible;
-      if (inspectionGroup) inspectionGroup.visible = group.visible;
+      if (inspectionGroup) inspectionGroup.visible = document.body.dataset.workspaceMode === "model";
       originGroup.visible = group.visible;
       cadGridGroup.visible = group.visible;
       if (moveGhost) moveGhost.visible = group.visible;
