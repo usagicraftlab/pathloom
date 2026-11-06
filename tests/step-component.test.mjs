@@ -14,6 +14,21 @@ test('editable B-rep, original shape, face IDs and history survive pipeline save
   input.meshes[0].triangleFaces[0]=999;assert.throws(()=>validatePipeline(d),/face mapping/);input.meshes=structuredClone(shape.meshes);input.brep.history=[{operation:'move-faces',faceIndices:[0],offset:[Infinity,0,0]}];assert.throws(()=>validatePipeline(d),/B-rep/);
 });
 
+test('Polyline stores face-local points and follows the STEP face when it moves',async()=>{
+  const {readFile}=await import('node:fs/promises');const shape=JSON.parse(await readFile(new URL('./fixtures/editable-cube.json',import.meta.url),'utf8')).shape;
+  let{d,input}=setup();Object.assign(input,{filename:shape.name,brep:shape.brep,faces:shape.faces,meshes:shape.meshes});d=appendComponent(d,'face-polyline');input=d.inputs.find(item=>item.id===input.id);const polyline=d.steps.at(-1);polyline.sketch={inputId:input.id,faceIndex:0,points:[[0,0],[4,0],[4,3]]};
+  let points=generateCad(d).paths[0].points;assert.equal(points.length,3);assert.ok(points.every(point=>Math.abs(point[2]-points[0][2])<1e-8));
+  const movedVertices=new Set(input.meshes[0].indices.filter((_,index)=>input.meshes[0].triangleFaces[Math.floor(index/3)]===0));for(const index of movedVertices)input.meshes[0].positions[index*3+2]+=5;input.faces[0].bounds=input.faces[0].bounds.map(point=>[point[0],point[1],point[2]+5]);points=generateCad(d).paths[0].points;assert.ok(points.every(point=>Math.abs(point[2]-5)<1e-8));
+  polyline.params.closed=true;points=generateCad(d).paths[0].points;assert.deepEqual(points[0],points.at(-1));
+});
+
+test('Spline samples smooth face-local control points and supports a closed curve',async()=>{
+  const {readFile}=await import('node:fs/promises');const shape=JSON.parse(await readFile(new URL('./fixtures/editable-cube.json',import.meta.url),'utf8')).shape;
+  let{d,input}=setup();Object.assign(input,{filename:shape.name,brep:shape.brep,faces:shape.faces,meshes:shape.meshes});d=appendComponent(d,'face-spline');const spline=d.steps.at(-1);spline.sketch={inputId:input.id,faceIndex:0,points:[[0,0],[4,0],[4,3],[0,3]]};
+  let points=generateCad(d).paths[0].points;assert.ok(points.length>20);assert.ok(points.every(point=>Math.abs(point[2]-points[0][2])<1e-8));assert.notDeepEqual(points[0],points.at(-1));
+  spline.params.closed=true;points=generateCad(d).paths[0].points;assert.deepEqual(points[0],points.at(-1));
+});
+
 test('Slice STEP preserves edited object height rather than dropping it back onto the plate',()=>{let{d,input}=setup();for(let i=2;i<input.meshes[0].positions.length;i+=3)input.meshes[0].positions[i]+=5;d=appendComponent(d,'slice-step');d.steps.at(-1).params.layerHeight=1;const result=generateCad(d);assert.equal(result.paths[0].points[0][2],6)});
 
 test('tapered mesh sections use layer centers and print at 0.6 mm intervals',()=>{let{d,input}=setup();const mesh=input.meshes[0];for(let i=0;i<mesh.positions.length;i+=3)if(mesh.positions[i+2]===20){mesh.positions[i]=5+mesh.positions[i]*.5;mesh.positions[i+1]=5+mesh.positions[i+1]*.5}d=appendComponent(d,'slice-step');d.steps.at(-1).params.layerHeight=.6;const paths=generateCad(d).paths;assert.equal(paths[0].points[0][2],.6);assert.equal(paths[1].points[0][2],1.2);assert.equal(Math.min(...paths[0].points.map(p=>p[0])),.075);assert.ok(Math.abs(Math.min(...paths[1].points.map(p=>p[0]))-.225)<1e-8)});

@@ -133,7 +133,7 @@ test("P3 history hover/scrub shows consumed earlier geometry without changing sa
   await expect.poll(() => page.evaluate(() => window.PathloomModel.displayState().entityIds)).toEqual([moved.id]);
 });
 
-test("P3 Polyline closes by start snap into a real planar face; two-click measurement shows distance", async ({page}) => {
+test("P3 Polyline closes by start snap into a real planar face", async ({page}) => {
   await page.getByRole("button", {name:"top view",exact:true}).click();
   await selectCadCommand(page, "Polyline");
   for (const point of [[-20,-15,0],[-10,-15,0],[-10,-5,0]]) await clickWorld(page, point);
@@ -146,9 +146,7 @@ test("P3 Polyline closes by start snap into a real planar face; two-click measur
   const result = await last(page);
   expect(result.entity.kind).toBe("surface");
   expect(result.entity.displayCache.areaMm2).toBeCloseTo(50,5);
-  await page.getByRole("button", {name:"2点の距離を測定",exact:true}).click();
-  await clickWorld(page, [-20,-15,0]); await clickWorld(page, [-10,-15,0]);
-  await expect(page.getByLabel("測定距離",{exact:true})).toHaveText("10.000 mm");
+  await expect(page.getByRole("button", {name:"2点の距離を測定",exact:true})).toHaveCount(0);
 });
 
 test("P3 Extrude direction switches to exact Difference and multiple body overlap stays plain Extrude", async ({page}) => {

@@ -1,17 +1,24 @@
 import { id } from "./document.js";
 export class NativeCadClient {
   constructor({ invoke, listen } = {}) {
+    const desktopRequired = () =>
+      new Error(
+        "CAD_RUNTIME_MISSING: CAD作図にはPathloom Desktopが必要です。debugアプリは npm start で起動してください。",
+      );
     this.invoke =
       invoke ||
       ((name, args) => {
         if (!globalThis.__TAURI__?.core?.invoke)
-          throw new Error(
-            "CAD作図にはPathloom Desktopが必要です。npm run cad:setupでランタイムを準備してください。",
-          );
+          throw desktopRequired();
         return globalThis.__TAURI__.core.invoke(name, args);
       });
     this.listen =
-      listen || ((name, cb) => globalThis.__TAURI__.event.listen(name, cb));
+      listen ||
+      ((name, cb) => {
+        const eventListen = globalThis.__TAURI__?.event?.listen;
+        if (!eventListen) throw desktopRequired();
+        return eventListen(name, cb);
+      });
     this.jobs = new Map();
     this.runtimeEpoch = 0;
     this.workspaceEpoch = 1;

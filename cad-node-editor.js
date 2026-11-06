@@ -90,13 +90,9 @@ export function initNodeEditor(host,api){
     for(const[id,node]of nodes){node.addEventListener('pointerenter',()=>api.navigateBindings?.(bindingIdsForGraphSelection(definition,{nodeIds:[id]}),{kind:'hover'}));node.addEventListener('pointerleave',()=>notifyNavigation())}
     if(saved?.view)view={...saved.view};transform();if(!saved?.view)requestAnimationFrame(fit);redraw();
   }
-  viewport.addEventListener('click',event=>{
-    if(event.defaultPrevented||suppressClick||connecting||event.target.closest('.graph-node,.node-wire,.ai-component-card,.node-toolbar,input,button,textarea,select'))return;
-    const position=local(event);clearTimeout(composeTimer);composeTimer=setTimeout(()=>aiCard.open({position}),240);
-  });
   viewport.addEventListener('dblclick',()=>{clearTimeout(composeTimer);if(!aiCard.contains(document.activeElement))aiCard.close()});
   document.addEventListener('pathloom:ai-settings-open',()=>document.dispatchEvent(new Event('pathloom:ai-settings')));
-  viewport.addEventListener('contextmenu',event=>{if(event.isTrusted&&event.button!==0){event.preventDefault();event.stopImmediatePropagation()}},true);
+  viewport.addEventListener('contextmenu',event=>{if(suppressClick){event.preventDefault();event.stopPropagation()}},true);
   viewport.addEventListener('pointerdown',event=>{
     suppressClick=false;if(![0,1,2].includes(event.button))return;
     if(event.button!==2&&event.target.closest('.node-port,input,button,textarea,select,a,.step-parameter,.node-wire'))return;
@@ -138,7 +134,7 @@ export function initNodeEditor(host,api){
     const command=event.metaKey||event.ctrlKey,key=event.key.toLowerCase();let handled=true;
     if(command&&key==='a'){selection=event.shiftKey?new Set():new Set(nodes.keys());paintSelection();viewport.focus({preventScroll:true})}
     else if(command&&key==='z'){api.undo?.(event.shiftKey?1:-1)}
-    else if(command&&(key==='k'||key==='f')){const r=viewport.getBoundingClientRect();viewport.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,cancelable:true,clientX:r.left+20,clientY:r.top+20}))}
+    else if(command&&(key==='k'||key==='f')){const r=viewport.getBoundingClientRect();viewport.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:r.left+20,clientY:r.top+20}))}
     else if(event.key==='Escape'){connecting=null;mouse=null;selectedEdge=null;selection.clear();paintSelection();notifyNavigation();hint.textContent='';redraw()}
     else if(event.key==='Delete'||event.key==='Backspace'){try{if(selectedEdge){api.replace(disconnectGeometry(api.definition(),selectedEdge));selectedEdge=null}else if(selection.size){api.replace(removeGraphNodes(api.definition(),selection));selection.clear();paintSelection()}else handled=false}catch(error){api.error(error.message)}}
     else if(!command&&key==='f')fit(event.shiftKey);

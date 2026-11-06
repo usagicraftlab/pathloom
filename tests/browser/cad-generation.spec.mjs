@@ -1,4 +1,5 @@
 import { test, expect, selectCadCommand } from "./fixtures/cad.mjs";
+import { ensurePrintableGenerator } from "./helpers/generator.mjs";
 
 async function commit(page, count) {
   await page.getByRole("button", { name: "確定", exact: true }).click();
@@ -238,8 +239,8 @@ test("P1-06: inactive shared outputs stay stale until selected, without changing
   // Initialize another graph through its existing handler; the legacy toolbar
   // stays hidden. Graph selection and the dimension/repair actions use the UI.
   await page.locator("#cadNew").evaluate((button) => button.click());
-  await expect(page.locator("#cadName")).toHaveValue("Stacked section");
-  await expect(page.locator("#cadStatus")).toHaveAttribute("data-state", "ready");
+  await expect(page.locator("#cadName")).toHaveValue("Untitled");
+  await ensurePrintableGenerator(page);
   const before = await state(page), independent = before.sources.find((s) => s.id === before.active);
   expect(before.sources.filter((s) => s.group === "cad-issue9-bound")).toHaveLength(2);
   await page.locator("#modeModel").click();

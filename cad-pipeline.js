@@ -2,6 +2,7 @@ import {printIntroSettings,addPrintIntro} from './print-intro.js';
 import {validateStepMeshes,validateEditableShape} from './step-import.js';
 import {sliceMeshesToPaths} from './step-geometry.js';
 import {BASIC_COMPONENTS,executeBasicComponent,executeCurveInputComponent,inputCurvePoints,COMPONENT_GROUPS} from './cad-components.js';
+import {executeFaceSketch,isFaceSketchOperation,validateFaceSketch} from './face-sketch.js';
 export {COMPONENT_GROUPS};
 export const isCurveType=type=>['curve','contours','layers','paths'].includes(type);
 export const publicDataType=type=>['curve','contours','layers'].includes(type)?'Curve':type==='paths'?'Toolpaths':type;
@@ -116,13 +117,16 @@ export function geometryDefinition(raw){
   const section=d.steps.find(step=>step.operation==='sections'),stack=d.steps.find(step=>step.operation==='layer-curves'&&step.source===section?.id);if(section&&stack&&section.params.curves.length===1){stack.source=`input:${section.params.curves[0]}`;d.steps=d.steps.filter(step=>step!==section);d.inputs=d.inputs.filter(input=>input.id!=='samples'||d.steps.some(step=>inputReferences(step).includes(input.id)))}
   return validatePipeline(d);
 }
+export function emptyGeometryDefinition(){
+  return validatePipeline({version:2,id:'pipeline',name:'Untitled',inputs:[],steps:[],output:null});
+}
 export function validatePipeline(raw){
   if(raw?.programs!==undefined){if(!Array.isArray(raw.programs)||raw.programs.some(p=>p.code===undefined))throw new Error('Invalid code Component registry');checkedRecipes({...raw,recipes:raw.programs})}
   if(raw?.recipes!==undefined){const d=checkedRecipes(raw);const expanded=validatePipeline(expandRecipes(d));d.inputs=expanded.inputs;return d}
   if(!raw||raw.version!==2||raw.id!=='pipeline')throw new Error('Unsupported pipeline version');
   const d=structuredClone(raw);validateEditorState(d.editor);if(d.printOutput!==undefined){if(!d.printOutput||typeof d.printOutput!=='object'||Array.isArray(d.printOutput)||d.printOutput.intro!==undefined&&(!d.printOutput.intro||typeof d.printOutput.intro!=='object'||Array.isArray(d.printOutput.intro)))throw new Error('Invalid Print output settings');printIntroSettings(d.printOutput)}
   if(typeof d.name!=='string'||!d.name.trim()||d.name.length>120)throw new Error('Invalid generator name');
-  if(!Array.isArray(d.inputs)||d.inputs.length>128||!Array.isArray(d.steps)||!d.steps.length||d.steps.length>256)throw new Error('Input / operation limit exceeded');
+  if(!Array.isArray(d.inputs)||d.inputs.length>128||!Array.isArray(d.steps)||d.steps.length>256)throw new Error('Input / operation limit exceeded');
   const inputs=new Map(),liveSources=new Set();
   for(const input of d.inputs){
     if(!idValid(input.id)||inputs.has(input.id)||typeof input.name!=='string'||!input.name.trim()||input.name.length>120||typeof input.group!=='string'||input.group.length>80||typeof input.visible!=='boolean')throw new Error('Invalid input identity');
@@ -151,6 +155,7 @@ export function validatePipeline(raw){
     const spec=operationSpec(d,step);
     if(!idValid(step.id)||results.has(step.id)||!spec||step.version!==(spec.code!==undefined?spec.version:1)||!step.params||typeof step.params!=='object'||Array.isArray(step.params))throw new Error('Invalid operation or version');
     if(step.pendingInputs!==undefined&&typeof step.pendingInputs!=='boolean')throw new Error('Invalid Component input state');
+    if(isFaceSketchOperation(step.operation)&&step.sketch!==undefined&&!validateFaceSketch(step,inputs,finite))throw new Error(`Invalid face sketch for ${step.id}`)
     if(step.group!==undefined&&(typeof step.group!=='string'||!step.group.trim()||step.group.length>80))throw new Error('Invalid Component group');
     if(step.label!==undefined&&(typeof step.label!=='string'||!step.label.trim()||step.label.length>120))throw new Error('Invalid Component name');
     if(Object.keys(step.params).some(key=>!Object.hasOwn(spec.params,key)))throw new Error(`Unknown parameter in ${step.id}`);
@@ -203,7 +208,7 @@ export function appendComponent(definition,operation,{detached=false}={}){
   else if(spec.accepts){const accepts=type=>acceptsGeometryType(spec.accepts,type);const upstream=accepts(type(d.output))?d.output:[...d.steps].reverse().find(s=>accepts(type(s.id)))?.id||d.inputs.filter(input=>['curve','surface'].includes(input.type)).map(input=>`input:${input.id}`).find(id=>accepts(type(id)));if(!upstream)throw new Error('Connect compatible geometry first');step.source=upstream}
   else if(operation==='sections'){const curve=d.inputs.find(i=>i.type==='curve'&&i.curve.closed);if(!curve)throw new Error('Sections needs a closed curve input');step.params.curves=[curve.id]}
   for(const[key,type]of Object.entries(spec.params))if(type==='curves'&&!step.params[key].length){const closed=spec.curveSelection==='closed',candidates=d.inputs.filter(input=>input.type==='curve'&&(!closed||input.curve.closed));if(operation==='curve-boolean'&&key==='b'){const next=candidates.find(input=>input.id!==step.params.a?.[0]);if(next)step.params[key]=[next.id]}else if(candidates[0])step.params[key]=[candidates[0].id];else if((spec.minCurves?.[key]??1)>0)throw new Error(`${spec.label} needs a curve input`)}
-  const terminal=d.steps.find(s=>s.id===d.output&&s.operation==='to-toolpath');if(terminal&&spec.accepts&&acceptsGeometryType(spec.accepts,'layers'))step.source=terminal.source;d.steps.push(step);if(terminal&&operationSpec(d,step).returns==='layers'){d.steps=d.steps.filter(s=>s!==terminal);terminal.source=step.id;d.steps.push(terminal)}else if(['curve','paths','layers'].includes(operationSpec(d,step).returns)||(step.source===d.output&&operationSpec(d,step).returns==='contours'))d.output=step.id;return validatePipeline(d);
+  const terminal=d.steps.find(s=>s.id===d.output&&s.operation==='to-toolpath');if(terminal&&spec.accepts&&acceptsGeometryType(spec.accepts,'layers'))step.source=terminal.source;d.steps.push(step);if(terminal&&operationSpec(d,step).returns==='layers'){d.steps=d.steps.filter(s=>s!==terminal);terminal.source=step.id;d.steps.push(terminal)}else if(['curve','paths','layers'].includes(operationSpec(d,step).returns)||(step.source===d.output&&operationSpec(d,step).returns==='contours')||(d.output===null&&operationSpec(d,step).returns==='contours'))d.output=step.id;return validatePipeline(d);
 }
 export function detachComponent(raw,id){
   const d=structuredClone(raw),step=d.steps.find(step=>step.id===id);if(!step)throw new Error('Unknown Component');
@@ -227,14 +232,14 @@ export function executePipeline(raw,{sectionPoints,validateSection,sliceBrep,run
   if(raw?.recipes!==undefined){const definition=validatePipeline(raw),aliases={},result=executePipeline(expandRecipes(definition,{aliases}),{sectionPoints,validateSection,sliceBrep,runCode,geometryOnly});for(const[key,value]of Object.entries(aliases))if(result.curveAttributes?.[value])result.curveAttributes[key]=result.curveAttributes[value];result.definition=definition;return result}
   const definition=validatePipeline(raw);for(const input of definition.inputs)if(input.cadBinding&&input.cadBinding.status!=='ready'&&cadInputUsed(definition,input.id))throw new Error(`CAD input ${input.name}: ${input.cadBinding.status}; repair the CAD feature before generating`);const results=new Map(),inputs=new Map(definition.inputs.map(i=>[i.id,i])),resolve=value=>structuredClone(resolveValue(definition,value));
   for(const input of definition.inputs.filter(input=>input.type==='curve')){const points=inputCurvePoints(input,180,sectionPoints);results.set(`input:${input.id}`,[{inputId:input.id,closed:input.curve.closed,points}])}
-  for(const input of definition.inputs.filter(input=>input.type==='surface'))results.set(`input:${input.id}`,Object.assign([...input.meshes],{brep:input.brep}));
+  for(const input of definition.inputs.filter(input=>input.type==='surface'))results.set(`input:${input.id}`,Object.assign([...input.meshes],{brep:input.brep,faces:input.faces}));
   for(const input of definition.inputs.filter(input=>['point','number','list'].includes(input.type)))results.set(`input:${input.id}`,input.type==='point'?[structuredClone(input.value)]:structuredClone(input.value));
   const ensureBudget=paths=>{if(paths.reduce((n,p)=>n+p.points.length,0)>300000)throw new Error('Too many points; reduce samples, layers or copies')};
   const warnings=[];let intermediatePoints=0;
   for(const step of definition.steps){
     const inputSpec=operationSpec(definition,step),curveRefs=curveInputReferences(step,inputSpec);
     const unavailable=id=>!results.has(id.startsWith('step:')?id.slice(5):id.startsWith('input:')?id:inputs.has(id)?`input:${id}`:id);
-    if((inputSpec.accepts&&inputSpec.accepts!=='branches'&&(!step.source||!results.has(step.source)))||(inputSpec.accepts==='branches'&&(!step.sources||step.sources.length<2||step.sources.some(id=>!results.has(id))))||curveRefs.some(unavailable)||(step.pendingInputs&&Object.entries(inputSpec.params).some(([key,type])=>type==='curves'&&step.params[key].length<Math.max(1,inputSpec.minCurves?.[key]??1)))){warnings.push(`${step.label||inputSpec.label||step.id}: waiting for inputs`);continue}
+    if((inputSpec.accepts&&inputSpec.accepts!=='branches'&&(!step.source||!results.has(step.source)))||(inputSpec.accepts==='branches'&&(!step.sources||step.sources.length<2||step.sources.some(id=>!results.has(id))))||curveRefs.some(unavailable)||(step.pendingInputs&&Object.entries(inputSpec.params).some(([key,type])=>type==='curves'&&step.params[key].length<Math.max(1,inputSpec.minCurves?.[key]??1)))||(isFaceSketchOperation(step.operation)&&(!step.sketch||step.sketch.points.length<2))){warnings.push(`${step.label||inputSpec.label||step.id}: waiting for inputs`);continue}
     const p=Object.fromEntries(Object.entries(step.params).map(([key,value])=>[key,resolve(value)]));let result;
     let source=step.source?results.get(step.source):null;
     if(['twist-scale','radial-wave','shells','bottom','assign-tool','build-toolpath','to-toolpath'].includes(step.operation)&&source)source=source.map(path=>({...path,points:path.points.map(point=>point.length===2?[...point,0]:[...point])}));
@@ -242,6 +247,7 @@ export function executePipeline(raw,{sectionPoints,validateSection,sliceBrep,run
     if(source&&['offset','twist-scale','radial-wave','shells','bottom'].includes(step.operation)){const attributes=curveAttributes(source);if(!attributes.closed||!attributes.planar)throw new Error(`${operationSpec(definition,step).label} requires closed planar Curve geometry`);}
     const spec=operationSpec(definition,step),curveInputs=new Map(inputs);for(const[key,type]of Object.entries(spec.params))if(type==='curves'&&spec.code===undefined)p[key]=p[key].flatMap(id=>{if(!id.startsWith('step:')&&inputs.has(id))return[id];return results.get(id.startsWith('step:')?id.slice(5):id).map((curve,index)=>{const key=`computed:${id}:${index}`,closed=curveClosed(curve.points);curveInputs.set(key,{type:'curve',curve:{type:'polyline',closed,points:closed?curve.points.slice(0,-1):curve.points}});return key})});for(const[key,bounds]of Object.entries(BASIC_COMPONENTS[step.operation]?.constraints||{})){limit(p[key],bounds.min??-10000,bounds.max??10000,key);if(bounds.integer&&!Number.isInteger(p[key]))throw new Error(`${key} must be an integer`)}
     if(spec.code!==undefined){for(const[key,type]of Object.entries(spec.params))if(type==='curves')p[key]=p[key].flatMap(id=>{const sourceId=id.startsWith('step:')?id.slice(5):id;const value=results.get(sourceId)||results.get(`input:${sourceId}`);if(value)return structuredClone(value);const input=inputs.get(sourceId);return [{points:inputCurvePoints(input,180,sectionPoints),closed:input.curve.closed}]});if(!runCode)throw new Error('Code Components require the isolated code runtime');result=runCode(spec.code,spec.accepts==='surface'?{type:'surface'}:structuredClone(source??[]),p,{brep:source?.brep,sliceBrep,returns:spec.returns})}
+    else if(isFaceSketchOperation(step.operation))result=executeFaceSketch(source,step,p);
     else if(step.operation==='slice-step'){if(!source?.length)throw new Error('Choose a STEP file in STEP Input first');if(source.brep&&sliceBrep)result=sliceBrep(source.brep,p.layerHeight,p.tolerance??.02);else{warnings.push('Slice STEP uses approximate mesh sections');result=sliceMeshesToPaths(source,p.layerHeight,{preserveHeight:true})}}
     else if(step.operation==='tool-info'){if(!p.sequence.length||p.sequence.some(n=>!Number.isInteger(n)||n<0||n>4))throw new Error('Tool sequence needs IDs 0–4');if(![0,1].includes(p.mode))throw new Error('Choose layer or curve Tool assignment');result={sequence:[...p.sequence],mode:p.mode}}
     else if(step.operation==='build-toolpath'){
